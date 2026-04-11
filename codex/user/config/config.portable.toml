@@ -1,0 +1,10 @@
+# Portable Codex config defaults managed by Forge.
+# This is source material, not a verbatim replacement for ~/.codex/config.toml.
+# Keep machine-local trust entries, connector state, and generated settings out of this file.
+
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+personality = "pragmatic"
+
+[plugins."github@openai-curated"]
+enabled = true

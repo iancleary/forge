@@ -1,0 +1,11 @@
+# Example Codex config assembled from Forge-owned portable defaults plus local machine state.
+
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+personality = "pragmatic"
+
+[plugins."github@openai-curated"]
+enabled = true
+
+#[projects."/absolute/path/to/repo"]
+#trust_level = "trusted"
