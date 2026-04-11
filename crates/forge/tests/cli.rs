@@ -5,6 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use serde_json::Value;
+
 fn temp_path(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -60,16 +62,22 @@ fn cli_install_and_status_use_mainline_user_target() {
     );
     assert!(install.status.success(), "{}", String::from_utf8_lossy(&install.stderr));
     let install_stdout = String::from_utf8(install.stdout).expect("install stdout utf8");
-    assert!(install_stdout.contains("\"target_kind\": \"user\""));
-    assert!(install_stdout.contains("\"target_role\": \"mainline\""));
+    let install_json: Value = serde_json::from_str(&install_stdout).expect("install json");
+    assert_eq!(install_json["data"]["target_kind"], "user");
+    assert_eq!(install_json["data"]["target_role"], "mainline");
 
     let status = run_forge(&["--json", "skills", "status"], &config_dir);
     assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
     let status_stdout = String::from_utf8(status.stdout).expect("status stdout utf8");
-    assert!(status_stdout.contains("\"scope\": \"mainline\""));
-    assert!(status_stdout.contains("\"target_kind\": \"user\""));
-    assert!(status_stdout.contains("\"target_role\": \"mainline\""));
-    assert!(!status_stdout.contains("\"target_kind\": \"path\""));
+    let status_json: Value = serde_json::from_str(&status_stdout).expect("status json");
+    assert_eq!(status_json["data"]["scope"], "mainline");
+    let entries = status_json["data"]["entries"]
+        .as_array()
+        .expect("status entries array");
+    assert!(entries.iter().any(|entry| {
+        entry["target_kind"] == "user" && entry["target_role"] == "mainline"
+    }));
+    assert!(!entries.iter().any(|entry| entry["target_kind"] == "path"));
 
     let _ = fs::remove_dir_all(root);
 }

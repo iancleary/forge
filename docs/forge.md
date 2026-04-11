@@ -32,6 +32,7 @@ Behavior:
 
 - default output is optimized for fast, effective visual scanning by a human reader
 - `--json` emits deterministic machine-readable output with minimal tokens for agent handoff and chaining
+- `--json` should stay compact rather than pretty-printed because token efficiency matters more than readability on the agent path
 - agent skills should prefer `--json` when chaining Forge output into later reasoning or commands
 - remediation is included for failing or warning checks
 - upgrade commands may also be included for installed tools
