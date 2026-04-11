@@ -4,6 +4,8 @@ This document defines the Forge-specific lifecycle management contract for consu
 
 This is not a general skill manager. It only manages Forge-authored skills and their installed targets.
 
+Recommended adjacent Codex capabilities such as `openai-docs` and GitHub plugin skills may still be useful in a full Codex setup, but they are out of scope for Forge-managed skill lifecycle commands.
+
 ## Goal
 
 Treat Forge as the single source of truth for Forge-managed consumer skills while supporting two source modes:

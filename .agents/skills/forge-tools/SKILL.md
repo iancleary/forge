@@ -22,4 +22,9 @@ Default operating rules:
 - Treat write commands as explicit actions; do not infer a mutation from a read request.
 - Keep work inside the CLI contract instead of reconstructing external API calls yourself.
 
+Adjacent capabilities:
+
+- If the task is about OpenAI product or API guidance rather than a Forge CLI, switch to `openai-docs`.
+- If the task is about GitHub issues, pull requests, reviews, Actions, or repository state, use the GitHub plugin skills instead of forcing the work through Forge.
+
 If the user names a specific Forge binary, switch to that crate skill immediately.
