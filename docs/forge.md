@@ -10,6 +10,31 @@ This is where update-check and update behavior should live, rather than embeddin
 
 ## Commands
 
+### `forge permissions check`
+
+```sh
+forge permissions check [--json]
+```
+
+Audits known Forge-managed config directories and secret files, including:
+
+- `~/.config/forge/`
+- `~/.config/forge/slack-cli/`
+- `~/.config/forge/linear/`
+
+It reports whether directories and token files match the expected owner-only modes.
+
+### `forge permissions fix`
+
+```sh
+forge permissions fix [--json]
+```
+
+Applies the expected local permissions:
+
+- directories: `0700`
+- token and config files: `0600`
+
 ### `forge self update-check`
 
 ```sh

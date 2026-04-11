@@ -19,6 +19,7 @@ Use the official Slack `slack` CLI for:
 
 Use this repo's `slack-cli` for:
 
+- saving a local Slack token with explicit auth login
 - resolving permalinks into Slack identifiers
 - reading a thread
 - pulling nearby channel context around a message
@@ -117,6 +118,13 @@ Place the copied user token here:
 ~/.config/forge/slack-cli/token
 ```
 
+You can also save it with:
+
+```sh
+slack-cli auth login
+slack-cli auth login --token xoxp-... --force
+```
+
 Supported lookup order:
 
 1. `SLACK_API_TOKEN`
@@ -153,6 +161,15 @@ The env var remains useful for:
 - temporary profile switching
 
 ## Command List
+
+### `auth login`
+
+```sh
+slack-cli auth login
+slack-cli auth login --token xoxp-... --force
+```
+
+Prompts for a Slack API token and writes it to `~/.config/forge/slack-cli/token`. Use `--token` for non-interactive setup and `--force` to overwrite an existing token file.
 
 ### `resolve-permalink`
 
