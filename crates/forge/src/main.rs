@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -6,8 +7,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
+
+const FORGE_REPO_SLUG: &str = "iancleary/forge";
+const DEFAULT_FORGE_REPO_INSTALL_SUBPATH: &str = ".agents/skills-installed";
 
 #[derive(Parser, Debug)]
 #[command(name = "forge")]
@@ -25,6 +29,8 @@ enum Command {
     Self_(SelfCommand),
     #[command(subcommand)]
     Permissions(PermissionsCommand),
+    #[command(subcommand)]
+    Skills(SkillsCommand),
 }
 
 #[derive(Subcommand, Debug)]
@@ -38,6 +44,16 @@ enum SelfCommand {
 enum PermissionsCommand {
     Check,
     Fix,
+}
+
+#[derive(Subcommand, Debug)]
+enum SkillsCommand {
+    List(SkillsListArgs),
+    Status(SkillsStatusArgs),
+    Validate(SkillsValidateArgs),
+    Install(SkillsInstallArgs),
+    Diff(SkillsDiffArgs),
+    Revert(SkillsRevertArgs),
 }
 
 #[derive(Args, Debug)]
@@ -54,6 +70,112 @@ struct UpdateArgs {
     repo_path: Option<PathBuf>,
     #[arg(long, help = "Remote branch to update from; defaults to the remote default branch when known")]
     branch: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum SkillsListSource {
+    Repo,
+    Release,
+    All,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum SkillSourceArg {
+    Repo,
+    Release,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+enum SkillTargetRoleArg {
+    Mainline,
+    Development,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+enum SkillsStatusScope {
+    Mainline,
+    Development,
+    All,
+}
+
+#[derive(Args, Debug)]
+struct SkillsListArgs {
+    #[arg(long, value_enum, default_value = "all")]
+    source: SkillsListSource,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct SkillsStatusArgs {
+    #[arg(long, value_enum, default_value = "mainline")]
+    scope: SkillsStatusScope,
+    #[arg(long, help = "Filter to one target: user, forge_repo, or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct SkillsValidateArgs {
+    #[arg(help = "Specific skill name to validate")]
+    skill: Option<String>,
+    #[arg(long, help = "Validate every available skill")]
+    all: bool,
+    #[arg(long, value_enum, help = "Force repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct SkillsInstallArgs {
+    #[arg(help = "Specific skill to install")]
+    skill: Option<String>,
+    #[arg(long, help = "Install every available skill")]
+    all: bool,
+    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, value_enum, help = "Mark the install as mainline or development")]
+    target_role: Option<SkillTargetRoleArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+    #[arg(long, help = "Overwrite an existing Forge-managed install")]
+    force: bool,
+    #[arg(long, help = "Take ownership of an unmanaged destination with the same skill name")]
+    force_unmanaged: bool,
+}
+
+#[derive(Args, Debug)]
+struct SkillsDiffArgs {
+    #[arg(help = "Skill name to diff")]
+    skill: String,
+    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct SkillsRevertArgs {
+    #[arg(help = "Specific skill to revert")]
+    skill: Option<String>,
+    #[arg(long, help = "Revert every installed Forge-managed skill")]
+    all: bool,
+    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Mark the reverted install as mainline or development")]
+    target_role: Option<SkillTargetRoleArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+    #[arg(long, help = "Overwrite an existing Forge-managed install")]
+    force: bool,
+    #[arg(long, help = "Take ownership of an unmanaged destination with the same skill name")]
+    force_unmanaged: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +199,7 @@ struct ErrorBody {
     message: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Deserialize)]
 struct ForgeConfig {
     #[serde(default)]
@@ -87,6 +210,10 @@ struct ForgeConfig {
     update_check_ttl_minutes: Option<u64>,
     #[serde(default)]
     repo_path: Option<String>,
+    #[serde(default)]
+    skills_user_dir: Option<String>,
+    #[serde(default)]
+    forge_repo_install_subpath: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -103,26 +230,72 @@ struct ForgeState {
     remote_default_branch: Option<String>,
     #[serde(default)]
     update_available: Option<bool>,
+    #[serde(default)]
+    managed_skill_installs: Vec<ManagedSkillInstall>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum SkillSourceKind {
+    RepoCheckout,
+    Release,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum SkillTargetKind {
+    User,
+    ForgeRepo,
+    Path,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum SkillTargetRole {
+    Mainline,
+    Development,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ManagedSkillInstall {
+    skill_name: String,
+    managed_by: String,
+    source_kind: SkillSourceKind,
+    source_repo_slug: String,
+    source_ref: String,
+    source_hash: String,
+    #[serde(default)]
+    source_repo_path: Option<String>,
+    target_kind: SkillTargetKind,
+    target_role: SkillTargetRole,
+    target_root: String,
+    target_path: String,
+    installed_at_unix: u64,
 }
 
 #[derive(Debug, Serialize)]
 struct UpdateCheckResult {
-    repo_path: String,
+    source_kind: String,
+    repo_path: Option<String>,
     cached: bool,
     local_head: Option<String>,
     remote_head: Option<String>,
     remote_default_branch: Option<String>,
     update_available: bool,
     checked_at_unix: u64,
+    skills_out_of_date: bool,
+    skills: Vec<SkillStatusEntry>,
 }
 
 #[derive(Debug, Serialize)]
 struct UpdateResult {
-    repo_path: String,
-    branch: String,
-    before_head: String,
-    after_head: String,
+    source_kind: String,
+    repo_path: Option<String>,
+    branch: Option<String>,
+    before_head: Option<String>,
+    after_head: Option<String>,
     changed: bool,
+    skills_reconciled: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -139,6 +312,112 @@ struct PermissionItem {
     actual_mode: Option<String>,
     ok: bool,
     changed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillsListResult {
+    source: String,
+    skills: Vec<SkillListEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillListEntry {
+    name: String,
+    source_kind: String,
+    source_path: Option<String>,
+    installed_targets: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillsValidateResult {
+    source_kind: String,
+    valid: bool,
+    skills: Vec<SkillValidationEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillValidationEntry {
+    name: String,
+    valid: bool,
+    path: Option<String>,
+    issues: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillsInstallResult {
+    source_kind: String,
+    target_kind: String,
+    target_role: String,
+    target_root: String,
+    installs: Vec<SkillInstallEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillInstallEntry {
+    name: String,
+    source_hash: String,
+    target_path: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillsDiffResult {
+    name: String,
+    source_kind: String,
+    target_kind: String,
+    target_path: String,
+    identical: bool,
+    files: Vec<SkillDiffFile>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillDiffFile {
+    path: String,
+    status: String,
+    source_hash: Option<String>,
+    target_hash: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillsStatusResult {
+    source_kind: String,
+    scope: String,
+    entries: Vec<SkillStatusEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillStatusEntry {
+    name: String,
+    target_kind: String,
+    target_role: String,
+    target_path: String,
+    state: String,
+    source_kind: String,
+    source_hash: Option<String>,
+    target_hash: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SkillDefinition {
+    name: String,
+    source_kind: SkillSourceKind,
+    source_path: Option<PathBuf>,
+    source_ref: String,
+    source_repo_path: Option<PathBuf>,
+    files: BTreeMap<String, Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EmbeddedSkill {
+    name: &'static str,
+    skill_md: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedTarget {
+    kind: SkillTargetKind,
+    role: SkillTargetRole,
+    root: PathBuf,
 }
 
 fn main() {
@@ -178,6 +457,30 @@ fn run(cli: Cli) -> Result<()> {
             let data = inspect_permissions(true)?;
             print_json(&Envelope { ok: true, data })?;
         }
+        Command::Skills(SkillsCommand::List(args)) => {
+            let data = skills_list(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Skills(SkillsCommand::Status(args)) => {
+            let data = skills_status(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Skills(SkillsCommand::Validate(args)) => {
+            let data = skills_validate(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Skills(SkillsCommand::Install(args)) => {
+            let data = skills_install(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Skills(SkillsCommand::Diff(args)) => {
+            let data = skills_diff(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Skills(SkillsCommand::Revert(args)) => {
+            let data = skills_revert(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
     }
 
     Ok(())
@@ -185,84 +488,122 @@ fn run(cli: Cli) -> Result<()> {
 
 fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
     let config = load_config()?;
-    let _auto_check_updates = config.auto_check_updates.unwrap_or(true);
-    let _auto_update = config.auto_update.unwrap_or(false);
-    let repo_path = resolve_repo_path(args.repo_path, &config)?;
     let checked_at_unix = now_unix()?;
-    let state_path = state_file_path()?;
-    let ttl_seconds = config.update_check_ttl_minutes.unwrap_or(1_440) * 60;
-
-    if !args.force && state_path.exists() {
-        if let Ok(state) = load_state(&state_path) {
-            if let Some(last_checked) = state.last_checked_unix {
-                if checked_at_unix.saturating_sub(last_checked) < ttl_seconds {
-                    if let Some(update_available) = state.update_available {
-                        return Ok(UpdateCheckResult {
-                            repo_path: repo_path.display().to_string(),
-                            cached: true,
-                            local_head: state.local_head,
-                            remote_head: state.remote_head,
-                            remote_default_branch: state.remote_default_branch,
-                            update_available,
-                            checked_at_unix: last_checked,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    ensure_git_repo(&repo_path)?;
-    let local_head = git_stdout(&repo_path, &["rev-parse", "HEAD"])?;
-    let (remote_default_branch, remote_head) = remote_default_branch_and_head(&repo_path)?;
-    let update_available = match remote_head.as_ref() {
-        Some(remote_head) => remote_head != &local_head,
-        None => false,
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = if repo_path.is_some() {
+        SkillSourceKind::RepoCheckout
+    } else {
+        SkillSourceKind::Release
     };
 
-    let state = ForgeState {
-        last_checked_unix: Some(checked_at_unix),
-        repo_path: Some(repo_path.display().to_string()),
-        local_head: Some(local_head.clone()),
-        remote_head: remote_head.clone(),
-        remote_default_branch: remote_default_branch.clone(),
-        update_available: Some(update_available),
+    let (local_head, remote_head, remote_default_branch, update_available) = if let Some(path) = repo_path.as_ref() {
+        ensure_git_repo(path)?;
+        let local_head = git_stdout(path, &["rev-parse", "HEAD"])?;
+        let (remote_default_branch, remote_head) = remote_default_branch_and_head(path)?;
+        let update_available = remote_head.as_ref().is_some_and(|remote| remote != &local_head);
+        (
+            Some(local_head),
+            remote_head,
+            remote_default_branch,
+            update_available,
+        )
+    } else {
+        (None, None, None, false)
     };
-    let _ = save_state(&state_path, &state);
+
+    let mut state = load_state_or_default()?;
+    state.last_checked_unix = Some(checked_at_unix);
+    state.repo_path = repo_path.as_ref().map(|path| path.display().to_string());
+    state.local_head = local_head.clone();
+    state.remote_head = remote_head.clone();
+    state.remote_default_branch = remote_default_branch.clone();
+    state.update_available = Some(update_available);
+    save_state(&state_file_path()?, &state)?;
+
+    let status = skills_status_with_source(
+        &config,
+        &state,
+        source_kind.clone(),
+        repo_path.clone(),
+        SkillsStatusScope::Mainline,
+        None,
+    )?;
+    let _ = args.force;
 
     Ok(UpdateCheckResult {
-        repo_path: repo_path.display().to_string(),
+        source_kind: source_kind_name(&source_kind).to_string(),
+        repo_path: repo_path.map(|path| path.display().to_string()),
         cached: false,
-        local_head: Some(local_head),
+        local_head,
         remote_head,
         remote_default_branch,
         update_available,
         checked_at_unix,
+        skills_out_of_date: status.entries.iter().any(|entry| entry.state == "out_of_date" || entry.state == "missing"),
+        skills: status.entries,
     })
 }
 
 fn update(args: UpdateArgs) -> Result<UpdateResult> {
     let config = load_config()?;
-    let repo_path = resolve_repo_path(args.repo_path, &config)?;
-    ensure_git_repo(&repo_path)?;
-
-    let before_head = git_stdout(&repo_path, &["rev-parse", "HEAD"])?;
-    let branch = match args.branch {
-        Some(branch) => branch,
-        None => remote_default_branch_and_head(&repo_path)?
-            .0
-            .unwrap_or_else(|| "main".to_string()),
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = if repo_path.is_some() {
+        SkillSourceKind::RepoCheckout
+    } else {
+        SkillSourceKind::Release
     };
 
-    run_git(&repo_path, &["pull", "--rebase", "origin", &branch])?;
-    let after_head = git_stdout(&repo_path, &["rev-parse", "HEAD"])?;
+    let mut before_head = None;
+    let mut after_head = None;
+    let mut branch = None;
+
+    if let Some(path) = repo_path.as_ref() {
+        ensure_git_repo(path)?;
+        before_head = Some(git_stdout(path, &["rev-parse", "HEAD"])?);
+        branch = Some(match args.branch {
+            Some(branch) => branch,
+            None => remote_default_branch_and_head(path)?
+                .0
+                .unwrap_or_else(|| "main".to_string()),
+        });
+        run_git(path, &["pull", "--rebase", "origin", branch.as_deref().unwrap_or("main")])?;
+        after_head = Some(git_stdout(path, &["rev-parse", "HEAD"])?);
+    }
+
+    let mut state = load_state_or_default()?;
+    let target_roots = managed_target_roots(&config, repo_path.as_deref())?;
+    let target_filters = target_roots
+        .iter()
+        .filter(|target| target.role == SkillTargetRole::Mainline)
+        .map(|target| target_to_flag(&target.kind, &target.role, &target.root))
+        .collect::<Vec<_>>();
+    let install_result = skills_install_internal(
+        &config,
+        &mut state,
+        InstallRequest {
+            skill_names: Vec::new(),
+            all: true,
+            source_kind: Some(source_kind.clone()),
+            repo_path: repo_path.clone(),
+            target: None,
+            target_role: None,
+            force: true,
+            force_unmanaged: false,
+            restrict_to_targets: Some(target_filters),
+        },
+    )?;
+    save_state(&state_file_path()?, &state)?;
+
+    let changed = before_head != after_head || install_result.installs.iter().any(|item| item.status != "unchanged");
 
     Ok(UpdateResult {
-        repo_path: repo_path.display().to_string(),
+        source_kind: source_kind_name(&source_kind).to_string(),
+        repo_path: repo_path.map(|path| path.display().to_string()),
         branch,
-        before_head: before_head.clone(),
-        after_head: after_head.clone(),
-        changed: before_head != after_head,
+        before_head,
+        after_head,
+        changed,
+        skills_reconciled: install_result.installs.len(),
     })
 }
 
@@ -272,6 +613,344 @@ fn inspect_permissions(apply_fixes: bool) -> Result<PermissionsResult> {
         .map(|target| inspect_permission_target(&target, apply_fixes))
         .collect::<Result<Vec<_>>>()?;
     Ok(PermissionsResult { items })
+}
+
+fn skills_list(args: SkillsListArgs) -> Result<SkillsListResult> {
+    let config = load_config()?;
+    let state = load_state_or_default()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let mut skills = Vec::new();
+
+    match args.source {
+        SkillsListSource::Repo | SkillsListSource::All => {
+            if let Some(path) = repo_path.clone() {
+                for def in load_repo_skills(&path)? {
+                    skills.push(skill_list_entry(def, &state));
+                }
+            }
+        }
+        _ => {}
+    }
+
+    match args.source {
+        SkillsListSource::Release | SkillsListSource::All => {
+            for def in load_release_skills() {
+                skills.push(skill_list_entry(def, &state));
+            }
+        }
+        _ => {}
+    }
+
+    skills.sort_by(|a, b| a.name.cmp(&b.name).then(a.source_kind.cmp(&b.source_kind)));
+
+    Ok(SkillsListResult {
+        source: match args.source {
+            SkillsListSource::Repo => "repo".to_string(),
+            SkillsListSource::Release => "release".to_string(),
+            SkillsListSource::All => "all".to_string(),
+        },
+        skills,
+    })
+}
+
+fn skill_list_entry(def: SkillDefinition, state: &ForgeState) -> SkillListEntry {
+    let installed_targets = state
+        .managed_skill_installs
+        .iter()
+        .filter(|entry| entry.skill_name == def.name)
+        .map(|entry| entry.target_path.clone())
+        .collect::<Vec<_>>();
+
+    SkillListEntry {
+        name: def.name,
+        source_kind: source_kind_name(&def.source_kind).to_string(),
+        source_path: def.source_path.map(|path| path.display().to_string()),
+        installed_targets,
+    }
+}
+
+fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
+    if args.skill.is_none() && !args.all {
+        bail!("provide a skill name or --all");
+    }
+
+    let config = load_config()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let skills = load_skills_for_source(&source_kind, repo_path.as_deref())?;
+    let selected = select_skill_defs(skills, args.skill.as_deref(), args.all)?;
+    let known_names = selected.iter().map(|def| def.name.clone()).collect::<BTreeSet<_>>();
+
+    let mut results = Vec::new();
+    for def in selected {
+        let mut issues = Vec::new();
+        let skill_md = def
+            .files
+            .get("SKILL.md")
+            .ok_or_else(|| anyhow!("skill {} is missing SKILL.md", def.name))?;
+        let body = String::from_utf8(skill_md.clone())
+            .with_context(|| format!("skill {} SKILL.md was not UTF-8", def.name))?;
+        let metadata = parse_skill_frontmatter(&body).with_context(|| format!("skill {} frontmatter invalid", def.name))?;
+        if metadata.name.is_empty() {
+            issues.push("frontmatter field `name` is required".to_string());
+        }
+        if metadata.description.is_empty() {
+            issues.push("frontmatter field `description` is required".to_string());
+        }
+        if def.name == "forge-tools" {
+            for required in ["linear-cli", "slack-cli-research", "codex-threads-cli", "forge-cli-admin"] {
+                if !body.contains(required) {
+                    issues.push(format!("router skill should reference `{required}`"));
+                }
+                if !known_names.contains(required) {
+                    issues.push(format!("referenced skill `{required}` is not available from the selected source"));
+                }
+            }
+        }
+
+        results.push(SkillValidationEntry {
+            name: def.name.clone(),
+            valid: issues.is_empty(),
+            path: def.source_path.map(|path| path.display().to_string()),
+            issues,
+        });
+    }
+
+    let valid = results.iter().all(|entry| entry.valid);
+    Ok(SkillsValidateResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        valid,
+        skills: results,
+    })
+}
+
+fn skills_install(args: SkillsInstallArgs) -> Result<SkillsInstallResult> {
+    let config = load_config()?;
+    let mut state = load_state_or_default()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let result = skills_install_internal(
+        &config,
+        &mut state,
+        InstallRequest {
+            skill_names: args.skill.into_iter().collect(),
+            all: args.all,
+            source_kind: args.source.map(map_cli_source),
+            repo_path,
+            target: args.target,
+            target_role: args.target_role.map(map_target_role),
+            force: args.force,
+            force_unmanaged: args.force_unmanaged,
+            restrict_to_targets: None,
+        },
+    )?;
+    save_state(&state_file_path()?, &state)?;
+    Ok(result)
+}
+
+fn skills_diff(args: SkillsDiffArgs) -> Result<SkillsDiffResult> {
+    let config = load_config()?;
+    let state = load_state_or_default()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let def = load_skill_definition(&source_kind, repo_path.as_deref(), &args.skill)?;
+    let target = resolve_target(args.target.as_deref(), &config, repo_path.as_deref(), None)?;
+    let target_path = target.root.join(&args.skill);
+    let target_files = if target_path.exists() {
+        load_skill_files_from_dir(&target_path)?
+    } else {
+        BTreeMap::new()
+    };
+    let files = build_diff_files(&def.files, &target_files);
+    let identical = files.iter().all(|entry| entry.status == "same");
+    let _ = state;
+
+    Ok(SkillsDiffResult {
+        name: args.skill,
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: target_kind_name(&target.kind).to_string(),
+        target_path: target_path.display().to_string(),
+        identical,
+        files,
+    })
+}
+
+fn skills_revert(args: SkillsRevertArgs) -> Result<SkillsInstallResult> {
+    let config = load_config()?;
+    let mut state = load_state_or_default()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let result = skills_install_internal(
+        &config,
+        &mut state,
+        InstallRequest {
+            skill_names: args.skill.into_iter().collect(),
+            all: args.all,
+            source_kind: Some(SkillSourceKind::Release),
+            repo_path,
+            target: args.target,
+            target_role: args.target_role.map(map_target_role),
+            force: args.force,
+            force_unmanaged: args.force_unmanaged,
+            restrict_to_targets: None,
+        },
+    )?;
+    save_state(&state_file_path()?, &state)?;
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct InstallRequest {
+    skill_names: Vec<String>,
+    all: bool,
+    source_kind: Option<SkillSourceKind>,
+    repo_path: Option<PathBuf>,
+    target: Option<String>,
+    target_role: Option<SkillTargetRole>,
+    force: bool,
+    force_unmanaged: bool,
+    restrict_to_targets: Option<Vec<String>>,
+}
+
+fn skills_install_internal(config: &ForgeConfig, state: &mut ForgeState, req: InstallRequest) -> Result<SkillsInstallResult> {
+    let source_kind = match req.source_kind {
+        Some(kind) => kind,
+        None => auto_source_kind(req.repo_path.as_deref()),
+    };
+    let target = resolve_target(
+        req.target.as_deref(),
+        config,
+        req.repo_path.as_deref(),
+        req.target_role.clone(),
+    )?;
+    fs::create_dir_all(&target.root)
+        .with_context(|| format!("failed to create {}", target.root.display()))?;
+
+    let defs = load_skills_for_source(&source_kind, req.repo_path.as_deref())?;
+    let selected = if req.all {
+        defs
+    } else if let Some(restrict) = req.restrict_to_targets.as_ref() {
+        let allowed_target = target_to_flag(&target.kind, &target.role, &target.root);
+        if !restrict.contains(&allowed_target) {
+            Vec::new()
+        } else if req.skill_names.is_empty() {
+            let installed_names = state
+                .managed_skill_installs
+                .iter()
+                .filter(|entry| entry.target_root == target.root.display().to_string())
+                .map(|entry| entry.skill_name.clone())
+                .collect::<BTreeSet<_>>();
+            defs.into_iter()
+                .filter(|def| installed_names.contains(&def.name))
+                .collect::<Vec<_>>()
+        } else {
+            select_skill_defs(defs, req.skill_names.first().map(String::as_str), false)?
+        }
+    } else {
+        if req.skill_names.is_empty() {
+            bail!("provide a skill name or --all");
+        }
+        let wanted = req.skill_names.iter().map(String::as_str).collect::<Vec<_>>();
+        defs.into_iter()
+            .filter(|def| wanted.contains(&def.name.as_str()))
+            .collect::<Vec<_>>()
+    };
+
+    if selected.is_empty() {
+        return Ok(SkillsInstallResult {
+            source_kind: source_kind_name(&source_kind).to_string(),
+            target_kind: target_kind_name(&target.kind).to_string(),
+            target_role: target_role_name(&target.role).to_string(),
+            target_root: target.root.display().to_string(),
+            installs: Vec::new(),
+        });
+    }
+
+    let installed_at_unix = now_unix()?;
+    let mut installs = Vec::new();
+    for def in selected {
+        let target_path = target.root.join(&def.name);
+        let source_hash = hash_skill_files(&def.files);
+        let managed = state
+            .managed_skill_installs
+            .iter()
+            .any(|entry| entry.skill_name == def.name && entry.target_path == target_path.display().to_string());
+
+        if target_path.exists() {
+            if !managed && !req.force_unmanaged {
+                bail!(
+                    "destination already exists for unmanaged skill {}: {}",
+                    def.name,
+                    target_path.display()
+                );
+            }
+            let existing_files = load_skill_files_from_dir(&target_path)?;
+            let existing_hash = hash_skill_files(&existing_files);
+            if managed && existing_hash == source_hash && !req.force {
+                let entry = ManagedSkillInstall {
+                    skill_name: def.name.clone(),
+                    managed_by: "forge".to_string(),
+                    source_kind: def.source_kind.clone(),
+                    source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                    source_ref: def.source_ref.clone(),
+                    source_hash: source_hash.clone(),
+                    source_repo_path: def
+                        .source_repo_path
+                        .as_ref()
+                        .map(|path| path.display().to_string()),
+                    target_kind: target.kind.clone(),
+                    target_role: target.role.clone(),
+                    target_root: target.root.display().to_string(),
+                    target_path: target_path.display().to_string(),
+                    installed_at_unix,
+                };
+                upsert_managed_install(state, entry);
+                installs.push(SkillInstallEntry {
+                    name: def.name,
+                    source_hash,
+                    target_path: target_path.display().to_string(),
+                    status: "unchanged".to_string(),
+                });
+                continue;
+            }
+            if managed || req.force_unmanaged || req.force {
+                fs::remove_dir_all(&target_path)
+                    .with_context(|| format!("failed to replace {}", target_path.display()))?;
+            }
+        }
+        write_skill_definition(&target_path, &def)?;
+
+        let entry = ManagedSkillInstall {
+            skill_name: def.name.clone(),
+            managed_by: "forge".to_string(),
+            source_kind: def.source_kind.clone(),
+            source_repo_slug: FORGE_REPO_SLUG.to_string(),
+            source_ref: def.source_ref.clone(),
+            source_hash: source_hash.clone(),
+            source_repo_path: def
+                .source_repo_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            target_kind: target.kind.clone(),
+            target_role: target.role.clone(),
+            target_root: target.root.display().to_string(),
+            target_path: target_path.display().to_string(),
+            installed_at_unix,
+        };
+        upsert_managed_install(state, entry);
+        installs.push(SkillInstallEntry {
+            name: def.name,
+            source_hash,
+            target_path: target_path.display().to_string(),
+            status: "installed".to_string(),
+        });
+    }
+
+    Ok(SkillsInstallResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: target_kind_name(&target.kind).to_string(),
+        target_role: target_role_name(&target.role).to_string(),
+        target_root: target.root.display().to_string(),
+        installs,
+    })
 }
 
 fn managed_permission_targets() -> Result<Vec<PermissionTarget>> {
@@ -422,7 +1101,20 @@ fn load_config() -> Result<ForgeConfig> {
 fn load_state(path: &Path) -> Result<ForgeState> {
     let body = fs::read_to_string(path)
         .with_context(|| format!("failed to read state file at {}", path.display()))?;
-    toml::from_str(&body).with_context(|| format!("failed to parse state file at {}", path.display()))
+    toml::from_str(&body).with_context(|| {
+        format!(
+            "failed to parse state file at {}. if the Forge state schema changed during development, remove or migrate this file and reinstall managed skills",
+            path.display()
+        )
+    })
+}
+
+fn load_state_or_default() -> Result<ForgeState> {
+    let path = state_file_path()?;
+    if !path.exists() {
+        return Ok(ForgeState::default());
+    }
+    load_state(&path)
 }
 
 fn save_state(path: &Path, state: &ForgeState) -> Result<()> {
@@ -434,14 +1126,19 @@ fn save_state(path: &Path, state: &ForgeState) -> Result<()> {
     fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
 }
 
-fn resolve_repo_path(cli_repo_path: Option<PathBuf>, config: &ForgeConfig) -> Result<PathBuf> {
+fn discover_repo_path(cli_repo_path: Option<PathBuf>, config: &ForgeConfig) -> Option<PathBuf> {
     if let Some(path) = cli_repo_path {
-        return Ok(path);
+        return Some(path);
     }
     if let Some(path) = config.repo_path.as_ref() {
-        return Ok(expand_path(path));
+        return Some(expand_path(path));
     }
-    env::current_dir().context("failed to resolve current working directory")
+    if let Ok(cwd) = env::current_dir() {
+        if cwd.join(".git").exists() && cwd.join(".agents").join("skills").exists() {
+            return Some(cwd);
+        }
+    }
+    None
 }
 
 fn ensure_git_repo(path: &Path) -> Result<()> {
@@ -553,11 +1250,506 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         msg if msg.contains("failed to read config file") || msg.contains("failed to parse config file") => {
             "config_error"
         }
+        msg if msg.contains("skill") && msg.contains("not found") => "skill_not_found",
+        msg if msg.contains("unmanaged") => "unmanaged_collision",
+        msg if msg.contains("frontmatter") => "validation_error",
         _ => "internal_error",
     };
 
     ErrorBody {
         code: code.to_string(),
         message,
+    }
+}
+
+fn release_skills() -> &'static [EmbeddedSkill] {
+    &[
+        EmbeddedSkill {
+            name: "forge-tools",
+            skill_md: include_str!("../../../.agents/skills/forge-tools/SKILL.md"),
+        },
+        EmbeddedSkill {
+            name: "linear-cli",
+            skill_md: include_str!("../../../.agents/skills/linear-cli/SKILL.md"),
+        },
+        EmbeddedSkill {
+            name: "slack-cli-research",
+            skill_md: include_str!("../../../.agents/skills/slack-cli-research/SKILL.md"),
+        },
+        EmbeddedSkill {
+            name: "codex-threads-cli",
+            skill_md: include_str!("../../../.agents/skills/codex-threads-cli/SKILL.md"),
+        },
+        EmbeddedSkill {
+            name: "forge-cli-admin",
+            skill_md: include_str!("../../../.agents/skills/forge-cli-admin/SKILL.md"),
+        },
+    ]
+}
+
+fn load_release_skills() -> Vec<SkillDefinition> {
+    release_skills()
+        .iter()
+        .map(|skill| {
+            let mut files = BTreeMap::new();
+            files.insert("SKILL.md".to_string(), skill.skill_md.as_bytes().to_vec());
+            SkillDefinition {
+                name: skill.name.to_string(),
+                source_kind: SkillSourceKind::Release,
+                source_path: None,
+                source_ref: env!("CARGO_PKG_VERSION").to_string(),
+                source_repo_path: None,
+                files,
+            }
+        })
+        .collect()
+}
+
+fn load_repo_skills(repo_path: &Path) -> Result<Vec<SkillDefinition>> {
+    let skills_root = repo_path.join(".agents").join("skills");
+    let mut defs = Vec::new();
+    for entry in fs::read_dir(&skills_root)
+        .with_context(|| format!("failed to read {}", skills_root.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("invalid skill directory name: {}", path.display()))?
+            .to_string();
+        defs.push(SkillDefinition {
+            name,
+            source_kind: SkillSourceKind::RepoCheckout,
+            source_path: Some(path.clone()),
+            source_ref: git_repo_ref(repo_path).unwrap_or_else(|| "repo".to_string()),
+            source_repo_path: Some(repo_path.to_path_buf()),
+            files: load_skill_files_from_dir(&path)?,
+        });
+    }
+    defs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(defs)
+}
+
+fn load_skills_for_source(source_kind: &SkillSourceKind, repo_path: Option<&Path>) -> Result<Vec<SkillDefinition>> {
+    match source_kind {
+        SkillSourceKind::RepoCheckout => {
+            let path = repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
+            load_repo_skills(path)
+        }
+        SkillSourceKind::Release => Ok(load_release_skills()),
+    }
+}
+
+fn load_skill_definition(source_kind: &SkillSourceKind, repo_path: Option<&Path>, name: &str) -> Result<SkillDefinition> {
+    load_skills_for_source(source_kind, repo_path)?
+        .into_iter()
+        .find(|def| def.name == name)
+        .ok_or_else(|| anyhow!("skill not found: {name}"))
+}
+
+fn git_repo_ref(repo_path: &Path) -> Option<String> {
+    git_stdout(repo_path, &["rev-parse", "HEAD"]).ok()
+}
+
+fn load_skill_files_from_dir(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    let mut files = BTreeMap::new();
+    collect_files(root, root, &mut files)?;
+    Ok(files)
+}
+
+fn collect_files(root: &Path, current: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
+    for entry in fs::read_dir(current)
+        .with_context(|| format!("failed to read {}", current.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        let rel = path
+            .strip_prefix(root)
+            .with_context(|| format!("failed to strip prefix from {}", path.display()))?;
+        if path.is_dir() {
+            collect_files(root, &path, files)?;
+        } else {
+            files.insert(
+                rel.to_string_lossy().replace('\\', "/"),
+                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn write_skill_definition(target_path: &Path, def: &SkillDefinition) -> Result<()> {
+    fs::create_dir_all(target_path)
+        .with_context(|| format!("failed to create {}", target_path.display()))?;
+    for (rel, contents) in &def.files {
+        let path = target_path.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        fs::write(&path, contents)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn resolve_source_kind(source: Option<SkillSourceArg>, repo_path: Option<&Path>) -> Result<SkillSourceKind> {
+    Ok(match source {
+        Some(kind) => map_cli_source(kind),
+        None => auto_source_kind(repo_path),
+    })
+}
+
+fn auto_source_kind(repo_path: Option<&Path>) -> SkillSourceKind {
+    if repo_path.is_some() {
+        SkillSourceKind::RepoCheckout
+    } else {
+        SkillSourceKind::Release
+    }
+}
+
+fn map_cli_source(source: SkillSourceArg) -> SkillSourceKind {
+    match source {
+        SkillSourceArg::Repo => SkillSourceKind::RepoCheckout,
+        SkillSourceArg::Release => SkillSourceKind::Release,
+    }
+}
+
+fn map_target_role(role: SkillTargetRoleArg) -> SkillTargetRole {
+    match role {
+        SkillTargetRoleArg::Mainline => SkillTargetRole::Mainline,
+        SkillTargetRoleArg::Development => SkillTargetRole::Development,
+    }
+}
+
+fn select_skill_defs(defs: Vec<SkillDefinition>, skill: Option<&str>, all: bool) -> Result<Vec<SkillDefinition>> {
+    if all {
+        return Ok(defs);
+    }
+    let name = skill.ok_or_else(|| anyhow!("provide a skill name or --all"))?;
+    let selected = defs
+        .into_iter()
+        .filter(|def| def.name == name)
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        bail!("skill not found: {name}");
+    }
+    Ok(selected)
+}
+
+fn resolve_target(
+    target: Option<&str>,
+    config: &ForgeConfig,
+    repo_path: Option<&Path>,
+    target_role: Option<SkillTargetRole>,
+) -> Result<ResolvedTarget> {
+    match target {
+        None | Some("user") => Ok(ResolvedTarget {
+            kind: SkillTargetKind::User,
+            role: target_role.unwrap_or(SkillTargetRole::Mainline),
+            root: user_skills_dir(config)?,
+        }),
+        Some("forge_repo") => {
+            let repo = repo_path.ok_or_else(|| anyhow!("forge_repo target requires a configured Forge repo path"))?;
+            let subpath = config
+                .forge_repo_install_subpath
+                .clone()
+                .unwrap_or_else(|| DEFAULT_FORGE_REPO_INSTALL_SUBPATH.to_string());
+            Ok(ResolvedTarget {
+                kind: SkillTargetKind::ForgeRepo,
+                role: target_role.unwrap_or(SkillTargetRole::Development),
+                root: repo.join(subpath),
+            })
+        }
+        Some(raw) if raw.starts_with("path:") => {
+            let path = PathBuf::from(raw.trim_start_matches("path:"));
+            if !path.is_absolute() {
+                bail!("path target must be absolute: {}", path.display());
+            }
+            Ok(ResolvedTarget {
+                kind: SkillTargetKind::Path,
+                role: target_role.unwrap_or(SkillTargetRole::Development),
+                root: path,
+            })
+        }
+        Some(other) => bail!("invalid target: {other}"),
+    }
+}
+
+fn user_skills_dir(config: &ForgeConfig) -> Result<PathBuf> {
+    if let Some(path) = config.skills_user_dir.as_ref() {
+        return Ok(expand_path(path));
+    }
+    let home = env::var("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".agents").join("skills"))
+}
+
+fn parse_skill_frontmatter(body: &str) -> Result<SkillFrontmatter> {
+    let rest = body
+        .strip_prefix("---\n")
+        .or_else(|| body.strip_prefix("---\r\n"))
+        .ok_or_else(|| anyhow!("missing opening frontmatter delimiter"))?;
+    let end = rest
+        .find("\n---")
+        .or_else(|| rest.find("\r\n---"))
+        .ok_or_else(|| anyhow!("missing closing frontmatter delimiter"))?;
+    let frontmatter = &rest[..end];
+    let parsed: SkillFrontmatter = serde_yaml::from_str(frontmatter)
+        .context("failed to parse YAML frontmatter")?;
+    Ok(parsed)
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillFrontmatter {
+    name: String,
+    description: String,
+}
+
+fn hash_skill_files(files: &BTreeMap<String, Vec<u8>>) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for (path, bytes) in files {
+        for byte in path.as_bytes().iter().chain([0u8].iter()).chain(bytes.iter()) {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    format!("{hash:016x}")
+}
+
+fn build_diff_files(source: &BTreeMap<String, Vec<u8>>, target: &BTreeMap<String, Vec<u8>>) -> Vec<SkillDiffFile> {
+    let mut names = BTreeSet::new();
+    names.extend(source.keys().cloned());
+    names.extend(target.keys().cloned());
+    names.into_iter()
+        .map(|path| {
+            let source_hash = source.get(&path).map(hash_bytes);
+            let target_hash = target.get(&path).map(hash_bytes);
+            let status = match (source.get(&path), target.get(&path)) {
+                (Some(lhs), Some(rhs)) if lhs == rhs => "same",
+                (Some(_), Some(_)) => "changed",
+                (Some(_), None) => "added",
+                (None, Some(_)) => "removed",
+                (None, None) => "same",
+            };
+            SkillDiffFile {
+                path,
+                status: status.to_string(),
+                source_hash,
+                target_hash,
+            }
+        })
+        .collect()
+}
+
+fn hash_bytes(bytes: &Vec<u8>) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn upsert_managed_install(state: &mut ForgeState, entry: ManagedSkillInstall) {
+    if let Some(existing) = state
+        .managed_skill_installs
+        .iter_mut()
+        .find(|current| current.skill_name == entry.skill_name && current.target_path == entry.target_path)
+    {
+        *existing = entry;
+        return;
+    }
+    state.managed_skill_installs.push(entry);
+    state.managed_skill_installs.sort_by(|a, b| a.skill_name.cmp(&b.skill_name).then(a.target_path.cmp(&b.target_path)));
+}
+
+fn matches_scope(role: &SkillTargetRole, scope: SkillsStatusScope) -> bool {
+    match scope {
+        SkillsStatusScope::All => true,
+        SkillsStatusScope::Mainline => *role == SkillTargetRole::Mainline,
+        SkillsStatusScope::Development => *role == SkillTargetRole::Development,
+    }
+}
+
+fn skills_status(args: SkillsStatusArgs) -> Result<SkillsStatusResult> {
+    let config = load_config()?;
+    let state = load_state_or_default()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = auto_source_kind(repo_path.as_deref());
+    let target_filter = match args.target {
+        Some(raw) => Some(resolve_target(Some(raw.as_str()), &config, repo_path.as_deref(), None)?),
+        None => None,
+    };
+    skills_status_with_source(&config, &state, source_kind, repo_path, args.scope, target_filter)
+}
+
+fn skills_status_with_source(
+    config: &ForgeConfig,
+    state: &ForgeState,
+    source_kind: SkillSourceKind,
+    repo_path: Option<PathBuf>,
+    scope: SkillsStatusScope,
+    target_filter: Option<ResolvedTarget>,
+) -> Result<SkillsStatusResult> {
+    let defs = load_skills_for_source(&source_kind, repo_path.as_deref())?;
+    let source_hashes = defs
+        .iter()
+        .map(|def| (def.name.clone(), hash_skill_files(&def.files)))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut entries = Vec::new();
+    for install in &state.managed_skill_installs {
+        if !matches_scope(&install.target_role, scope) {
+            continue;
+        }
+        if let Some(filter) = target_filter.as_ref() {
+            if install.target_root != filter.root.display().to_string()
+                || install.target_kind != filter.kind
+                || install.target_role != filter.role
+            {
+                continue;
+            }
+        }
+        let target_path = PathBuf::from(&install.target_path);
+        if !target_path.exists() {
+            entries.push(SkillStatusEntry {
+                name: install.skill_name.clone(),
+                target_kind: target_kind_name(&install.target_kind).to_string(),
+                target_role: target_role_name(&install.target_role).to_string(),
+                target_path: install.target_path.clone(),
+                state: "missing".to_string(),
+                source_kind: source_kind_name(&source_kind).to_string(),
+                source_hash: source_hashes.get(&install.skill_name).cloned(),
+                target_hash: None,
+            });
+            continue;
+        }
+
+        let target_files = load_skill_files_from_dir(&target_path)?;
+        let target_hash = hash_skill_files(&target_files);
+        let source_hash = source_hashes.get(&install.skill_name).cloned();
+        let state_name = match source_hash.as_ref() {
+            Some(hash) if hash == &target_hash => "up_to_date",
+            Some(_) => "out_of_date",
+            None => "diverged",
+        };
+        entries.push(SkillStatusEntry {
+            name: install.skill_name.clone(),
+            target_kind: target_kind_name(&install.target_kind).to_string(),
+            target_role: target_role_name(&install.target_role).to_string(),
+            target_path: install.target_path.clone(),
+            state: state_name.to_string(),
+            source_kind: source_kind_name(&source_kind).to_string(),
+            source_hash,
+            target_hash: Some(target_hash),
+        });
+    }
+
+    for target in managed_target_roots(config, repo_path.as_deref())? {
+        if !matches_scope(&target.role, scope) {
+            continue;
+        }
+        if let Some(filter) = target_filter.as_ref() {
+            if target.root != filter.root || target.kind != filter.kind || target.role != filter.role {
+                continue;
+            }
+        }
+        if !target.root.exists() {
+            continue;
+        }
+        for def in &defs {
+            let candidate = target.root.join(&def.name);
+            if !candidate.exists() {
+                continue;
+            }
+            let managed = state
+                .managed_skill_installs
+                .iter()
+                .any(|entry| entry.target_path == candidate.display().to_string());
+            if managed {
+                continue;
+            }
+            let target_files = load_skill_files_from_dir(&candidate)?;
+            entries.push(SkillStatusEntry {
+                name: def.name.clone(),
+                target_kind: target_kind_name(&target.kind).to_string(),
+                target_role: target_role_name(&target.role).to_string(),
+                target_path: candidate.display().to_string(),
+                state: "unmanaged_collision".to_string(),
+                source_kind: source_kind_name(&source_kind).to_string(),
+                source_hash: source_hashes.get(&def.name).cloned(),
+                target_hash: Some(hash_skill_files(&target_files)),
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name).then(a.target_path.cmp(&b.target_path)));
+    Ok(SkillsStatusResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        scope: status_scope_name(scope).to_string(),
+        entries,
+    })
+}
+
+fn managed_target_roots(config: &ForgeConfig, repo_path: Option<&Path>) -> Result<Vec<ResolvedTarget>> {
+    let mut targets = vec![ResolvedTarget {
+        kind: SkillTargetKind::User,
+        role: SkillTargetRole::Mainline,
+        root: user_skills_dir(config)?,
+    }];
+    if let Some(repo) = repo_path {
+        targets.push(ResolvedTarget {
+            kind: SkillTargetKind::ForgeRepo,
+            role: SkillTargetRole::Development,
+            root: repo.join(
+                config
+                    .forge_repo_install_subpath
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_FORGE_REPO_INSTALL_SUBPATH.to_string()),
+            ),
+        });
+    }
+    Ok(targets)
+}
+
+fn source_kind_name(kind: &SkillSourceKind) -> &'static str {
+    match kind {
+        SkillSourceKind::RepoCheckout => "repo",
+        SkillSourceKind::Release => "release",
+    }
+}
+
+fn target_kind_name(kind: &SkillTargetKind) -> &'static str {
+    match kind {
+        SkillTargetKind::User => "user",
+        SkillTargetKind::ForgeRepo => "forge_repo",
+        SkillTargetKind::Path => "path",
+    }
+}
+
+fn target_role_name(role: &SkillTargetRole) -> &'static str {
+    match role {
+        SkillTargetRole::Mainline => "mainline",
+        SkillTargetRole::Development => "development",
+    }
+}
+
+fn status_scope_name(scope: SkillsStatusScope) -> &'static str {
+    match scope {
+        SkillsStatusScope::Mainline => "mainline",
+        SkillsStatusScope::Development => "development",
+        SkillsStatusScope::All => "all",
+    }
+}
+
+fn target_to_flag(kind: &SkillTargetKind, role: &SkillTargetRole, root: &Path) -> String {
+    match kind {
+        SkillTargetKind::User => format!("user@{}", target_role_name(role)),
+        SkillTargetKind::ForgeRepo => format!("forge_repo@{}", target_role_name(role)),
+        SkillTargetKind::Path => format!("path:{}@{}", root.display(), target_role_name(role)),
     }
 }
