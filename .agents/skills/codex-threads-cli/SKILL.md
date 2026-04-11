@@ -7,6 +7,8 @@ description: Use the Forge `codex-threads` CLI to sync, search, resolve, and rea
 
 This skill covers the Forge `codex-threads` binary. If the user may need another Forge CLI, check `forge-tools` first and come back here once local Codex session retrieval is the right fit.
 
+If the task is about designing new Forge behavior rather than reading local session archives, route to `design-algorithm` first.
+
 Start narrow:
 
 - `codex-threads --json sync`

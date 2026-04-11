@@ -4,6 +4,8 @@ This document adapts Elon Musk's five-step "algorithm" into a Forge design and i
 
 The point is not hero worship. The point is sequencing.
 
+This document is the human-readable source of truth. The installable Forge skill that carries the same workflow to downstream users is `design-algorithm`.
+
 Do these steps in order:
 
 1. Question every requirement.

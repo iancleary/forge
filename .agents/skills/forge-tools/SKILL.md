@@ -13,9 +13,11 @@ Pick the narrowest CLI skill that matches the job:
 - `slack-cli-research`: Slack permalink resolution, search, thread reads, and nearby message context.
 - `codex-threads-cli`: local Codex session sync, search, thread resolution, and event inspection.
 - `forge-cli-admin`: local Forge config, permission checks, and self-update commands.
+- `design-algorithm`: shaping and scope-reduction workflow for deciding what should exist before building or automating it.
 
 Default operating rules:
 
+- Use `design-algorithm` when the user is shaping a feature, debating command surface, or deciding whether recurring shell work should become a Forge primitive.
 - Prefer the crate-specific skill once the target CLI is clear.
 - Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.

@@ -12,6 +12,8 @@ Key design notes:
 - `docs/agent-friendly-clis.md` for the cross-repo CLI contract
 - `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
 
+Installed Forge skills also carry this sequence through the `design-algorithm` managed skill, so the shaping workflow propagates beyond the repo checkout.
+
 ## Current CLIs
 
 - `forge` for shared config and self-management
@@ -69,7 +71,7 @@ linear --json project list --limit 5
 
 ## Install For Codex
 
-If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into your Codex user skills directory at `~/.agents/skills` unless you override it in Forge config.
+If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `$HOME/.agents/skills`.
 
 From a local checkout:
 
@@ -93,6 +95,7 @@ Useful commands:
 ```sh
 forge skills list --source all
 forge skills validate --all
+forge skills diff design-algorithm --target user
 forge skills diff linear-cli --target user
 forge skills status --scope all
 forge self update-check

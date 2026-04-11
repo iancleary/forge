@@ -7,6 +7,8 @@ description: "Use the Forge `slack-cli` for deterministic Slack research: permal
 
 This skill covers the Forge `slack-cli` binary. If the user only knows they need "one of the Forge tools," check `forge-tools` first and then use this skill when the task is clearly Slack research.
 
+If the task is actually about shaping a new Forge workflow rather than retrieving Slack evidence, route to `design-algorithm` first.
+
 Start narrow:
 
 - `slack-cli resolve-permalink <url> --json`

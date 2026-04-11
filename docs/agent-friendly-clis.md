@@ -33,6 +33,8 @@ Apply the repo algorithm from `docs/algorithm.md` when deciding whether a pain p
 
 For agent-friendly CLIs, this usually means deleting repeated shell shaping and unnecessary output before adding more commands or flags.
 
+When this workflow should travel with Forge installs rather than stay repo-local, ship it as a managed skill in addition to documenting it here.
+
 ## What Good Looks Like
 
 An agent-friendly CLI should have:
