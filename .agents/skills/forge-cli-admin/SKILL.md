@@ -23,6 +23,7 @@ Working rules:
 - Use `--force` on `self update-check` only when a fresh remote check is required.
 - Use `--repo-path` only when the repo is not in the expected configured location.
 - Non-user targets such as `path:/...` and `forge_repo` default to `development`; use `--target-role mainline` when they are part of the primary managed install set.
+- Route out of this skill when the request is actually about OpenAI documentation (`openai-docs`) or GitHub issues, PRs, reviews, and CI. Prefer GitHub plugin skills and `gh` workflows over direct native GitHub Codex app usage when both are viable.
 
 Safety:
 
