@@ -162,6 +162,7 @@ struct ThreadMatch {
     cwd: Option<String>,
     model: Option<String>,
     message_count: usize,
+    matched_preview: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -328,49 +329,65 @@ fn load_index() -> Result<ThreadIndex> {
 
 fn search_messages(index: &ThreadIndex, query: &str, limit: usize) -> MessageSearchResult {
     let needle = query.to_lowercase();
+    let tokens = query_tokens(query);
     let mut matches = index
         .messages
         .iter()
-        .filter(|message| message.text.to_lowercase().contains(&needle))
-        .take(limit)
-        .map(|message| MessageMatch {
-            session_id: message.session_id.clone(),
-            thread_name: message.thread_name.clone(),
-            timestamp: message.timestamp.clone(),
-            role: message.role.clone(),
-            preview: message.preview.clone(),
-            text: message.text.clone(),
+        .filter_map(|message| {
+            let score = score_text(&message.text, &needle, &tokens);
+            if score == 0 {
+                return None;
+            }
+            Some((score, MessageMatch {
+                session_id: message.session_id.clone(),
+                thread_name: message.thread_name.clone(),
+                timestamp: message.timestamp.clone(),
+                role: message.role.clone(),
+                preview: message.preview.clone(),
+                text: message.text.clone(),
+            }))
         })
         .collect::<Vec<_>>();
-    matches.sort_by_key(|message| Reverse(message.timestamp.clone()));
+    matches.sort_by(|(left_score, left), (right_score, right)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| right.timestamp.cmp(&left.timestamp))
+    });
 
     MessageSearchResult {
         query: query.to_string(),
-        matches,
+        matches: matches
+            .into_iter()
+            .take(limit)
+            .map(|(_, message)| message)
+            .collect(),
     }
 }
 
 fn resolve_threads(index: &ThreadIndex, query: &str, limit: usize) -> ThreadsResolveResult {
     let needle = query.to_lowercase();
-    let mut scores: HashMap<String, usize> = HashMap::new();
+    let tokens = query_tokens(query);
+    let mut scores: HashMap<String, (usize, Option<String>)> = HashMap::new();
 
     for thread in &index.threads {
-        let mut score = 0;
-        if thread.thread_name.to_lowercase().contains(&needle) {
-            score += 10;
-        }
+        let mut score = score_text(&thread.thread_name, &needle, &tokens) * 10;
         if let Some(cwd) = thread.cwd.as_ref() {
-            if cwd.to_lowercase().contains(&needle) {
-                score += 2;
-            }
+            score += score_text(cwd, &needle, &tokens) * 2;
         }
+
+        let mut best_preview = None;
+        let mut best_message_score = 0;
         for message in index.messages.iter().filter(|message| message.session_id == thread.id) {
-            if message.text.to_lowercase().contains(&needle) {
-                score += 1;
+            let message_score = score_text(&message.text, &needle, &tokens);
+            if message_score > best_message_score {
+                best_message_score = message_score;
+                best_preview = Some(message.preview.clone());
             }
         }
+        score += best_message_score * 3;
+
         if score > 0 {
-            scores.insert(thread.id.clone(), score);
+            scores.insert(thread.id.clone(), (score, best_preview));
         }
     }
 
@@ -378,13 +395,14 @@ fn resolve_threads(index: &ThreadIndex, query: &str, limit: usize) -> ThreadsRes
         .threads
         .iter()
         .filter_map(|thread| {
-            scores.get(&thread.id).map(|score| (*score, ThreadMatch {
+            scores.get(&thread.id).map(|(score, preview)| (*score, ThreadMatch {
                 id: thread.id.clone(),
                 thread_name: thread.thread_name.clone(),
                 updated_at: thread.updated_at.clone(),
                 cwd: thread.cwd.clone(),
                 model: thread.model.clone(),
                 message_count: thread.message_count,
+                matched_preview: preview.clone(),
             }))
         })
         .collect::<Vec<_>>();
@@ -820,6 +838,28 @@ fn is_meaningful_title_candidate(text: &str) -> bool {
         || trimmed.starts_with("<INSTRUCTIONS>")
         || trimmed.starts_with("You are Codex")
         || trimmed.contains("# AGENTS.md instructions for "))
+}
+
+fn query_tokens(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .map(|token| token.trim().to_lowercase())
+        .filter(|token| !token.is_empty())
+        .collect()
+}
+
+fn score_text(text: &str, needle: &str, tokens: &[String]) -> usize {
+    let haystack = text.to_lowercase();
+    let mut score = 0;
+    if haystack.contains(needle) {
+        score += 100;
+    }
+    for token in tokens {
+        if haystack.contains(token) {
+            score += 10;
+        }
+    }
+    score
 }
 
 fn now_rfc3339_fallback() -> String {

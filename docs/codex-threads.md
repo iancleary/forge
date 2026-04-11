@@ -50,6 +50,29 @@ Default local index path:
 
 Optional override env vars can be added later if needed.
 
+## Install And Run
+
+Run from source during development:
+
+```sh
+cargo run -p codex-threads -- --json sync
+cargo run -p codex-threads -- --json messages search "build a CLI" --limit 5
+```
+
+Install locally:
+
+```sh
+cargo install --path crates/codex-threads
+```
+
+Then run:
+
+```sh
+codex-threads --json sync
+codex-threads --json threads resolve "codex threads"
+codex-threads --json events read <session-id> --limit 20
+```
+
 ## Commands
 
 ### `sync`
@@ -68,6 +91,11 @@ codex-threads --json messages search <query> [--limit <n>]
 
 Searches extracted user and assistant messages from the local index.
 
+Ranking notes:
+
+- exact phrase matches rank above token-only matches
+- more recent results break score ties
+
 ### `threads resolve`
 
 ```sh
@@ -75,6 +103,11 @@ codex-threads --json threads resolve <query> [--limit <n>]
 ```
 
 Finds likely matching threads by thread name and extracted message text.
+
+Ranking notes:
+
+- thread-name matches are weighted more heavily than body matches
+- message-body matches contribute a preview snippet for context
 
 ### `threads read`
 
@@ -138,7 +171,6 @@ Exclude from the main search index:
 
 ## Future Extensions
 
-- better ranking
 - incremental sync
 - file-backed full-text index
 - extraction of tool-call summaries

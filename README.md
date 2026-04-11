@@ -37,6 +37,7 @@ Run from source during development:
 ```sh
 cargo run -p forge -- self update-check --force
 cargo run -p slack-cli -- --help
+cargo run -p codex-threads -- --json sync
 ```
 
 Install locally:
@@ -44,6 +45,7 @@ Install locally:
 ```sh
 cargo install --path crates/forge
 cargo install --path crates/slack-cli
+cargo install --path crates/codex-threads
 ```
 
 Then run:
@@ -51,4 +53,5 @@ Then run:
 ```sh
 forge self update-check --force
 slack-cli search "actual PDF" --limit 5
+codex-threads --json messages search "build a CLI" --limit 5
 ```
