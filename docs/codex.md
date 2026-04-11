@@ -228,7 +228,6 @@ Good candidates for a Forge-owned config template:
 
 - preferred default model
 - preferred default reasoning effort
-- portable personality choices
 - stable plugin enablement that is not machine-specific
 
 Bad candidates:
@@ -258,8 +257,6 @@ codex/
       config.portable.toml
     fragments/
       principles.md
-      characters/
-        pragmatic-builder.md
 ```
 
 Use this directory as source material, not as the live installed location.
@@ -292,7 +289,7 @@ The dotfiles pattern:
 is understandable as an authoring system, but the official Codex surfaces are narrower. My recommendation is:
 
 - keep `AGENTS.md`, rules, and skills as the main managed Codex runtime surfaces
-- treat `principles.md` and character fragments as optional source inputs, not required runtime files
+- treat `principles.md` as an optional source input, not a required runtime file
 - treat `config.toml` as template-driven and only partially managed
 
 That gives you a cleaner contract:
@@ -317,36 +314,33 @@ That suggests another useful refinement for Forge-managed skills:
 
 This is likely better than overloading `AGENTS.md` with all routing nuance.
 
-## Characters And Roles
+## Render And Install Model
 
-Do not make `soul.md` a required runtime file.
+The recommended next product shape is explicit render/apply semantics rather than direct blind copying.
 
-If you want switchable voices or roles, the cleaner model is:
+Preferred workflow:
 
-- keep the installed runtime surface small
-- keep character definitions as Forge authoring fragments
-- later add an explicit Forge command that renders or installs a chosen character into the managed user `AGENTS.md`
+- `forge codex render` to show the rendered user-scoped Codex assets from Forge-owned sources
+- `forge codex diff` to compare rendered output with the live local files
+- `forge codex install` to apply the rendered output explicitly
 
-Recommended source shape:
+Design constraints:
 
-- `codex/user/fragments/characters/*.md`
+- no silent overwrite of live local Codex files
+- preview and diff should be cheap
+- apply should be explicit
+- machine-local config stays local unless the user chooses to merge a portable fragment
 
-Potential future CLI surface:
-
-- `forge codex profile list`
-- `forge codex profile preview <name>`
-- `forge codex profile apply <name>`
-
-That is better than proliferating undocumented runtime files in `~/.codex/`.
+This supports speed and low prompt count without broadening destructive defaults.
 
 ## Recommended Next Steps
 
 1. Add a Forge-managed source file for the user `AGENTS.md` baseline.
 2. Add a Forge-managed source file for `user-policy.rules`.
-3. Keep `principles.md` and character fragments as authoring inputs only, not as separate runtime files.
+3. Keep `principles.md` as an authoring input only, not as a separate runtime file.
 4. Add a documented portable config template, not a full managed replacement for live `config.toml`.
 5. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
-6. Decide later whether Forge should install these assets directly or generate them from templates.
+6. Define explicit `render`, `diff`, and `install` semantics before adding any automatic deployment behavior.
 
 ## Acceptance Test For Putting Something In Forge
 
