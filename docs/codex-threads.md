@@ -48,7 +48,11 @@ Default local index path:
 
 - `~/.config/forge/codex-threads/index.json`
 
-Optional override env vars can be added later if needed.
+Overrides:
+
+- `--codex-home <path>`
+- `--index-path <path>`
+- `CODEX_HOME`
 
 ## Install And Run
 
@@ -57,6 +61,7 @@ Run from source during development:
 ```sh
 cargo run -p codex-threads -- --json sync
 cargo run -p codex-threads -- --json messages search "build a CLI" --limit 5
+cargo run -p codex-threads -- --codex-home ~/.codex --index-path /tmp/codex-index.json --json sync
 ```
 
 Install locally:
@@ -82,6 +87,11 @@ codex-threads --json sync
 ```
 
 Scans the local session archive and writes a compact searchable index.
+
+Useful flags:
+
+- `--codex-home <path>`
+- `--index-path <path>`
 
 ### `messages search`
 

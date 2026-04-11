@@ -17,6 +17,10 @@ use serde_json::Value;
 struct Cli {
     #[arg(long, global = true, help = "Emit machine-readable JSON")]
     json: bool,
+    #[arg(long, global = true, help = "Override the Codex home directory; defaults to ~/.codex or CODEX_HOME")]
+    codex_home: Option<PathBuf>,
+    #[arg(long, global = true, help = "Override the local index path; defaults to ~/.config/forge/codex-threads/index.json")]
+    index_path: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -225,28 +229,29 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    let paths = Paths::from_cli(&cli)?;
     match cli.command {
         Command::Sync => {
-            let data = sync_index()?;
+            let data = sync_index(&paths)?;
             print_json(&Envelope { ok: true, data })?;
         }
         Command::Messages(MessagesCommand::Search(args)) => {
-            let index = load_index()?;
+            let index = load_index(&paths)?;
             let data = search_messages(&index, &args.query, args.limit);
             print_json(&Envelope { ok: true, data })?;
         }
         Command::Threads(ThreadsCommand::Resolve(args)) => {
-            let index = load_index()?;
+            let index = load_index(&paths)?;
             let data = resolve_threads(&index, &args.query, args.limit);
             print_json(&Envelope { ok: true, data })?;
         }
         Command::Threads(ThreadsCommand::Read(args)) => {
-            let index = load_index()?;
+            let index = load_index(&paths)?;
             let data = read_thread(&index, &args.session_id)?;
             print_json(&Envelope { ok: true, data })?;
         }
         Command::Events(EventsCommand::Read(args)) => {
-            let data = read_events(&args.session_id, args.limit)?;
+            let data = read_events(&paths, &args.session_id, args.limit)?;
             print_json(&Envelope { ok: true, data })?;
         }
     }
@@ -264,9 +269,40 @@ where
     Ok(())
 }
 
-fn sync_index() -> Result<SyncResult> {
-    let sessions_root = codex_sessions_dir()?;
-    let session_index_path = codex_session_index_path()?;
+#[derive(Debug, Clone)]
+struct Paths {
+    codex_home: PathBuf,
+    index_path: PathBuf,
+}
+
+impl Paths {
+    fn from_cli(cli: &Cli) -> Result<Self> {
+        let codex_home = match cli.codex_home.as_ref() {
+            Some(path) => path.clone(),
+            None => codex_root()?,
+        };
+        let index_path = match cli.index_path.as_ref() {
+            Some(path) => path.clone(),
+            None => default_local_index_path()?,
+        };
+        Ok(Self {
+            codex_home,
+            index_path,
+        })
+    }
+
+    fn sessions_dir(&self) -> PathBuf {
+        self.codex_home.join("sessions")
+    }
+
+    fn session_index_path(&self) -> PathBuf {
+        self.codex_home.join("session_index.jsonl")
+    }
+}
+
+fn sync_index(paths: &Paths) -> Result<SyncResult> {
+    let sessions_root = paths.sessions_dir();
+    let session_index_path = paths.session_index_path();
     let session_index = read_session_index(&session_index_path)?
         .into_iter()
         .map(|entry| (entry.id.clone(), entry))
@@ -302,7 +338,7 @@ fn sync_index() -> Result<SyncResult> {
         messages,
     };
 
-    let index_path = local_index_path()?;
+    let index_path = paths.index_path.clone();
     if let Some(parent) = index_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -320,8 +356,8 @@ fn sync_index() -> Result<SyncResult> {
     })
 }
 
-fn load_index() -> Result<ThreadIndex> {
-    let index_path = local_index_path()?;
+fn load_index(paths: &Paths) -> Result<ThreadIndex> {
+    let index_path = paths.index_path.clone();
     let body = fs::read_to_string(&index_path)
         .with_context(|| format!("failed to read {}", index_path.display()))?;
     serde_json::from_str(&body).with_context(|| format!("failed to parse {}", index_path.display()))
@@ -441,8 +477,8 @@ fn read_thread(index: &ThreadIndex, session_id: &str) -> Result<ThreadReadResult
     Ok(ThreadReadResult { thread, messages })
 }
 
-fn read_events(session_id: &str, limit: usize) -> Result<EventsReadResult> {
-    let session_path = find_session_file(&codex_sessions_dir()?, session_id)?
+fn read_events(paths: &Paths, session_id: &str, limit: usize) -> Result<EventsReadResult> {
+    let session_path = find_session_file(&paths.sessions_dir(), session_id)?
         .ok_or_else(|| anyhow!("session not found"))?;
     let file = fs::File::open(&session_path)
         .with_context(|| format!("failed to open {}", session_path.display()))?;
@@ -768,7 +804,7 @@ fn session_id_from_path(path: &Path) -> Option<String> {
     stem.rsplit('-').next().map(ToString::to_string)
 }
 
-fn local_index_path() -> Result<PathBuf> {
+fn default_local_index_path() -> Result<PathBuf> {
     Ok(config_dir_path()?.join("codex-threads").join("index.json"))
 }
 
@@ -789,14 +825,6 @@ fn codex_root() -> Result<PathBuf> {
     }
     let home = env::var("HOME").context("HOME is not set")?;
     Ok(PathBuf::from(home).join(".codex"))
-}
-
-fn codex_sessions_dir() -> Result<PathBuf> {
-    Ok(codex_root()?.join("sessions"))
-}
-
-fn codex_session_index_path() -> Result<PathBuf> {
-    Ok(codex_root()?.join("session_index.jsonl"))
 }
 
 fn expand_path(path: &str) -> PathBuf {
