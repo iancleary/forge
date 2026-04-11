@@ -114,6 +114,23 @@ State cache:
 - `forge self update` is explicit on purpose
 - Forge-managed skills are deployed artifacts, not peer sources of truth
 
+## Forge CLI-First Guidance
+
+Forge should be the primary interface for Forge-managed domains when the task needs stable, reusable output.
+
+- prefer Forge commands when the result should be low-token, deterministic, and ready for a follow-up command
+- use `jq` only for one-off local projection after a Forge command already returned the right records
+- use `rg` for local repo exploration and unstructured file search, not as the main interface to an external system Forge already models
+
+When deciding whether to expand Forge instead of relying on shell shaping, look for repeated pain:
+
+- the same `jq` cleanup appears across multiple sessions
+- the same noisy fields keep being dropped before reasoning can begin
+- the same IDs, summaries, or normalized fields are needed every time
+- the desired shaped output can be described as a stable example in the docs
+
+When those signals are present, fold the pain into Forge as the smallest possible stable primitive: a narrow flag, output mode, or subcommand rather than a broad generic query feature.
+
 ## Versioning Policy
 
 Forge uses semver-compatible calendar versioning for crates:

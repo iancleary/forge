@@ -122,3 +122,14 @@ These are recommended companions, not part of Forge's managed skill lifecycle. K
 - use `openai-docs` when the task is about OpenAI products rather than the Forge toolchain
 - prefer `gh`-driven GitHub workflows and GitHub plugin skills when the task is about repository hosting, PRs, issues, reviews, or CI
 - avoid direct use of the native GitHub Codex app path when an equivalent `gh` or plugin-skill workflow exists, because it is less deterministic and more likely to trigger extra permission prompts
+
+## Forge Command Policy
+
+For Forge-managed tools, prefer the Forge CLI first and use shell tools as fallbacks, not as the primary product interface.
+
+- use Forge commands when the task is part of a stable contract and the output should be reusable, low-token, and deterministic
+- use `jq` for one-off local reshaping after a CLI already returned the right data
+- use `rg` for repository and local-file exploration, not as a substitute for domain-specific CLI reads
+- when the same `jq` cleanup keeps recurring, treat that as a signal to add a narrow Forge flag, subcommand, or output mode
+
+The pattern is: repeated pain in agent runs should first be observed, then named as a narrow task, then folded into Forge as the smallest stable primitive that removes the repeated shell shaping.
