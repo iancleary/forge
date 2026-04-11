@@ -801,7 +801,13 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             issues.push("frontmatter field `description` is required".to_string());
         }
         if def.name == "forge-tools" {
-            for required in ["linear-cli", "slack-cli-research", "codex-threads-cli", "forge-cli-admin"] {
+            for required in [
+                "design-algorithm",
+                "linear-cli",
+                "slack-cli-research",
+                "codex-threads-cli",
+                "forge-cli-admin",
+            ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
                 }
