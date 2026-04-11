@@ -16,6 +16,7 @@ Do not treat `docs/` as the implementation area.
 ## Before Changing Code
 
 - read the relevant CLI spec in `docs/`
+- read [docs/algorithm.md](docs/algorithm.md) when shaping or reviewing non-trivial changes
 - inspect the target crate in `crates/`
 - check `git status`
 - run `cargo check` before finalizing changes
@@ -76,3 +77,15 @@ Before committing:
 - build narrow, composable primitives first
 - keep assistant-specific workflow CLIs separate from shared general-purpose CLIs
 - do not add broad automation or repo-specific behavior unless it is explicitly part of the CLI contract
+
+## Design Algorithm
+
+Use the repo algorithm in `docs/algorithm.md` when deciding what to build:
+
+- question every requirement
+- delete parts or process before optimizing
+- simplify and optimize only what remains necessary
+- accelerate cycle time after the contract is clean
+- automate last
+
+For Forge, this means avoiding automation of noisy or speculative workflows. Prefer deleting shell shaping, duplicated policy, or unnecessary command surface before adding new primitives.

@@ -7,6 +7,11 @@ Agent-friendly CLIs built as Rust binaries.
 - `docs/` contains product and design specs for each CLI
 - `crates/` contains Rust crates for each CLI implementation
 
+Key design notes:
+
+- `docs/agent-friendly-clis.md` for the cross-repo CLI contract
+- `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
+
 ## Current CLIs
 
 - `forge` for shared config and self-management
