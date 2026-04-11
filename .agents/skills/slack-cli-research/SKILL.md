@@ -1,6 +1,6 @@
 ---
 name: slack-cli-research
-description: Use the Forge `slack-cli` for deterministic Slack research: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious.
+description: "Use the Forge `slack-cli` for deterministic Slack research: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious."
 ---
 
 # Slack CLI Research
