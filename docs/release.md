@@ -13,6 +13,11 @@ git push origin main
 gh release create 2026.410.0 --target main --title 2026.410.0 --generate-notes --latest
 ```
 
+Shell note:
+
+- do not wrap the `gh release create` command across lines unless you use trailing `\`
+- if `--generate-notes` ends up on its own line, zsh will try to execute it as a separate command
+
 Why:
 
 - `gh release create` already has a good command surface
