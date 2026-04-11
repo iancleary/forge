@@ -1,5 +1,5 @@
 [package]
-name = "linear-cli"
+name = "linear"
 version = "2026.410.3"
 edition = "2024"
 

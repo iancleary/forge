@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 const API_URL: &str = "https://api.linear.app/graphql";
 
 #[derive(Parser, Debug)]
-#[command(name = "linear-cli")]
+#[command(name = "linear")]
 #[command(about = "Linear GraphQL wrapper for agent-friendly issue workflows")]
 #[command(version)]
 struct Cli {
@@ -480,12 +480,19 @@ where
 
 fn print_completions(shell: Shell) {
     let mut command = Cli::command();
-    generate(shell, &mut command, "linear-cli", &mut std::io::stdout());
+    generate(shell, &mut command, "linear", &mut std::io::stdout());
 }
 
 fn load_config() -> Result<ConfigFile> {
     let path = config_file_path()?;
     if !path.exists() {
+        let legacy_path = legacy_config_file_path()?;
+        if legacy_path.exists() {
+            let body = fs::read_to_string(&legacy_path)
+                .with_context(|| format!("failed to read config file at {}", legacy_path.display()))?;
+            return toml::from_str(&body)
+                .with_context(|| format!("failed to parse config file at {}", legacy_path.display()));
+        }
         return Ok(ConfigFile::default());
     }
     let body = fs::read_to_string(&path)
@@ -514,6 +521,7 @@ fn write_config_template(force: bool) -> Result<ConfigInitResult> {
 
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
+    ensure_owner_only_permissions(&config_dir, true)?;
 
     if config_file.exists() && !force {
         return Ok(ConfigInitResult {
@@ -530,6 +538,7 @@ fn write_config_template(force: bool) -> Result<ConfigInitResult> {
     );
     fs::write(&config_file, body)
         .with_context(|| format!("failed to write config file at {}", config_file.display()))?;
+    ensure_owner_only_permissions(&config_file, false)?;
 
     Ok(ConfigInitResult {
         config_dir: config_dir.display().to_string(),
@@ -545,6 +554,7 @@ fn login(args: AuthLoginArgs) -> Result<AuthLoginResult> {
 
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
+    ensure_owner_only_permissions(&config_dir, true)?;
 
     if token_file.exists() && !args.force {
         bail!("token file already exists; rerun with --force to overwrite");
@@ -561,6 +571,7 @@ fn login(args: AuthLoginArgs) -> Result<AuthLoginResult> {
 
     fs::write(&token_file, format!("{api_key}\n"))
         .with_context(|| format!("failed to write token file at {}", token_file.display()))?;
+    ensure_owner_only_permissions(&token_file, false)?;
 
     Ok(AuthLoginResult {
         token_file: token_file.display().to_string(),
@@ -611,13 +622,22 @@ fn read_token(config: &ConfigFile) -> Result<String> {
             return Ok(token);
         }
     }
-    bail!("missing Linear auth; set LINEAR_API_KEY or create ~/.config/forge/linear-cli/config.toml or ~/.config/forge/linear-cli/token")
+    let legacy_token_path = legacy_config_dir_path()?.join("token");
+    if legacy_token_path.exists() {
+        let token = fs::read_to_string(&legacy_token_path)
+            .with_context(|| format!("failed to read token file at {}", legacy_token_path.display()))?;
+        let token = token.trim().to_string();
+        if !token.is_empty() {
+            return Ok(token);
+        }
+    }
+    bail!("missing Linear auth; set LINEAR_API_KEY or create ~/.config/forge/linear/config.toml or ~/.config/forge/linear/token")
 }
 
 fn resolve_team_id(team_id: Option<String>, config: &ConfigFile) -> Result<String> {
     match team_id.or_else(|| config.team_id.clone()) {
         Some(id) if !id.trim().is_empty() => Ok(id),
-        _ => bail!("missing team_id; pass --team-id or configure team_id in ~/.config/forge/linear-cli/config.toml"),
+        _ => bail!("missing team_id; pass --team-id or configure team_id in ~/.config/forge/linear/config.toml"),
     }
 }
 
@@ -636,7 +656,7 @@ fn resolve_description(description: Option<String>, description_file: Option<Pat
 
 fn linear_client(token: &str) -> Result<Client> {
     Client::builder()
-        .user_agent("forge/linear-cli")
+        .user_agent("forge/linear")
         .default_headers({
             let mut headers = reqwest::header::HeaderMap::new();
             headers.insert(
@@ -1041,6 +1061,21 @@ fn config_dir_path() -> Result<PathBuf> {
         return Ok(expand_path(&path));
     }
     if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
+        return Ok(PathBuf::from(xdg).join("forge").join("linear"));
+    }
+    let home = env::var("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home)
+        .join(".config")
+        .join("forge")
+        .join("linear"))
+}
+
+fn config_file_path() -> Result<PathBuf> {
+    Ok(config_dir_path()?.join("config.toml"))
+}
+
+fn legacy_config_dir_path() -> Result<PathBuf> {
+    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(xdg).join("forge").join("linear-cli"));
     }
     let home = env::var("HOME").context("HOME is not set")?;
@@ -1050,8 +1085,27 @@ fn config_dir_path() -> Result<PathBuf> {
         .join("linear-cli"))
 }
 
-fn config_file_path() -> Result<PathBuf> {
-    Ok(config_dir_path()?.join("config.toml"))
+fn legacy_config_file_path() -> Result<PathBuf> {
+    Ok(legacy_config_dir_path()?.join("config.toml"))
+}
+
+fn ensure_owner_only_permissions(path: &PathBuf, is_dir: bool) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = if is_dir { 0o700 } else { 0o600 };
+        fs::set_permissions(path, PermissionsExt::from_mode(mode))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        let _ = is_dir;
+    }
+
+    Ok(())
 }
 
 fn expand_path(path: &str) -> PathBuf {

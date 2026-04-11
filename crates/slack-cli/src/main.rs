@@ -1,4 +1,8 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    io::{self, Write},
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
@@ -20,12 +24,27 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[command(subcommand)]
+    Auth(AuthCommand),
     ResolvePermalink(ResolvePermalinkArgs),
     ReadThread(ReadThreadArgs),
     #[command(name = "channel-context")]
     ChannelContext(ContextArgs),
     ThreadContext(ThreadContextArgs),
     Search(SearchArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum AuthCommand {
+    Login(AuthLoginArgs),
+}
+
+#[derive(Args, Debug)]
+struct AuthLoginArgs {
+    #[arg(long, help = "Slack API token to save instead of prompting")]
+    token: Option<String>,
+    #[arg(long, help = "Overwrite an existing token file")]
+    force: bool,
 }
 
 #[derive(Args, Debug)]
@@ -103,6 +122,12 @@ struct ErrorEnvelope {
 struct ErrorBody {
     code: String,
     message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthLoginResult {
+    token_file: String,
+    created: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,6 +281,10 @@ async fn main() {
 
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
+        Command::Auth(AuthCommand::Login(args)) => {
+            let data = login(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
         Command::ResolvePermalink(args) => {
             let data = resolve_permalink(&args.permalink)?;
             print_json(&Envelope { ok: true, data })?;
@@ -374,6 +403,49 @@ fn read_token() -> Result<String> {
     )
 }
 
+fn login(args: AuthLoginArgs) -> Result<AuthLoginResult> {
+    let config_dir = config_dir_path()?;
+    let token_file = config_dir.join("token");
+
+    fs::create_dir_all(&config_dir)
+        .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
+    ensure_owner_only_permissions(&config_dir, true)?;
+
+    if token_file.exists() && !args.force {
+        bail!("token file already exists; rerun with --force to overwrite");
+    }
+
+    let token = match args.token {
+        Some(token) => token,
+        None => prompt_for_token()?,
+    };
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        bail!("empty Slack token");
+    }
+
+    fs::write(&token_file, format!("{token}\n"))
+        .with_context(|| format!("failed to write token file at {}", token_file.display()))?;
+    ensure_owner_only_permissions(&token_file, false)?;
+
+    Ok(AuthLoginResult {
+        token_file: token_file.display().to_string(),
+        created: true,
+    })
+}
+
+fn prompt_for_token() -> Result<String> {
+    let mut stdout = io::stdout();
+    write!(stdout, "Paste Slack API token: ").context("failed to write auth prompt")?;
+    stdout.flush().context("failed to flush auth prompt")?;
+
+    let mut buffer = String::new();
+    io::stdin()
+        .read_line(&mut buffer)
+        .context("failed to read Slack token from stdin")?;
+    Ok(buffer)
+}
+
 fn config_dir_path() -> Result<PathBuf> {
     if let Ok(path) = env::var("FORGE_SLACK_CLI_CONFIG_DIR") {
         let path = expand_path(&path);
@@ -393,6 +465,25 @@ fn config_dir_path() -> Result<PathBuf> {
 
 fn config_file_path() -> Result<PathBuf> {
     Ok(config_dir_path()?.join("config.toml"))
+}
+
+fn ensure_owner_only_permissions(path: &PathBuf, is_dir: bool) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = if is_dir { 0o700 } else { 0o600 };
+        fs::set_permissions(path, PermissionsExt::from_mode(mode))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        let _ = is_dir;
+    }
+
+    Ok(())
 }
 
 fn expand_path(path: &str) -> PathBuf {
@@ -756,6 +847,8 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         "channel_not_found" => "not_found",
         "ratelimited" => "rate_limited",
         "invalid_query" => "validation_error",
+        msg if msg.contains("token file already exists") => "validation_error",
+        msg if msg.contains("empty Slack token") => "validation_error",
         _ => "internal_error",
     };
 

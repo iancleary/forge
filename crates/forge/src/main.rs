@@ -23,6 +23,8 @@ struct Cli {
 enum Command {
     #[command(name = "self", subcommand)]
     Self_(SelfCommand),
+    #[command(subcommand)]
+    Permissions(PermissionsCommand),
 }
 
 #[derive(Subcommand, Debug)]
@@ -30,6 +32,12 @@ enum SelfCommand {
     #[command(name = "update-check")]
     UpdateCheck(UpdateCheckArgs),
     Update(UpdateArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum PermissionsCommand {
+    Check,
+    Fix,
 }
 
 #[derive(Args, Debug)]
@@ -117,6 +125,22 @@ struct UpdateResult {
     changed: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct PermissionsResult {
+    items: Vec<PermissionItem>,
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionItem {
+    path: String,
+    kind: String,
+    exists: bool,
+    expected_mode: String,
+    actual_mode: Option<String>,
+    ok: bool,
+    changed: bool,
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = run(cli);
@@ -144,6 +168,14 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::Self_(SelfCommand::Update(args)) => {
             let data = update(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Permissions(PermissionsCommand::Check) => {
+            let data = inspect_permissions(false)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Permissions(PermissionsCommand::Fix) => {
+            let data = inspect_permissions(true)?;
             print_json(&Envelope { ok: true, data })?;
         }
     }
@@ -232,6 +264,137 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         after_head: after_head.clone(),
         changed: before_head != after_head,
     })
+}
+
+fn inspect_permissions(apply_fixes: bool) -> Result<PermissionsResult> {
+    let items = managed_permission_targets()?
+        .into_iter()
+        .map(|target| inspect_permission_target(&target, apply_fixes))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(PermissionsResult { items })
+}
+
+fn managed_permission_targets() -> Result<Vec<PermissionTarget>> {
+    let forge_dir = config_dir_path()?;
+    Ok(vec![
+        PermissionTarget::dir(forge_dir.clone(), 0o700),
+        PermissionTarget::file(forge_dir.join("config.toml"), 0o600),
+        PermissionTarget::file(forge_dir.join("state.toml"), 0o600),
+        PermissionTarget::dir(forge_dir.join("slack-cli"), 0o700),
+        PermissionTarget::file(forge_dir.join("slack-cli").join("config.toml"), 0o600),
+        PermissionTarget::file(forge_dir.join("slack-cli").join("token"), 0o600),
+        PermissionTarget::dir(forge_dir.join("linear-cli"), 0o700),
+        PermissionTarget::file(forge_dir.join("linear-cli").join("token"), 0o600),
+        PermissionTarget::file(forge_dir.join("linear-cli").join("config.toml"), 0o600),
+    ])
+}
+
+#[derive(Debug)]
+struct PermissionTarget {
+    path: PathBuf,
+    kind: PermissionKind,
+    expected_mode: u32,
+}
+
+impl PermissionTarget {
+    fn dir(path: PathBuf, expected_mode: u32) -> Self {
+        Self {
+            path,
+            kind: PermissionKind::Dir,
+            expected_mode,
+        }
+    }
+
+    fn file(path: PathBuf, expected_mode: u32) -> Self {
+        Self {
+            path,
+            kind: PermissionKind::File,
+            expected_mode,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum PermissionKind {
+    Dir,
+    File,
+}
+
+fn inspect_permission_target(target: &PermissionTarget, apply_fixes: bool) -> Result<PermissionItem> {
+    let exists = target.path.exists();
+    let expected_mode = format_mode(target.expected_mode);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !exists {
+            return Ok(PermissionItem {
+                path: target.path.display().to_string(),
+                kind: permission_kind_name(target.kind).to_string(),
+                exists: false,
+                expected_mode,
+                actual_mode: None,
+                ok: true,
+                changed: false,
+            });
+        }
+
+        let metadata = fs::metadata(&target.path)
+            .with_context(|| format!("failed to read metadata for {}", target.path.display()))?;
+        let actual_mode_bits = metadata.permissions().mode() & 0o777;
+        let mut changed = false;
+
+        if apply_fixes && actual_mode_bits != target.expected_mode {
+            let permissions = PermissionsExt::from_mode(target.expected_mode);
+            fs::set_permissions(&target.path, permissions).with_context(|| {
+                format!("failed to set permissions on {}", target.path.display())
+            })?;
+            changed = true;
+        }
+
+        let final_mode_bits = if changed {
+            target.expected_mode
+        } else {
+            actual_mode_bits
+        };
+
+        return Ok(PermissionItem {
+            path: target.path.display().to_string(),
+            kind: permission_kind_name(target.kind).to_string(),
+            exists: true,
+            expected_mode,
+            actual_mode: Some(format_mode(final_mode_bits)),
+            ok: final_mode_bits == target.expected_mode,
+            changed,
+        });
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = apply_fixes;
+        let _ = target;
+        Ok(PermissionItem {
+            path: String::new(),
+            kind: String::new(),
+            exists,
+            expected_mode,
+            actual_mode: None,
+            ok: true,
+            changed: false,
+        })
+    }
+}
+
+fn permission_kind_name(kind: PermissionKind) -> &'static str {
+    match kind {
+        PermissionKind::Dir => "dir",
+        PermissionKind::File => "file",
+    }
+}
+
+fn format_mode(mode: u32) -> String {
+    format!("{mode:04o}")
 }
 
 fn print_json<T>(value: &T) -> Result<()>
