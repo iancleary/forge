@@ -36,6 +36,11 @@ Do not commit raw app-settings URLs with workspace IDs or app IDs to this repo. 
 https://app.slack.com/app-settings/<workspace-id>/<app-id>/oauth
 ```
 
+> To get to this URL:
+>
+> Open the Slack app, find the Admin panel setting, and then click "Apps & Workflows"
+> Then installed apps, create a new one or edit the existing one.
+
 That is the Slack App Settings page where you can install the app, review `OAuth & Permissions`, and copy the generated user token after installation.
 
 For public repo docs, prefer naming the UI location instead:

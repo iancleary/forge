@@ -3,6 +3,7 @@
 This file turns the OpenAI "agent-friendly CLI" idea into a working spec for this repo.
 
 Source material:
+
 - OpenAI use case: `https://developers.openai.com/codex/use-cases/agent-friendly-clis`
 - Referenced skill: `https://github.com/openai/skills/tree/main/skills/.curated/cli-creator`
 - Original examples discussed here: `codex-threads`, `slack-cli`, `typefully-cli`
