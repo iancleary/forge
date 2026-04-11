@@ -16,7 +16,7 @@ Start with the smallest command that proves context:
 
 Working rules:
 
-- Use `--json` unless the user explicitly wants the human-readable form.
+- Use `--json` for reads because the skill is consumed by agents, not by a human scanning terminal output directly.
 - Reuse IDs from prior CLI JSON instead of guessing names.
 - Prefer `issue read` before `issue update`.
 - Prefer `project list` or `team list` before asking for identifiers the CLI can discover.

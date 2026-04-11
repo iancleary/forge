@@ -12,6 +12,38 @@ Forge also owns the lifecycle of Forge-managed consumer skills. The detailed ski
 
 ## Commands
 
+### `forge doctor`
+
+```sh
+forge doctor [--json]
+```
+
+Checks whether the local Forge environment is ready for agent workflows.
+
+Current checks:
+
+- required tools: `cargo`, `git`, `gh`, `rg`, `jq`
+- GitHub CLI auth readiness via `gh auth status`
+- Linear token-source presence via `LINEAR_API_KEY`, `~/.config/forge/linear/config.toml`, and `~/.config/forge/linear/token`
+- Slack token-source presence via `SLACK_API_TOKEN`, `~/.config/forge/slack-cli/config.toml`, and `~/.config/forge/slack-cli/token`
+- Forge config directory presence at `~/.config/forge/` or `FORGE_CONFIG_DIR`
+
+Behavior:
+
+- default output is optimized for fast, effective visual scanning by a human reader
+- `--json` emits deterministic machine-readable output with minimal tokens for agent handoff and chaining
+- agent skills should prefer `--json` when chaining Forge output into later reasoning or commands
+- remediation is included for failing or warning checks
+- upgrade commands may also be included for installed tools
+- auth checks are advisory and should not block Codex from continuing
+- `gh` auth should warn gracefully when it cannot be confirmed from a non-interactive subprocess
+- when that happens, the primary remediation is to ask the user to run `gh auth status` in an interactive terminal
+- file-based auth tools such as `linear` and `slack-cli` should report configured token sources, not claim a verified logged-in session
+- for those file-based tools, doctor should surface the exact CLI commands and docs to use next, such as `linear config`, `linear auth login`, and `slack-cli auth login`
+- Windows install hints should prefer `winget` for `git` and `gh`
+- Windows upgrade hints should prefer `winget upgrade --id ...` for `git` and `gh`
+- on macOS and Linux, use `cargo` for tools that support it such as `rg` and `jq`
+
 ### `forge permissions check`
 
 ```sh

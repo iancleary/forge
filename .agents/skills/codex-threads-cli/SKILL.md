@@ -17,6 +17,7 @@ Start narrow:
 
 Working rules:
 
+- Use `--json` for reads because the skill is consumed by agents and should stay deterministic and low-token.
 - Run `sync` before search if the index may be stale or missing.
 - Prefer `messages search` for finding a phrase and `threads resolve` for finding the likely session.
 - Prefer `threads read` for normalized history.

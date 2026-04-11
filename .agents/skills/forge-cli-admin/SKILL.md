@@ -9,6 +9,7 @@ This skill covers the top-level `forge` binary. If the task may belong to anothe
 
 Use these commands first:
 
+- `forge doctor --json`
 - `forge permissions check --json`
 - `forge permissions fix --json`
 - `forge self update-check --json`
@@ -17,6 +18,8 @@ Use these commands first:
 
 Working rules:
 
+- Prefer `--json` for agent reads because it is the deterministic, low-token contract.
+- Prefer `forge doctor --json` when you need an environment snapshot before using other Forge CLIs.
 - Prefer `permissions check` before `permissions fix`.
 - Prefer `self update-check` before `self update`.
 - `skills status` defaults to `mainline` targets; use `--scope all` when debugging development installs.

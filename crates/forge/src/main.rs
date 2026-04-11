@@ -25,6 +25,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[command(about = "Check whether the local Forge environment is ready")]
+    Doctor,
     #[command(name = "self", about = "Check for Forge updates and reconcile managed skills", subcommand)]
     Self_(SelfCommand),
     #[command(about = "Check or repair local Forge file permissions", subcommand)]
@@ -323,6 +325,48 @@ struct PermissionItem {
 }
 
 #[derive(Debug, Serialize)]
+struct DoctorResult {
+    summary: DoctorSummary,
+    checks: Vec<DoctorCheck>,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorSummary {
+    status: String,
+    ready: bool,
+    passed: usize,
+    warnings: usize,
+    failures: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorCheck {
+    id: String,
+    category: String,
+    status: String,
+    summary: String,
+    detail: Option<String>,
+    remediation: Vec<String>,
+    upgrades: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct LinearDoctorConfig {
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    token_file: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SlackDoctorConfig {
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    token_file: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct SkillsListResult {
     source: String,
     skills: Vec<SkillListEntry>,
@@ -456,6 +500,14 @@ fn main() {
 
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
+        Command::Doctor => {
+            let data = doctor()?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_doctor_human(&data);
+            }
+        }
         Command::Self_(SelfCommand::UpdateCheck(args)) => {
             let data = update_check(args)?;
             print_json(&Envelope { ok: true, data })?;
@@ -499,6 +551,44 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn doctor() -> Result<DoctorResult> {
+    let config_dir = config_dir_path()?;
+    let checks = vec![
+        doctor_command_check("cargo", "tool", "cargo", &["--version"]),
+        doctor_command_check("git", "tool", "git", &["--version"]),
+        doctor_command_check("gh", "tool", "gh", &["--version"]),
+        doctor_command_check("rg", "tool", "rg", &["--version"]),
+        doctor_command_check("jq", "tool", "jq", &["--version"]),
+        doctor_gh_auth_check(),
+        doctor_linear_auth_check(),
+        doctor_slack_auth_check(),
+        doctor_config_dir_check(&config_dir),
+    ];
+
+    let passed = checks.iter().filter(|check| check.status == "pass").count();
+    let warnings = checks.iter().filter(|check| check.status == "warn").count();
+    let failures = checks.iter().filter(|check| check.status == "fail").count();
+    let ready = failures == 0 && warnings == 0;
+    let status = if failures > 0 {
+        "fail"
+    } else if warnings > 0 {
+        "warn"
+    } else {
+        "pass"
+    };
+
+    Ok(DoctorResult {
+        summary: DoctorSummary {
+            status: status.to_string(),
+            ready,
+            passed,
+            warnings,
+            failures,
+        },
+        checks,
+    })
 }
 
 fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
@@ -1091,6 +1181,420 @@ fn permission_kind_name(kind: PermissionKind) -> &'static str {
     match kind {
         PermissionKind::Dir => "dir",
         PermissionKind::File => "file",
+    }
+}
+
+fn doctor_command_check(id: &str, category: &str, program: &str, version_args: &[&str]) -> DoctorCheck {
+    let remediation = tool_remediation(program);
+    match run_command_capture(program, version_args) {
+        Ok(output) if output.status.success() => {
+            let detail = stdout_or_stderr_trimmed(&output);
+            DoctorCheck {
+                id: id.to_string(),
+                category: category.to_string(),
+                status: "pass".to_string(),
+                summary: format!("{program} is available"),
+                detail,
+                remediation: Vec::new(),
+                upgrades: tool_upgrade_commands(program),
+            }
+        }
+        Ok(output) => DoctorCheck {
+            id: id.to_string(),
+            category: category.to_string(),
+            status: "fail".to_string(),
+            summary: format!("{program} is installed but not working"),
+            detail: output_failure_detail(&output),
+            remediation,
+            upgrades: tool_upgrade_commands(program),
+        },
+        Err(err) => DoctorCheck {
+            id: id.to_string(),
+            category: category.to_string(),
+            status: "fail".to_string(),
+            summary: format!("{program} is not installed"),
+            detail: Some(err.to_string()),
+            remediation,
+            upgrades: Vec::new(),
+        },
+    }
+}
+
+fn doctor_gh_auth_check() -> DoctorCheck {
+    let remediation = gh_auth_remediation();
+    match run_command_capture("gh", &["auth", "status"]) {
+        Ok(output) if output.status.success() => DoctorCheck {
+            id: "gh_auth".to_string(),
+            category: "auth".to_string(),
+            status: "pass".to_string(),
+            summary: "GitHub CLI authentication is ready".to_string(),
+            detail: stdout_or_stderr_trimmed(&output),
+            remediation: Vec::new(),
+            upgrades: Vec::new(),
+        },
+        Ok(output) => DoctorCheck {
+            id: "gh_auth".to_string(),
+            category: "auth".to_string(),
+            status: "warn".to_string(),
+            summary: "GitHub CLI auth could not be confirmed in this non-interactive context".to_string(),
+            detail: output_failure_detail(&output),
+            remediation,
+            upgrades: Vec::new(),
+        },
+        Err(err) => DoctorCheck {
+            id: "gh_auth".to_string(),
+            category: "auth".to_string(),
+            status: "warn".to_string(),
+            summary: "GitHub CLI authentication could not be checked in this non-interactive context".to_string(),
+            detail: Some(err.to_string()),
+            remediation,
+            upgrades: Vec::new(),
+        },
+    }
+}
+
+fn doctor_config_dir_check(config_dir: &Path) -> DoctorCheck {
+    if config_dir.exists() {
+        return DoctorCheck {
+            id: "forge_config_dir".to_string(),
+            category: "config".to_string(),
+            status: "pass".to_string(),
+            summary: "Forge config directory is present".to_string(),
+            detail: Some(config_dir.display().to_string()),
+            remediation: Vec::new(),
+            upgrades: Vec::new(),
+        };
+    }
+
+    DoctorCheck {
+        id: "forge_config_dir".to_string(),
+        category: "config".to_string(),
+        status: "warn".to_string(),
+        summary: "Forge config directory has not been created yet".to_string(),
+        detail: Some(config_dir.display().to_string()),
+        remediation: vec![
+            format!("mkdir -p {}", shell_escape_path(config_dir)),
+            "Run a Forge command that writes config or state, such as `forge self update-check --force --json`.".to_string(),
+        ],
+        upgrades: Vec::new(),
+    }
+}
+
+fn doctor_linear_auth_check() -> DoctorCheck {
+    let sources = linear_auth_sources();
+    if sources.is_empty() {
+        return DoctorCheck {
+            id: "linear_auth".to_string(),
+            category: "auth".to_string(),
+            status: "warn".to_string(),
+            summary: "Linear auth token source is not configured".to_string(),
+            detail: Some("No Linear token source was found.".to_string()),
+            remediation: linear_auth_remediation(),
+            upgrades: Vec::new(),
+        };
+    }
+
+    DoctorCheck {
+        id: "linear_auth".to_string(),
+        category: "auth".to_string(),
+        status: "pass".to_string(),
+        summary: "Linear auth token source is configured".to_string(),
+        detail: Some(describe_auth_sources(&sources)),
+        remediation: vec![
+            "To validate the token, run `linear --json viewer` in an interactive terminal.".to_string(),
+        ],
+        upgrades: Vec::new(),
+    }
+}
+
+fn doctor_slack_auth_check() -> DoctorCheck {
+    let sources = slack_auth_sources();
+
+    if sources.is_empty() {
+        return DoctorCheck {
+            id: "slack_auth".to_string(),
+            category: "auth".to_string(),
+            status: "warn".to_string(),
+            summary: "Slack auth is not configured".to_string(),
+            detail: Some("No Slack token source was found.".to_string()),
+            remediation: slack_auth_remediation(),
+            upgrades: Vec::new(),
+        };
+    }
+
+    DoctorCheck {
+        id: "slack_auth".to_string(),
+        category: "auth".to_string(),
+        status: "pass".to_string(),
+        summary: "Slack auth source is configured".to_string(),
+        detail: Some(describe_auth_sources(&sources)),
+        remediation: vec![
+            "To validate the token, run a Slack read command such as `slack-cli search \"hello\" --limit 1` in an interactive terminal.".to_string(),
+        ],
+        upgrades: Vec::new(),
+    }
+}
+
+fn print_doctor_human(result: &DoctorResult) {
+    let headline = if result.summary.failures > 0 {
+        "not ready"
+    } else if result.summary.warnings > 0 {
+        "usable with warnings"
+    } else {
+        "ready"
+    };
+    println!(
+        "forge doctor: {} ({} passed, {} warnings, {} failures)",
+        headline,
+        result.summary.passed,
+        result.summary.warnings,
+        result.summary.failures
+    );
+
+    for check in &result.checks {
+        println!("[{}] {}: {}", doctor_status_label(&check.status), check.id, check.summary);
+        if let Some(detail) = check.detail.as_ref() {
+            let detail = detail.lines().next().unwrap_or(detail);
+            if !detail.is_empty() {
+                println!("  {}", detail);
+            }
+        }
+        for item in &check.remediation {
+            println!("  fix: {item}");
+        }
+        for item in &check.upgrades {
+            println!("  upgrade: {item}");
+        }
+    }
+}
+
+fn doctor_status_label(status: &str) -> &'static str {
+    match status {
+        "pass" => "PASS",
+        "warn" => "WARN",
+        "fail" => "FAIL",
+        _ => "INFO",
+    }
+}
+
+fn describe_auth_sources(sources: &[String]) -> String {
+    if sources.is_empty() {
+        "No configured auth sources were detected.".to_string()
+    } else {
+        format!("Detected auth sources: {}", sources.join(", "))
+    }
+}
+
+fn run_command_capture(program: &str, args: &[&str]) -> Result<std::process::Output> {
+    ProcessCommand::new(program)
+        .args(args)
+        .output()
+        .with_context(|| format!("failed to run {program} {}", args.join(" ")))
+}
+
+fn stdout_or_stderr_trimmed(output: &std::process::Output) -> Option<String> {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return Some(stdout);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        None
+    } else {
+        Some(stderr)
+    }
+}
+
+fn output_failure_detail(output: &std::process::Output) -> Option<String> {
+    let base = stdout_or_stderr_trimmed(output);
+    match (base, output.status.code()) {
+        (Some(detail), Some(code)) => Some(format!("{detail} (exit code {code})")),
+        (Some(detail), None) => Some(format!("{detail} (terminated by signal)")),
+        (None, Some(code)) => Some(format!("exit code {code}")),
+        (None, None) => Some("terminated by signal".to_string()),
+    }
+}
+
+fn tool_remediation(program: &str) -> Vec<String> {
+    platform_tool_remediation(env::consts::OS, program)
+}
+
+fn platform_tool_remediation(os: &str, program: &str) -> Vec<String> {
+    match (os, program) {
+        ("windows", "git") => vec!["winget install --id Git.Git".to_string()],
+        ("windows", "gh") => vec!["winget install --id GitHub.cli".to_string()],
+        ("windows", "rg") => vec!["cargo install ripgrep".to_string()],
+        ("windows", "jq") => vec!["cargo install jq-cli".to_string()],
+        ("macos", "git") => vec!["xcode-select --install".to_string()],
+        ("macos", "gh") => vec!["brew install gh".to_string()],
+        ("macos", "rg") => vec!["cargo install ripgrep".to_string()],
+        ("macos", "jq") => vec!["cargo install jq-cli".to_string()],
+        ("linux", "git") => vec!["sudo apt install git".to_string()],
+        ("linux", "gh") => vec!["See https://cli.github.com for the recommended install path on your distro.".to_string()],
+        ("linux", "rg") => vec!["cargo install ripgrep".to_string()],
+        ("linux", "jq") => vec!["cargo install jq-cli".to_string()],
+        (_, "cargo") => vec!["Install Rust with rustup from https://rustup.rs.".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn gh_auth_remediation() -> Vec<String> {
+    vec![
+        "Verify interactively in your terminal with `gh auth status`.".to_string(),
+        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+        "Forge should continue with a warning even when this check cannot be confirmed from a non-interactive subprocess.".to_string(),
+    ]
+}
+
+fn linear_auth_remediation() -> Vec<String> {
+    vec![
+        "Initialize config with `linear config` if needed.".to_string(),
+        "Store credentials with `linear auth login` or by writing ~/.config/forge/linear/token.".to_string(),
+        "See docs/linear.md for the supported auth layout and command contract.".to_string(),
+    ]
+}
+
+fn slack_auth_remediation() -> Vec<String> {
+    vec![
+        "Store credentials with `slack-cli auth login` or by writing ~/.config/forge/slack-cli/token.".to_string(),
+        "See docs/slack-cli.md for the supported token layout, scopes, and setup flow.".to_string(),
+    ]
+}
+
+fn linear_auth_sources() -> Vec<String> {
+    auth_sources_from_dir(
+        linear_config_dir_path(),
+        env_var_present("LINEAR_API_KEY"),
+        "LINEAR_API_KEY",
+        parse_linear_doctor_config,
+    )
+}
+
+fn slack_auth_sources() -> Vec<String> {
+    auth_sources_from_dir(
+        slack_config_dir_path(),
+        env_var_present("SLACK_API_TOKEN"),
+        "SLACK_API_TOKEN",
+        parse_slack_doctor_config,
+    )
+}
+
+fn auth_sources_from_dir<F>(
+    config_dir: PathBuf,
+    env_present: bool,
+    env_var_name: &str,
+    parse_config: F,
+) -> Vec<String>
+where
+    F: Fn(&str) -> Option<(bool, Option<String>)>,
+{
+    let mut sources = Vec::new();
+    if env_present {
+        sources.push(format!("env:{env_var_name}"));
+    }
+
+    let config_path = config_dir.join("config.toml");
+    if config_path.exists() {
+        sources.push(format!("file:{}", config_path.display()));
+        if let Ok(body) = fs::read_to_string(&config_path) {
+            if let Some((has_inline_token, token_file)) = parse_config(&body) {
+                if has_inline_token {
+                    sources.push("config:inline_token".to_string());
+                }
+                if let Some(token_file) = token_file {
+                    let path = expand_path(&token_file);
+                    if path.exists() {
+                        sources.push(format!("config:token_file:{}", path.display()));
+                    }
+                }
+            }
+        }
+    }
+
+    let token_path = config_dir.join("token");
+    if token_path.exists() {
+        sources.push(format!("file:{}", token_path.display()));
+    }
+
+    dedup_strings(sources)
+}
+
+fn parse_linear_doctor_config(body: &str) -> Option<(bool, Option<String>)> {
+    toml::from_str::<LinearDoctorConfig>(body)
+        .ok()
+        .map(|config| (has_nonempty_option(config.token.as_ref()), config.token_file))
+}
+
+fn parse_slack_doctor_config(body: &str) -> Option<(bool, Option<String>)> {
+    toml::from_str::<SlackDoctorConfig>(body)
+        .ok()
+        .map(|config| (has_nonempty_option(config.token.as_ref()), config.token_file))
+}
+
+fn env_var_present(name: &str) -> bool {
+    env::var(name).map(|value| !value.trim().is_empty()).unwrap_or(false)
+}
+
+fn has_nonempty_option(value: Option<&String>) -> bool {
+    value.is_some_and(|item| !item.trim().is_empty())
+}
+
+fn dedup_strings(values: Vec<String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    values
+        .into_iter()
+        .filter(|value| seen.insert(value.clone()))
+        .collect()
+}
+
+fn linear_config_dir_path() -> PathBuf {
+    if let Ok(path) = env::var("FORGE_LINEAR_CLI_CONFIG_DIR") {
+        return expand_path(&path);
+    }
+    base_forge_config_dir().join("linear")
+}
+
+fn slack_config_dir_path() -> PathBuf {
+    if let Ok(path) = env::var("FORGE_SLACK_CLI_CONFIG_DIR") {
+        return expand_path(&path);
+    }
+    base_forge_config_dir().join("slack-cli")
+}
+
+fn base_forge_config_dir() -> PathBuf {
+    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
+        return PathBuf::from(xdg).join("forge");
+    }
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".config").join("forge")
+}
+
+fn tool_upgrade_commands(program: &str) -> Vec<String> {
+    tool_upgrade_commands_for(env::consts::OS, program)
+}
+
+fn tool_upgrade_commands_for(os: &str, program: &str) -> Vec<String> {
+    match (os, program) {
+        ("windows", "git") => vec!["winget upgrade --id Git.Git".to_string()],
+        ("windows", "gh") => vec!["winget upgrade --id GitHub.cli".to_string()],
+        ("windows", "rg") => vec!["cargo install ripgrep --force".to_string()],
+        ("windows", "jq") => vec!["cargo install jq-cli --force".to_string()],
+        ("macos", "gh") => vec!["brew upgrade gh".to_string()],
+        ("macos", "rg") => vec!["cargo install ripgrep --force".to_string()],
+        ("macos", "jq") => vec!["cargo install jq-cli --force".to_string()],
+        ("linux", "gh") => vec!["See https://cli.github.com for the recommended upgrade path on your distro.".to_string()],
+        ("linux", "rg") => vec!["cargo install ripgrep --force".to_string()],
+        ("linux", "jq") => vec!["cargo install jq-cli --force".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn shell_escape_path(path: &Path) -> String {
+    let value = path.display().to_string();
+    if value.contains(' ') {
+        format!("\"{value}\"")
+    } else {
+        value
     }
 }
 
@@ -1998,5 +2502,122 @@ mod tests {
                 "embedded release payload drifted from repo skill for {name}"
             );
         }
+    }
+
+    #[test]
+    fn doctor_summary_counts_warn_as_not_ready() {
+        let checks = vec![
+            DoctorCheck {
+                id: "cargo".to_string(),
+                category: "tool".to_string(),
+                status: "pass".to_string(),
+                summary: "cargo is available".to_string(),
+                detail: None,
+                remediation: Vec::new(),
+                upgrades: Vec::new(),
+            },
+            DoctorCheck {
+                id: "gh_auth".to_string(),
+                category: "auth".to_string(),
+                status: "warn".to_string(),
+                summary: "GitHub CLI auth could not be confirmed in this non-interactive context".to_string(),
+                detail: None,
+                remediation: vec![
+                    "Verify interactively in your terminal with `gh auth status`.".to_string(),
+                    "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                ],
+                upgrades: Vec::new(),
+            },
+        ];
+
+        let passed = checks.iter().filter(|check| check.status == "pass").count();
+        let warnings = checks.iter().filter(|check| check.status == "warn").count();
+        let failures = checks.iter().filter(|check| check.status == "fail").count();
+        let ready = failures == 0 && warnings == 0;
+        let status = if failures > 0 {
+            "fail"
+        } else if warnings > 0 {
+            "warn"
+        } else {
+            "pass"
+        };
+
+        assert_eq!(passed, 1);
+        assert_eq!(warnings, 1);
+        assert_eq!(failures, 0);
+        assert!(!ready);
+        assert_eq!(status, "warn");
+    }
+
+    #[test]
+    fn doctor_windows_remediation_prefers_winget_for_gh_and_git() {
+        assert_eq!(platform_tool_remediation("windows", "git"), vec!["winget install --id Git.Git"]);
+        assert_eq!(
+            platform_tool_remediation("windows", "gh"),
+            vec!["winget install --id GitHub.cli"]
+        );
+    }
+
+    #[test]
+    fn doctor_windows_upgrades_prefer_winget_for_gh_and_git() {
+        assert_eq!(tool_upgrade_commands_for("windows", "git"), vec!["winget upgrade --id Git.Git"]);
+        assert_eq!(
+            tool_upgrade_commands_for("windows", "gh"),
+            vec!["winget upgrade --id GitHub.cli"]
+        );
+    }
+
+    #[test]
+    fn auth_sources_from_dir_reports_inline_and_token_file_sources() {
+        let root = temp_path("doctor-auth-sources");
+        fs::create_dir_all(&root).expect("create root");
+        let configured_token = root.join("configured-token");
+        fs::write(&configured_token, "secret\n").expect("write configured token");
+        fs::write(
+            root.join("config.toml"),
+            format!(
+                "token = \"abc\"\ntoken_file = \"{}\"\n",
+                configured_token.display()
+            ),
+        )
+        .expect("write config");
+        fs::write(root.join("token"), "fallback\n").expect("write fallback token");
+
+        let sources = auth_sources_from_dir(
+            root.clone(),
+            true,
+            "LINEAR_API_KEY",
+            parse_linear_doctor_config,
+        );
+
+        assert!(sources.iter().any(|item| item == "env:LINEAR_API_KEY"));
+        assert!(sources.iter().any(|item| item == "config:inline_token"));
+        assert!(sources
+            .iter()
+            .any(|item| item == &format!("config:token_file:{}", configured_token.display())));
+        assert!(sources
+            .iter()
+            .any(|item| item == &format!("file:{}", root.join("config.toml").display())));
+        assert!(sources
+            .iter()
+            .any(|item| item == &format!("file:{}", root.join("token").display())));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dedup_strings_removes_repeated_entries() {
+        let values = vec![
+            "env:LINEAR_API_KEY".to_string(),
+            "env:LINEAR_API_KEY".to_string(),
+            "file:/tmp/token".to_string(),
+            "file:/tmp/token".to_string(),
+        ];
+
+        let deduped = dedup_strings(values);
+
+        assert_eq!(deduped.len(), 2);
+        assert!(deduped.iter().any(|item| item == "env:LINEAR_API_KEY"));
+        assert!(deduped.iter().any(|item| item == "file:/tmp/token"));
     }
 }
