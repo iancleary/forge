@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/slack-cli"]
+resolver = "2"
+
