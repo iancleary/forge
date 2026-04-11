@@ -112,6 +112,8 @@ struct SkillsStatusArgs {
     scope: SkillsStatusScope,
     #[arg(long, help = "Filter to one target: user, forge_repo, or path:/absolute/path")]
     target: Option<String>,
+    #[arg(long, value_enum, help = "Optionally restrict the target filter to one role")]
+    target_role: Option<SkillTargetRoleArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
 }
@@ -420,6 +422,13 @@ struct ResolvedTarget {
     root: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+struct TargetFilter {
+    kind: SkillTargetKind,
+    role: Option<SkillTargetRole>,
+    root: PathBuf,
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = run(cli);
@@ -571,30 +580,30 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     }
 
     let mut state = load_state_or_default()?;
-    let target_roots = managed_target_roots(&config, repo_path.as_deref())?;
-    let target_filters = target_roots
-        .iter()
-        .filter(|target| target.role == SkillTargetRole::Mainline)
-        .map(|target| target_to_flag(&target.kind, &target.role, &target.root))
-        .collect::<Vec<_>>();
-    let install_result = skills_install_internal(
-        &config,
-        &mut state,
-        InstallRequest {
-            skill_names: Vec::new(),
-            all: true,
-            source_kind: Some(source_kind.clone()),
-            repo_path: repo_path.clone(),
-            target: None,
-            target_role: None,
-            force: true,
-            force_unmanaged: false,
-            restrict_to_targets: Some(target_filters),
-        },
-    )?;
+    let targets = mainline_targets_for_reconcile(&config, &state, repo_path.as_deref())?;
+    let mut installs = Vec::new();
+    for target in targets {
+        let result = skills_install_internal(
+            &config,
+            &mut state,
+            InstallRequest {
+                skill_names: Vec::new(),
+                all: true,
+                source_kind: Some(source_kind.clone()),
+                repo_path: repo_path.clone(),
+                target: None,
+                target_role: None,
+                resolved_target: Some(target),
+                force: true,
+                force_unmanaged: false,
+                restrict_to_targets: None,
+            },
+        )?;
+        installs.extend(result.installs);
+    }
     save_state(&state_file_path()?, &state)?;
 
-    let changed = before_head != after_head || install_result.installs.iter().any(|item| item.status != "unchanged");
+    let changed = before_head != after_head || installs.iter().any(|item| item.status != "unchanged");
 
     Ok(UpdateResult {
         source_kind: source_kind_name(&source_kind).to_string(),
@@ -603,7 +612,7 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         before_head,
         after_head,
         changed,
-        skills_reconciled: install_result.installs.len(),
+        skills_reconciled: installs.len(),
     })
 }
 
@@ -738,6 +747,7 @@ fn skills_install(args: SkillsInstallArgs) -> Result<SkillsInstallResult> {
             repo_path,
             target: args.target,
             target_role: args.target_role.map(map_target_role),
+            resolved_target: None,
             force: args.force,
             force_unmanaged: args.force_unmanaged,
             restrict_to_targets: None,
@@ -788,6 +798,7 @@ fn skills_revert(args: SkillsRevertArgs) -> Result<SkillsInstallResult> {
             repo_path,
             target: args.target,
             target_role: args.target_role.map(map_target_role),
+            resolved_target: None,
             force: args.force,
             force_unmanaged: args.force_unmanaged,
             restrict_to_targets: None,
@@ -805,6 +816,7 @@ struct InstallRequest {
     repo_path: Option<PathBuf>,
     target: Option<String>,
     target_role: Option<SkillTargetRole>,
+    resolved_target: Option<ResolvedTarget>,
     force: bool,
     force_unmanaged: bool,
     restrict_to_targets: Option<Vec<String>>,
@@ -815,12 +827,16 @@ fn skills_install_internal(config: &ForgeConfig, state: &mut ForgeState, req: In
         Some(kind) => kind,
         None => auto_source_kind(req.repo_path.as_deref()),
     };
-    let target = resolve_target(
-        req.target.as_deref(),
-        config,
-        req.repo_path.as_deref(),
-        req.target_role.clone(),
-    )?;
+    let target = if let Some(target) = req.resolved_target {
+        target
+    } else {
+        resolve_target(
+            req.target.as_deref(),
+            config,
+            req.repo_path.as_deref(),
+            req.target_role.clone(),
+        )?
+    };
     fs::create_dir_all(&target.root)
         .with_context(|| format!("failed to create {}", target.root.display()))?;
 
@@ -1581,7 +1597,19 @@ fn skills_status(args: SkillsStatusArgs) -> Result<SkillsStatusResult> {
     let repo_path = discover_repo_path(args.repo_path, &config);
     let source_kind = auto_source_kind(repo_path.as_deref());
     let target_filter = match args.target {
-        Some(raw) => Some(resolve_target(Some(raw.as_str()), &config, repo_path.as_deref(), None)?),
+        Some(raw) => {
+            let resolved = resolve_target(
+                Some(raw.as_str()),
+                &config,
+                repo_path.as_deref(),
+                args.target_role.map(map_target_role),
+            )?;
+            Some(TargetFilter {
+                kind: resolved.kind,
+                role: args.target_role.map(map_target_role),
+                root: resolved.root,
+            })
+        }
         None => None,
     };
     skills_status_with_source(&config, &state, source_kind, repo_path, args.scope, target_filter)
@@ -1593,7 +1621,7 @@ fn skills_status_with_source(
     source_kind: SkillSourceKind,
     repo_path: Option<PathBuf>,
     scope: SkillsStatusScope,
-    target_filter: Option<ResolvedTarget>,
+    target_filter: Option<TargetFilter>,
 ) -> Result<SkillsStatusResult> {
     let defs = load_skills_for_source(&source_kind, repo_path.as_deref())?;
     let source_hashes = defs
@@ -1609,7 +1637,7 @@ fn skills_status_with_source(
         if let Some(filter) = target_filter.as_ref() {
             if install.target_root != filter.root.display().to_string()
                 || install.target_kind != filter.kind
-                || install.target_role != filter.role
+                || filter.role.as_ref().is_some_and(|role| &install.target_role != role)
             {
                 continue;
             }
@@ -1654,7 +1682,10 @@ fn skills_status_with_source(
             continue;
         }
         if let Some(filter) = target_filter.as_ref() {
-            if target.root != filter.root || target.kind != filter.kind || target.role != filter.role {
+            if target.root != filter.root
+                || target.kind != filter.kind
+                || filter.role.as_ref().is_some_and(|role| &target.role != role)
+            {
                 continue;
             }
         }
@@ -1693,6 +1724,43 @@ fn skills_status_with_source(
         scope: status_scope_name(scope).to_string(),
         entries,
     })
+}
+
+fn mainline_targets_for_reconcile(
+    config: &ForgeConfig,
+    state: &ForgeState,
+    repo_path: Option<&Path>,
+) -> Result<Vec<ResolvedTarget>> {
+    let mut targets = managed_target_roots(config, repo_path)?
+        .into_iter()
+        .filter(|target| target.role == SkillTargetRole::Mainline)
+        .collect::<Vec<_>>();
+
+    for install in &state.managed_skill_installs {
+        if install.target_role != SkillTargetRole::Mainline {
+            continue;
+        }
+        let root = PathBuf::from(&install.target_root);
+        let exists = targets
+            .iter()
+            .any(|target| target.kind == install.target_kind && target.root == root && target.role == install.target_role);
+        if exists {
+            continue;
+        }
+        targets.push(ResolvedTarget {
+            kind: install.target_kind.clone(),
+            role: install.target_role.clone(),
+            root,
+        });
+    }
+
+    targets.sort_by(|a, b| {
+        target_kind_name(&a.kind)
+            .cmp(target_kind_name(&b.kind))
+            .then(a.root.cmp(&b.root))
+    });
+    targets.dedup_by(|a, b| a.kind == b.kind && a.role == b.role && a.root == b.root);
+    Ok(targets)
 }
 
 fn managed_target_roots(config: &ForgeConfig, repo_path: Option<&Path>) -> Result<Vec<ResolvedTarget>> {
@@ -1751,5 +1819,144 @@ fn target_to_flag(kind: &SkillTargetKind, role: &SkillTargetRole, root: &Path) -
         SkillTargetKind::User => format!("user@{}", target_role_name(role)),
         SkillTargetKind::ForgeRepo => format!("forge_repo@{}", target_role_name(role)),
         SkillTargetKind::Path => format!("path:{}@{}", root.display(), target_role_name(role)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_path(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("forge-{label}-{nanos}"))
+    }
+
+    #[test]
+    fn reconcile_targets_include_custom_mainline_paths() {
+        let config = ForgeConfig {
+            skills_user_dir: Some("/tmp/forge-user-skills".to_string()),
+            ..ForgeConfig::default()
+        };
+        let custom_root = PathBuf::from("/tmp/forge-mainline-custom");
+        let state = ForgeState {
+            managed_skill_installs: vec![ManagedSkillInstall {
+                skill_name: "linear-cli".to_string(),
+                managed_by: "forge".to_string(),
+                source_kind: SkillSourceKind::Release,
+                source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                source_ref: "test".to_string(),
+                source_hash: "abc".to_string(),
+                source_repo_path: None,
+                target_kind: SkillTargetKind::Path,
+                target_role: SkillTargetRole::Mainline,
+                target_root: custom_root.display().to_string(),
+                target_path: custom_root.join("linear-cli").display().to_string(),
+                installed_at_unix: 0,
+            }],
+            ..ForgeState::default()
+        };
+
+        let targets = mainline_targets_for_reconcile(&config, &state, None).expect("targets");
+
+        assert!(targets.iter().any(|target| {
+            target.kind == SkillTargetKind::User && target.role == SkillTargetRole::Mainline
+        }));
+        assert!(targets.iter().any(|target| {
+            target.kind == SkillTargetKind::Path
+                && target.role == SkillTargetRole::Mainline
+                && target.root == custom_root
+        }));
+    }
+
+    #[test]
+    fn status_target_filter_matches_mainline_path_without_explicit_role() {
+        let root = temp_path("status-mainline");
+        let skill_root = root.join("linear-cli");
+        let skill = load_release_skills()
+            .into_iter()
+            .find(|skill| skill.name == "linear-cli")
+            .expect("linear-cli release skill");
+        write_skill_definition(&skill_root, &skill).expect("write skill");
+
+        let state = ForgeState {
+            managed_skill_installs: vec![ManagedSkillInstall {
+                skill_name: "linear-cli".to_string(),
+                managed_by: "forge".to_string(),
+                source_kind: SkillSourceKind::Release,
+                source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                source_ref: "test".to_string(),
+                source_hash: hash_skill_files(&skill.files),
+                source_repo_path: None,
+                target_kind: SkillTargetKind::Path,
+                target_role: SkillTargetRole::Mainline,
+                target_root: root.display().to_string(),
+                target_path: skill_root.display().to_string(),
+                installed_at_unix: 0,
+            }],
+            ..ForgeState::default()
+        };
+        let config = ForgeConfig::default();
+
+        let result = skills_status_with_source(
+            &config,
+            &state,
+            SkillSourceKind::Release,
+            None,
+            SkillsStatusScope::Mainline,
+            Some(TargetFilter {
+                kind: SkillTargetKind::Path,
+                role: None,
+                root: root.clone(),
+            }),
+        )
+        .expect("status");
+
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].target_role, "mainline");
+        assert_eq!(result.entries[0].target_path, skill_root.display().to_string());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn install_to_user_target_uses_mainline_role_and_configured_override() {
+        let install_root = temp_path("user-install");
+        fs::create_dir_all(&install_root).expect("create install root");
+        let config = ForgeConfig {
+            skills_user_dir: Some(install_root.display().to_string()),
+            ..ForgeConfig::default()
+        };
+        let mut state = ForgeState::default();
+
+        let result = skills_install_internal(
+            &config,
+            &mut state,
+            InstallRequest {
+                skill_names: Vec::new(),
+                all: true,
+                source_kind: Some(SkillSourceKind::Release),
+                repo_path: None,
+                target: Some("user".to_string()),
+                target_role: None,
+                resolved_target: None,
+                force: true,
+                force_unmanaged: true,
+                restrict_to_targets: None,
+            },
+        )
+        .expect("install");
+
+        assert_eq!(result.target_kind, "user");
+        assert_eq!(result.target_role, "mainline");
+        assert!(!result.installs.is_empty());
+        assert!(state
+            .managed_skill_installs
+            .iter()
+            .all(|entry| entry.target_role == SkillTargetRole::Mainline));
+
+        let _ = fs::remove_dir_all(install_root);
     }
 }
