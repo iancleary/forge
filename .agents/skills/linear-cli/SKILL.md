@@ -7,6 +7,8 @@ description: Use the Forge `linear` CLI for Linear issue, project, milestone, te
 
 This skill covers the Forge `linear` binary. If the task might belong to another Forge CLI, check `forge-tools` first and then return here once `linear` is clearly the right tool.
 
+If the user is shaping a new Forge capability instead of asking for Linear data or mutations, route to `design-algorithm` first.
+
 Start with the smallest command that proves context:
 
 - `linear --json viewer`

@@ -221,8 +221,6 @@ struct ForgeConfig {
     #[serde(default)]
     repo_path: Option<String>,
     #[serde(default)]
-    skills_user_dir: Option<String>,
-    #[serde(default)]
     forge_repo_install_subpath: Option<String>,
 }
 
@@ -803,7 +801,13 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             issues.push("frontmatter field `description` is required".to_string());
         }
         if def.name == "forge-tools" {
-            for required in ["linear-cli", "slack-cli-research", "codex-threads-cli", "forge-cli-admin"] {
+            for required in [
+                "design-algorithm",
+                "linear-cli",
+                "slack-cli-research",
+                "codex-threads-cli",
+                "forge-cli-admin",
+            ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
                 }
@@ -1795,6 +1799,10 @@ fn release_skills() -> &'static [EmbeddedSkill] {
             skill_md: include_str!("../../../.agents/skills/forge-tools/SKILL.md"),
         },
         EmbeddedSkill {
+            name: "design-algorithm",
+            skill_md: include_str!("../../../.agents/skills/design-algorithm/SKILL.md"),
+        },
+        EmbeddedSkill {
             name: "linear-cli",
             skill_md: include_str!("../../../.agents/skills/linear-cli/SKILL.md"),
         },
@@ -1977,7 +1985,7 @@ fn resolve_target(
         None | Some("user") => Ok(ResolvedTarget {
             kind: SkillTargetKind::User,
             role: target_role.unwrap_or(SkillTargetRole::Mainline),
-            root: user_skills_dir(config)?,
+            root: user_skills_dir()?,
         }),
         Some("forge_repo") => {
             let repo = repo_path.ok_or_else(|| anyhow!("forge_repo target requires a configured Forge repo path"))?;
@@ -2006,10 +2014,7 @@ fn resolve_target(
     }
 }
 
-fn user_skills_dir(config: &ForgeConfig) -> Result<PathBuf> {
-    if let Some(path) = config.skills_user_dir.as_ref() {
-        return Ok(expand_path(path));
-    }
+fn user_skills_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME is not set")?;
     Ok(PathBuf::from(home).join(".agents").join("skills"))
 }
@@ -2277,7 +2282,7 @@ fn managed_target_roots(config: &ForgeConfig, repo_path: Option<&Path>) -> Resul
     let mut targets = vec![ResolvedTarget {
         kind: SkillTargetKind::User,
         role: SkillTargetRole::Mainline,
-        root: user_skills_dir(config)?,
+        root: user_skills_dir()?,
     }];
     if let Some(repo) = repo_path {
         targets.push(ResolvedTarget {
@@ -2346,10 +2351,7 @@ mod tests {
 
     #[test]
     fn reconcile_targets_include_custom_mainline_paths() {
-        let config = ForgeConfig {
-            skills_user_dir: Some("/tmp/forge-user-skills".to_string()),
-            ..ForgeConfig::default()
-        };
+        let config = ForgeConfig::default();
         let custom_root = PathBuf::from("/tmp/forge-mainline-custom");
         let state = ForgeState {
             managed_skill_installs: vec![ManagedSkillInstall {
@@ -2432,13 +2434,10 @@ mod tests {
     }
 
     #[test]
-    fn install_to_user_target_uses_mainline_role_and_configured_override() {
+    fn install_to_explicit_path_target_uses_mainline_role() {
         let install_root = temp_path("user-install");
         fs::create_dir_all(&install_root).expect("create install root");
-        let config = ForgeConfig {
-            skills_user_dir: Some(install_root.display().to_string()),
-            ..ForgeConfig::default()
-        };
+        let config = ForgeConfig::default();
         let mut state = ForgeState::default();
 
         let result = skills_install_internal(
@@ -2449,8 +2448,8 @@ mod tests {
                 all: true,
                 source_kind: Some(SkillSourceKind::Release),
                 repo_path: None,
-                target: Some("user".to_string()),
-                target_role: None,
+                target: Some(format!("path:{}", install_root.display())),
+                target_role: Some(SkillTargetRole::Mainline),
                 resolved_target: None,
                 force: true,
                 force_unmanaged: true,
@@ -2459,13 +2458,13 @@ mod tests {
         )
         .expect("install");
 
-        assert_eq!(result.target_kind, "user");
+        assert_eq!(result.target_kind, "path");
         assert_eq!(result.target_role, "mainline");
         assert!(!result.installs.is_empty());
         assert!(state
             .managed_skill_installs
             .iter()
-            .all(|entry| entry.target_role == SkillTargetRole::Mainline));
+            .all(|entry| entry.target_role == SkillTargetRole::Mainline && entry.target_root == install_root.display().to_string()));
 
         let _ = fs::remove_dir_all(install_root);
     }

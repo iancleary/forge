@@ -23,6 +23,7 @@ In both modes:
 
 Initial Forge-managed skills:
 
+- `design-algorithm`
 - `forge-tools`
 - `linear-cli`
 - `slack-cli-research`
@@ -167,10 +168,10 @@ The Codex user skill directory.
 This location should default to:
 
 ```text
-~/.agents/skills
+$HOME/.agents/skills
 ```
 
-Forge may allow an explicit config override, but the Codex-compatible default should match the documented user skill location.
+Treat this as a deterministic Codex location, not a Forge-configurable alias. For testing or non-default installs, use `path:<abs-path>` instead of redefining `user`.
 
 ### `forge_repo`
 
@@ -274,7 +275,7 @@ source_hash = "def456"
 
 target_kind = "user"
 target_role = "mainline"
-target_path = "/Users/alice/.codex/skills/linear-cli"
+target_path = "/Users/alice/.agents/skills/linear-cli"
 installed_at = "2026-04-11T14:22:00Z"
 state = "up_to_date"
 ```
@@ -303,7 +304,7 @@ Recommended result shape:
     "source_kind": "release",
     "update_available": true,
     "skills_out_of_date": true,
-    "managed_skill_count": 5,
+    "managed_skill_count": 6,
     "skills": [
       {
         "name": "linear-cli",
@@ -390,6 +391,7 @@ This contract is intentionally narrow.
 Good:
 
 - Forge remains the single source of truth for Forge-managed skills
+- shared operating workflow skills can propagate with normal Forge installs, not only inside the repo checkout
 - managed overwrite behavior is explicit and predictable
 - both local-dev and consumer installs have a first-class source model
 - consumers can cleanly revert from repo-sourced testing back to the standard release install

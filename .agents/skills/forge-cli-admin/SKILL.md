@@ -7,6 +7,8 @@ description: Use the Forge `forge` CLI for local Forge permissions, config, and 
 
 This skill covers the top-level `forge` binary. If the task may belong to another Forge CLI, check `forge-tools` first and then use this skill when the request is clearly about local Forge management.
 
+If the request is really about shaping what Forge should add next, use `design-algorithm` before inventing new command surface.
+
 Use these commands first:
 
 - `forge doctor --json`
@@ -19,6 +21,7 @@ Use these commands first:
 Working rules:
 
 - Prefer `--json` for agent reads because it is the deterministic, low-token contract.
+- Apply `design-algorithm` before expanding Forge commands or skill policy for a new workflow.
 - Prefer `forge doctor --json` when you need an environment snapshot before using other Forge CLIs.
 - Prefer `permissions check` before `permissions fix`.
 - Prefer `self update-check` before `self update`.

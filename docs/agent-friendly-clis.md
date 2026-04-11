@@ -21,6 +21,20 @@ When Codex keeps needing the same external system, raw connectors and copied doc
 
 The goal is not "replace APIs" or "replace MCP/connectors". The goal is to wrap the few operations we actually use into commands that are easy for an agent to discover and chain together.
 
+## Design Sequence
+
+Apply the repo algorithm from `docs/algorithm.md` when deciding whether a pain point should become CLI surface:
+
+1. Question the requirement.
+2. Delete any part or process that is not load-bearing.
+3. Simplify and optimize the remaining contract.
+4. Accelerate the loop.
+5. Automate last.
+
+For agent-friendly CLIs, this usually means deleting repeated shell shaping and unnecessary output before adding more commands or flags.
+
+When this workflow should travel with Forge installs rather than stay repo-local, ship it as a managed skill in addition to documenting it here.
+
 ## What Good Looks Like
 
 An agent-friendly CLI should have:
