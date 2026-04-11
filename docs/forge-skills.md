@@ -4,7 +4,7 @@ This document defines the Forge-specific lifecycle management contract for consu
 
 This is not a general skill manager. It only manages Forge-authored skills and their installed targets.
 
-Recommended adjacent Codex capabilities such as `openai-docs` and GitHub plugin skills may still be useful in a full Codex setup, but they are out of scope for Forge-managed skill lifecycle commands.
+Recommended adjacent Codex capabilities such as `openai-docs` and GitHub plugin skills may still be useful in a full Codex setup, but they are out of scope for Forge-managed skill lifecycle commands. For GitHub work, prefer `gh`-driven and plugin-skill workflows over direct native GitHub Codex app usage when both can handle the task.
 
 ## Goal
 

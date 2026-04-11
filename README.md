@@ -114,10 +114,11 @@ forge skills revert --all --target user
 Forge covers the Forge-authored CLIs and their managed skills. For adjacent work, a minimal high-value Codex setup should also include:
 
 - `openai-docs` for OpenAI product, model, and API questions that need current official documentation
-- the GitHub plugin and related skills for issues, PR review threads, CI triage, and release-adjacent repository workflows
+- GitHub plugin skills plus the `gh` CLI for issues, PR review threads, CI triage, and release-adjacent repository workflows
 
 These are recommended companions, not part of Forge's managed skill lifecycle. Keep the boundary narrow:
 
 - use Forge skills for Forge-authored CLIs and local Forge management
 - use `openai-docs` when the task is about OpenAI products rather than the Forge toolchain
-- use GitHub capabilities when the task is about repository hosting, PRs, issues, reviews, or CI
+- prefer `gh`-driven GitHub workflows and GitHub plugin skills when the task is about repository hosting, PRs, issues, reviews, or CI
+- avoid direct use of the native GitHub Codex app path when an equivalent `gh` or plugin-skill workflow exists, because it is less deterministic and more likely to trigger extra permission prompts

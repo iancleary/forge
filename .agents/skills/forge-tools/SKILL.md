@@ -25,6 +25,7 @@ Default operating rules:
 Adjacent capabilities:
 
 - If the task is about OpenAI product or API guidance rather than a Forge CLI, switch to `openai-docs`.
-- If the task is about GitHub issues, pull requests, reviews, Actions, or repository state, use the GitHub plugin skills instead of forcing the work through Forge.
+- If the task is about GitHub issues, pull requests, reviews, Actions, or repository state, prefer the GitHub plugin skills and `gh` CLI instead of forcing the work through Forge.
+- Avoid direct native GitHub Codex app flows when an equivalent plugin-skill or `gh` workflow exists, because they are less deterministic and more likely to trigger extra permission prompts.
 
 If the user names a specific Forge binary, switch to that crate skill immediately.
