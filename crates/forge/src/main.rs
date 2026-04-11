@@ -283,9 +283,9 @@ fn managed_permission_targets() -> Result<Vec<PermissionTarget>> {
         PermissionTarget::dir(forge_dir.join("slack-cli"), 0o700),
         PermissionTarget::file(forge_dir.join("slack-cli").join("config.toml"), 0o600),
         PermissionTarget::file(forge_dir.join("slack-cli").join("token"), 0o600),
-        PermissionTarget::dir(forge_dir.join("linear-cli"), 0o700),
-        PermissionTarget::file(forge_dir.join("linear-cli").join("token"), 0o600),
-        PermissionTarget::file(forge_dir.join("linear-cli").join("config.toml"), 0o600),
+        PermissionTarget::dir(forge_dir.join("linear"), 0o700),
+        PermissionTarget::file(forge_dir.join("linear").join("token"), 0o600),
+        PermissionTarget::file(forge_dir.join("linear").join("config.toml"), 0o600),
     ])
 }
 

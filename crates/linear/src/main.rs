@@ -486,13 +486,6 @@ fn print_completions(shell: Shell) {
 fn load_config() -> Result<ConfigFile> {
     let path = config_file_path()?;
     if !path.exists() {
-        let legacy_path = legacy_config_file_path()?;
-        if legacy_path.exists() {
-            let body = fs::read_to_string(&legacy_path)
-                .with_context(|| format!("failed to read config file at {}", legacy_path.display()))?;
-            return toml::from_str(&body)
-                .with_context(|| format!("failed to parse config file at {}", legacy_path.display()));
-        }
         return Ok(ConfigFile::default());
     }
     let body = fs::read_to_string(&path)
@@ -617,15 +610,6 @@ fn read_token(config: &ConfigFile) -> Result<String> {
     if token_path.exists() {
         let token = fs::read_to_string(&token_path)
             .with_context(|| format!("failed to read token file at {}", token_path.display()))?;
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-    let legacy_token_path = legacy_config_dir_path()?.join("token");
-    if legacy_token_path.exists() {
-        let token = fs::read_to_string(&legacy_token_path)
-            .with_context(|| format!("failed to read token file at {}", legacy_token_path.display()))?;
         let token = token.trim().to_string();
         if !token.is_empty() {
             return Ok(token);
@@ -1072,21 +1056,6 @@ fn config_dir_path() -> Result<PathBuf> {
 
 fn config_file_path() -> Result<PathBuf> {
     Ok(config_dir_path()?.join("config.toml"))
-}
-
-fn legacy_config_dir_path() -> Result<PathBuf> {
-    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(xdg).join("forge").join("linear-cli"));
-    }
-    let home = env::var("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("forge")
-        .join("linear-cli"))
-}
-
-fn legacy_config_file_path() -> Result<PathBuf> {
-    Ok(legacy_config_dir_path()?.join("config.toml"))
 }
 
 fn ensure_owner_only_permissions(path: &PathBuf, is_dir: bool) -> Result<()> {

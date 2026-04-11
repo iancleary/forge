@@ -1,6 +1,6 @@
 # Linear CLI
 
-This document defines the Forge-style `linear-cli`.
+This document defines the Forge-style `linear`.
 
 ## Goal
 
@@ -18,7 +18,7 @@ References:
 
 The upstream `linear` CLI includes VCS-aware issue workflows, interactive prompts, app/browser launching, project-local config, and a broader command surface.
 
-Forge's `linear-cli` intentionally keeps a smaller contract:
+Forge's `linear` intentionally keeps a smaller contract:
 
 - JSON-first output
 - explicit read and write verbs
@@ -75,39 +75,39 @@ Forge adapts that flow for a local, non-interactive CLI:
 2. Initialize the Forge config directory:
 
 ```sh
-linear-cli config
+linear config
 ```
 
 3. Save the API key with:
 
 ```sh
-linear-cli auth login
+linear auth login
 ```
 
 4. Or place the raw API key in:
 
 ```text
-~/.config/forge/linear-cli/token
+~/.config/forge/linear/token
 ```
 
 5. Optionally edit:
 
 ```text
-~/.config/forge/linear-cli/config.toml
+~/.config/forge/linear/config.toml
 ```
 
 Example config:
 
 ```toml
-token_file = "~/.config/forge/linear-cli/token"
+token_file = "~/.config/forge/linear/token"
 team_id = "YOUR_TEAM_ID"
 ```
 
 Supported lookup order:
 
 1. `LINEAR_API_KEY`
-2. `~/.config/forge/linear-cli/config.toml`
-3. `~/.config/forge/linear-cli/token`
+2. `~/.config/forge/linear/config.toml`
+3. `~/.config/forge/linear/token`
 
 Optional override:
 
@@ -126,46 +126,46 @@ The upstream CLI works with both Git and `jj`:
 jj describe "$(linear issue describe ABC-123)"
 ```
 
-Forge does not implement those VCS-aware helpers in `linear-cli` v1. If those workflows matter later, they should be added as explicit repo-aware commands rather than hidden side effects on read/write API calls.
+Forge does not implement those VCS-aware helpers in `linear` v1. If those workflows matter later, they should be added as explicit repo-aware commands rather than hidden side effects on read/write API calls.
 
 ## Command Surface
 
 Automatic commands from Clap:
 
 ```sh
-linear-cli --help
-linear-cli --version
+linear --help
+linear --version
 ```
 
 Forge-specific setup commands:
 
 ```sh
-linear-cli auth login
-linear-cli config
-linear-cli completions zsh
+linear auth login
+linear config
+linear completions zsh
 ```
 
 Current API commands:
 
 ```sh
-linear-cli --json viewer
-linear-cli team list
-linear-cli --json project list --limit 20
-linear-cli --json project view <project-id>
-linear-cli --json issue list --team-id <id> --limit 20
-linear-cli --json issue read ENG-123
-linear-cli --json issue create --team-id <id> --title "Fix auth bug" --description-file issue.md
-linear-cli --json issue update ENG-123 --state-id <workflow-state-id>
-linear-cli --json milestone list --project <project-id>
-linear-cli --json milestone view <milestone-id>
-linear-cli --json milestone create --project <project-id> --name "Q1 Goals" --target-date "2026-03-31"
-linear-cli --json milestone update <milestone-id> --name "New Name"
-linear-cli --json milestone delete <milestone-id> --force
-linear-cli --json m list --project <project-id>
-linear-cli --json m view <milestone-id>
-linear-cli --json m create --project <project-id> --name "Q1 Goals"
-linear-cli --json m update <milestone-id> --target-date "2026-04-15"
-linear-cli --json m delete <milestone-id> --force
+linear --json viewer
+linear team list
+linear --json project list --limit 20
+linear --json project view <project-id>
+linear --json issue list --team-id <id> --limit 20
+linear --json issue read ENG-123
+linear --json issue create --team-id <id> --title "Fix auth bug" --description-file issue.md
+linear --json issue update ENG-123 --state-id <workflow-state-id>
+linear --json milestone list --project <project-id>
+linear --json milestone view <milestone-id>
+linear --json milestone create --project <project-id> --name "Q1 Goals" --target-date "2026-03-31"
+linear --json milestone update <milestone-id> --name "New Name"
+linear --json milestone delete <milestone-id> --force
+linear --json m list --project <project-id>
+linear --json m view <milestone-id>
+linear --json m create --project <project-id> --name "Q1 Goals"
+linear --json m update <milestone-id> --target-date "2026-04-15"
+linear --json m delete <milestone-id> --force
 ```
 
 ## Command Notes
@@ -173,24 +173,24 @@ linear-cli --json m delete <milestone-id> --force
 ### `auth login`
 
 ```sh
-linear-cli auth login
-linear-cli auth login --api-key lin_api_xxx --force
+linear auth login
+linear auth login --api-key lin_api_xxx --force
 ```
 
-Prompts for a Linear personal API key and writes it to `~/.config/forge/linear-cli/token`. Use `--api-key` for non-interactive setup and `--force` to overwrite an existing token file.
+Prompts for a Linear personal API key and writes it to `~/.config/forge/linear/token`. Use `--api-key` for non-interactive setup and `--force` to overwrite an existing token file.
 
 ### `config`
 
 ```sh
-linear-cli config
+linear config
 ```
 
-Creates `~/.config/forge/linear-cli/config.toml` if it does not already exist and returns the config and token paths as JSON.
+Creates `~/.config/forge/linear/config.toml` if it does not already exist and returns the config and token paths as JSON.
 
 ### `completions`
 
 ```sh
-linear-cli completions zsh
+linear completions zsh
 ```
 
 Prints shell completion scripts to stdout.
@@ -198,7 +198,7 @@ Prints shell completion scripts to stdout.
 ### `viewer`
 
 ```sh
-linear-cli --json viewer
+linear --json viewer
 ```
 
 Returns the authenticated viewer.
@@ -206,7 +206,7 @@ Returns the authenticated viewer.
 ### `team list`
 
 ```sh
-linear-cli --json team list
+linear --json team list
 ```
 
 Returns accessible teams.
@@ -214,7 +214,7 @@ Returns accessible teams.
 ### `project list`
 
 ```sh
-linear-cli --json project list [--limit <n>]
+linear --json project list [--limit <n>]
 ```
 
 Returns accessible projects.
@@ -222,7 +222,7 @@ Returns accessible projects.
 ### `project view`
 
 ```sh
-linear-cli --json project view <project-id>
+linear --json project view <project-id>
 ```
 
 Reads a single project by UUID.
@@ -230,7 +230,7 @@ Reads a single project by UUID.
 ### `issue list`
 
 ```sh
-linear-cli --json issue list [--team-id <id>] [--assigned-to-me] [--limit <n>]
+linear --json issue list [--team-id <id>] [--assigned-to-me] [--limit <n>]
 ```
 
 Returns issues for a team, with optional `assignedToMe` filtering.
@@ -244,7 +244,7 @@ Implementation note:
 ### `issue read`
 
 ```sh
-linear-cli --json issue read <issue-id>
+linear --json issue read <issue-id>
 ```
 
 Reads a single issue by Linear issue identifier such as `ENG-123`.
@@ -252,7 +252,7 @@ Reads a single issue by Linear issue identifier such as `ENG-123`.
 ### `issue create`
 
 ```sh
-linear-cli --json issue create --team-id <id> --title <title> [--description <text>] [--description-file <path>] [--state-id <id>]
+linear --json issue create --team-id <id> --title <title> [--description <text>] [--description-file <path>] [--state-id <id>]
 ```
 
 Creates a new issue using the GraphQL `issueCreate` mutation.
@@ -260,7 +260,7 @@ Creates a new issue using the GraphQL `issueCreate` mutation.
 ### `issue update`
 
 ```sh
-linear-cli --json issue update <issue-id> [--title <title>] [--description <text>] [--description-file <path>] [--state-id <id>]
+linear --json issue update <issue-id> [--title <title>] [--description <text>] [--description-file <path>] [--state-id <id>]
 ```
 
 Updates an issue using the GraphQL `issueUpdate` mutation.
@@ -268,7 +268,7 @@ Updates an issue using the GraphQL `issueUpdate` mutation.
 ### `milestone list`
 
 ```sh
-linear-cli --json milestone list --project <project-id> [--limit <n>]
+linear --json milestone list --project <project-id> [--limit <n>]
 ```
 
 Returns milestones for a project.
@@ -276,7 +276,7 @@ Returns milestones for a project.
 ### `milestone view`
 
 ```sh
-linear-cli --json milestone view <milestone-id>
+linear --json milestone view <milestone-id>
 ```
 
 Reads a single project milestone by UUID.
@@ -284,7 +284,7 @@ Reads a single project milestone by UUID.
 ### `milestone create`
 
 ```sh
-linear-cli --json milestone create --project <project-id> --name <name> [--description <text>] [--description-file <path>] [--target-date <yyyy-mm-dd>]
+linear --json milestone create --project <project-id> --name <name> [--description <text>] [--description-file <path>] [--target-date <yyyy-mm-dd>]
 ```
 
 Creates a project milestone. Unlike upstream `linear`, Forge does not support an interactive create flow in v1.
@@ -292,7 +292,7 @@ Creates a project milestone. Unlike upstream `linear`, Forge does not support an
 ### `milestone update`
 
 ```sh
-linear-cli --json milestone update <milestone-id> [--name <name>] [--description <text>] [--description-file <path>] [--target-date <yyyy-mm-dd>]
+linear --json milestone update <milestone-id> [--name <name>] [--description <text>] [--description-file <path>] [--target-date <yyyy-mm-dd>]
 ```
 
 Updates a project milestone.
@@ -300,7 +300,7 @@ Updates a project milestone.
 ### `milestone delete`
 
 ```sh
-linear-cli --json milestone delete <milestone-id> --force
+linear --json milestone delete <milestone-id> --force
 ```
 
 Deletes a project milestone. `--force` is required because this is destructive.
@@ -319,16 +319,16 @@ Deletes a project milestone. `--force` is required because this is destructive.
 Run from source:
 
 ```sh
-cargo run -p linear-cli -- --json viewer
-cargo run -p linear-cli -- auth login
-cargo run -p linear-cli -- config
-cargo run -p linear-cli -- completions zsh
+cargo run -p linear -- --json viewer
+cargo run -p linear -- auth login
+cargo run -p linear -- config
+cargo run -p linear -- completions zsh
 ```
 
 Install locally:
 
 ```sh
-cargo install --path crates/linear-cli
+cargo install --path crates/linear
 ```
 
 ## API Notes

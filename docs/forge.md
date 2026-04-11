@@ -20,7 +20,7 @@ Audits known Forge-managed config directories and secret files, including:
 
 - `~/.config/forge/`
 - `~/.config/forge/slack-cli/`
-- `~/.config/forge/linear-cli/`
+- `~/.config/forge/linear/`
 
 It reports whether directories and token files match the expected owner-only modes.
 
