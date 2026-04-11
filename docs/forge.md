@@ -8,6 +8,8 @@ Provide shared configuration and self-management commands for the local Forge to
 
 This is where update-check and update behavior should live, rather than embedding self-update logic independently inside every tool.
 
+Forge also owns the lifecycle of Forge-managed consumer skills. The detailed skill management contract lives in `docs/forge-skills.md`.
+
 ## Commands
 
 ### `forge permissions check`
@@ -41,7 +43,7 @@ Applies the expected local permissions:
 forge self update-check [--force] [--repo-path <path>] [--json]
 ```
 
-Checks whether the local Forge repo is behind the remote default branch.
+Checks whether the local Forge install is out of date.
 
 Behavior:
 
@@ -49,6 +51,10 @@ Behavior:
 - caches the last check result in `~/.config/forge/state.toml`
 - uses a TTL to avoid hitting the network on every run
 - `--force` bypasses the cache
+- checks both Forge binary/repo drift and Forge-managed skill drift
+- checks `mainline` Forge-managed skill drift by default
+- uses the configured Forge repo when running in repo-checkout mode
+- otherwise uses the installed Forge release as the canonical source for managed skills
 
 ### `forge self update`
 
@@ -56,7 +62,9 @@ Behavior:
 forge self update [--repo-path <path>] [--branch <name>] [--json]
 ```
 
-Updates the local Forge repo using:
+Updates the local Forge installation and reconciles Forge-managed skills.
+
+In repo-checkout mode, Forge updates the local repo using:
 
 ```sh
 git pull --rebase origin <branch>
@@ -66,6 +74,8 @@ Default branch behavior:
 
 - prefer the remote default branch when it can be resolved
 - otherwise fall back to `main`
+
+In release mode, Forge uses the installed release payload as the canonical source and updates `mainline` Forge-managed skills without requiring a local checkout.
 
 ## Config
 
@@ -84,6 +94,8 @@ update_check_ttl_minutes = 1440
 repo_path = "~/Development/forge"
 ```
 
+Skill lifecycle configuration is documented in `docs/forge-skills.md`.
+
 Optional override:
 
 - `FORGE_CONFIG_DIR`
@@ -100,6 +112,7 @@ State cache:
 - `auto_update` should stay off by default until the toolchain is more mature
 - `forge self update-check` is safe to run frequently with cache enabled
 - `forge self update` is explicit on purpose
+- Forge-managed skills are deployed artifacts, not peer sources of truth
 
 ## Versioning Policy
 

@@ -163,6 +163,23 @@ Example policy for a content tool:
 - Use `--body-file` for long content
 - Never schedule, publish, overwrite, or delete unless explicitly requested
 
+### Recommended packaging for Forge-style bundles
+
+When a repo ships multiple agent-friendly CLIs, prefer:
+
+- one narrow consumer skill per binary
+- one lightweight router skill for discovery across the bundle
+
+For this repo, that means:
+
+- `linear-cli`
+- `slack-cli-research`
+- `codex-threads-cli`
+- `forge-cli-admin`
+- `forge-tools` as a short entry point that routes Codex to the correct crate skill
+
+Keep the router skill short. It should help Codex choose the right CLI, not duplicate every command rule from every crate skill.
+
 ## Build Workflow For Each Tool
 
 Use this sequence when turning one of your recurring tools into a CLI.
