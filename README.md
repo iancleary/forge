@@ -18,6 +18,18 @@ Agent-friendly CLIs built as Rust binaries.
 - `slack-cli` uses a user token because it is intended to read and act on behalf of the user across the conversations the user can access
 - `openclaw-slack` uses a bot token because it is intended to operate as a distinct assistant identity with tighter workflow-specific permissions
 
+## Versioning
+
+Forge uses semver-compatible calendar versioning:
+
+- format: `YYYY.MMDD.N`
+- example: `2026.410.0`
+- `YYYY` is the calendar year
+- `MMDD` is month and day without separators
+- `N` is the release counter for that day
+
+This sorts better for Cargo than build metadata forms such as `2026.4.10+0`.
+
 ## Install And Run
 
 Run from source during development:

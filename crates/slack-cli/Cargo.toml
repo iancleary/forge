@@ -1,6 +1,6 @@
 [package]
 name = "slack-cli"
-version = "2026.4.10+0"
+version = "2026.410.0"
 edition = "2024"
 
 [dependencies]

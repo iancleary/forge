@@ -75,3 +75,13 @@ State cache:
 - `auto_update` should stay off by default until the toolchain is more mature
 - `forge self update-check` is safe to run frequently with cache enabled
 - `forge self update` is explicit on purpose
+
+## Versioning Policy
+
+Forge uses semver-compatible calendar versioning for crates:
+
+- format: `YYYY.MMDD.N`
+- first release on April 10, 2026: `2026.410.0`
+- second release the same day: `2026.410.1`
+
+This keeps crate versions valid for Cargo while allowing multiple releases per day.
