@@ -66,10 +66,15 @@ Lists Forge-managed skills available from the current source and known installed
 ### `forge skills status`
 
 ```sh
-forge skills status [--json]
+forge skills status [--scope mainline|development|all] [--target user|forge_repo|path:<abs-path>] [--json]
 ```
 
 Summarizes Forge-managed skill state across configured targets.
+
+Default behavior:
+
+- scope defaults to `mainline`
+- this keeps consumer-facing status focused on the installs that `forge self update-check` and `forge self update` care about by default
 
 States:
 
@@ -96,8 +101,8 @@ Checks:
 ### `forge skills install`
 
 ```sh
-forge skills install <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--force] [--force-unmanaged] [--json]
-forge skills install --all [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--force] [--force-unmanaged] [--json]
+forge skills install <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
+forge skills install --all [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
 ```
 
 Installs or updates Forge-managed skills to a target.
@@ -109,6 +114,11 @@ Behavior:
 - when omitted, Forge resolves the source automatically:
   - use `repo` if a valid Forge repo checkout is configured
   - otherwise use `release`
+- target role defaults:
+  - `user` => `mainline`
+  - `forge_repo` => `development`
+  - `path:<abs-path>` => `development`
+- use `--target-role mainline` when a non-user target should be treated as part of the primary managed install set
 - overwrite is allowed by default for existing Forge-managed targets
 - overwrite fails for unmanaged collisions unless `--force-unmanaged` is set
 
@@ -123,8 +133,8 @@ Shows differences between the current Forge source copy and the installed target
 ### `forge skills revert`
 
 ```sh
-forge skills revert <skill> [--target user|forge_repo|path:<abs-path>] [--json]
-forge skills revert --all [--target user|forge_repo|path:<abs-path>] [--json]
+forge skills revert <skill> [--target user|forge_repo|path:<abs-path>] [--target-role mainline|development] [--json]
+forge skills revert --all [--target user|forge_repo|path:<abs-path>] [--target-role mainline|development] [--json]
 ```
 
 Switches a managed target back to the standard Forge install source.
@@ -169,7 +179,6 @@ Use a fixed subpath rather than cwd inference.
 Example:
 
 ```toml
-[skills]
 forge_repo_install_subpath = ".agents/skills-installed"
 ```
 
@@ -262,6 +271,7 @@ source_ref = "2026.0411.0"
 source_hash = "def456"
 
 target_kind = "user"
+target_role = "mainline"
 target_path = "/Users/alice/.codex/skills/linear-cli"
 installed_at = "2026-04-11T14:22:00Z"
 state = "up_to_date"
@@ -280,7 +290,7 @@ source_repo_path = "/Users/alice/Development/forge"
 Checks:
 
 - whether the Forge repo or installed release is out of date
-- whether any managed skill install is stale relative to the active Forge source
+- whether any mainline managed skill install is stale relative to the active Forge source
 
 Recommended result shape:
 
@@ -309,6 +319,7 @@ Behavior:
 
 - updates the active Forge source
 - reconciles managed skill installs against that source
+- reconciles `mainline` managed skill installs against that source by default
 - overwrites Forge-managed targets as needed
 - leaves unmanaged collisions untouched unless the user explicitly took ownership beforehand
 
@@ -346,6 +357,13 @@ or:
 
 ```sh
 forge skills install linear-cli --source release --target user --json
+```
+
+Persistent non-user target example:
+
+```sh
+forge skills install --all --source repo --target path:/opt/forge-skills --target-role mainline --json
+forge skills status --target path:/opt/forge-skills --json
 ```
 
 After revert:

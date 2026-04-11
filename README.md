@@ -89,11 +89,19 @@ Useful commands:
 forge skills list --source all
 forge skills validate --all
 forge skills diff linear-cli --target user
+forge skills status --scope all
 forge self update-check
 forge self update
 ```
 
 If Forge reports that `~/.config/forge/state.toml` cannot be parsed after a local schema change during development, remove that file and reinstall the managed skills you want Forge to track.
+
+If you use a non-user target as part of your primary managed install set, mark it explicitly:
+
+```sh
+forge skills install --all --source repo --target path:/opt/forge-skills --target-role mainline
+forge skills status --target path:/opt/forge-skills
+```
 
 If you temporarily install skills from a local checkout and want to switch back to the standard release-backed install:
 

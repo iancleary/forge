@@ -25,11 +25,11 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(name = "self", subcommand)]
+    #[command(name = "self", about = "Check for Forge updates and reconcile managed skills", subcommand)]
     Self_(SelfCommand),
-    #[command(subcommand)]
+    #[command(about = "Check or repair local Forge file permissions", subcommand)]
     Permissions(PermissionsCommand),
-    #[command(subcommand)]
+    #[command(about = "Install, validate, diff, and inspect Forge-managed Codex skills", subcommand)]
     Skills(SkillsCommand),
 }
 
@@ -48,11 +48,17 @@ enum PermissionsCommand {
 
 #[derive(Subcommand, Debug)]
 enum SkillsCommand {
+    #[command(about = "List available Forge skills from repo and/or release sources")]
     List(SkillsListArgs),
+    #[command(about = "Show managed install status; defaults to mainline targets only")]
     Status(SkillsStatusArgs),
+    #[command(about = "Validate SKILL.md metadata and router references")]
     Validate(SkillsValidateArgs),
+    #[command(about = "Install Forge-managed skills to a target location")]
     Install(SkillsInstallArgs),
+    #[command(about = "Diff one installed skill against the selected source")]
     Diff(SkillsDiffArgs),
+    #[command(about = "Reinstall skills from the release source, switching back from repo-sourced testing")]
     Revert(SkillsRevertArgs),
 }
 
@@ -1958,5 +1964,39 @@ mod tests {
             .all(|entry| entry.target_role == SkillTargetRole::Mainline));
 
         let _ = fs::remove_dir_all(install_root);
+    }
+
+    #[test]
+    fn embedded_release_skills_match_repo_skill_directories() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crate dir parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let repo_skills = load_repo_skills(&repo_root).expect("repo skills");
+        let release_skills = load_release_skills();
+
+        let repo_map = repo_skills
+            .into_iter()
+            .map(|skill| (skill.name.clone(), skill))
+            .collect::<BTreeMap<_, _>>();
+        let release_map = release_skills
+            .into_iter()
+            .map(|skill| (skill.name.clone(), skill))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            repo_map.keys().collect::<Vec<_>>(),
+            release_map.keys().collect::<Vec<_>>()
+        );
+
+        for (name, repo_skill) in repo_map {
+            let release_skill = release_map.get(&name).expect("release skill exists");
+            assert_eq!(
+                repo_skill.files, release_skill.files,
+                "embedded release payload drifted from repo skill for {name}"
+            );
+        }
     }
 }

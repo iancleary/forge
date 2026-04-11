@@ -52,6 +52,7 @@ Behavior:
 - uses a TTL to avoid hitting the network on every run
 - `--force` bypasses the cache
 - checks both Forge binary/repo drift and Forge-managed skill drift
+- checks `mainline` Forge-managed skill drift by default
 - uses the configured Forge repo when running in repo-checkout mode
 - otherwise uses the installed Forge release as the canonical source for managed skills
 
@@ -74,7 +75,7 @@ Default branch behavior:
 - prefer the remote default branch when it can be resolved
 - otherwise fall back to `main`
 
-In release mode, Forge uses the installed release payload as the canonical source and updates Forge-managed skills without requiring a local checkout.
+In release mode, Forge uses the installed release payload as the canonical source and updates `mainline` Forge-managed skills without requiring a local checkout.
 
 ## Config
 

@@ -13,13 +13,16 @@ Use these commands first:
 - `forge permissions fix --json`
 - `forge self update-check --json`
 - `forge self update --json`
+- `forge skills status --json`
 
 Working rules:
 
 - Prefer `permissions check` before `permissions fix`.
 - Prefer `self update-check` before `self update`.
+- `skills status` defaults to `mainline` targets; use `--scope all` when debugging development installs.
 - Use `--force` on `self update-check` only when a fresh remote check is required.
 - Use `--repo-path` only when the repo is not in the expected configured location.
+- Non-user targets such as `path:/...` and `forge_repo` default to `development`; use `--target-role mainline` when they are part of the primary managed install set.
 
 Safety:
 
