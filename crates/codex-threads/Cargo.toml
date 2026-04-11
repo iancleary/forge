@@ -1,0 +1,12 @@
+[package]
+name = "codex-threads"
+version = "2026.410.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+

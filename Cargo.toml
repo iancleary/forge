@@ -1,4 +1,3 @@
 [workspace]
-members = ["crates/forge", "crates/slack-cli"]
+members = ["crates/codex-threads", "crates/forge", "crates/slack-cli"]
 resolver = "2"
-
