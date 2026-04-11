@@ -11,6 +11,7 @@ Key design notes:
 
 - `docs/agent-friendly-clis.md` for the cross-repo CLI contract
 - `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
+- `docs/codex.md` for Forge as the first-party source of truth for Codex skills, routing, and portable policy
 
 Installed Forge skills also carry this sequence through the `design-algorithm` managed skill, so the shaping workflow propagates beyond the repo checkout.
 
@@ -73,6 +74,8 @@ linear --json project list --limit 5
 
 If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `$HOME/.agents/skills`.
 
+If Forge is your first-party Codex source of truth, treat the repo docs plus the Forge-managed skills as the canonical portable policy surface. Repo-local `AGENTS.md` guidance can reinforce that behavior, but it should not be the only place where cross-repo routing rules live.
+
 From a local checkout:
 
 ```sh
@@ -101,6 +104,13 @@ forge skills status --scope all
 forge self update-check
 forge self update
 ```
+
+The important mental model:
+
+- `forge` owns the portable, user-scoped Codex behavior you want available everywhere
+- skill `description` frontmatter is part of the routing contract, not incidental prose
+- router skills such as `forge-tools` tell Codex which narrower skill to use next
+- machine-local or private details should stay out of the Forge-managed surface
 
 If Forge reports that `~/.config/forge/state.toml` cannot be parsed after a local schema change during development, remove that file and reinstall the managed skills you want Forge to track.
 

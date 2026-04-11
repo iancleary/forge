@@ -10,6 +10,8 @@ This is where update-check and update behavior should live, rather than embeddin
 
 Forge also owns the lifecycle of Forge-managed consumer skills. The detailed skill management contract lives in `docs/forge-skills.md`.
 
+When Forge is being used as the first-party source of truth for Codex behavior, the higher-level routing and ownership model lives in `docs/codex.md`.
+
 ## Commands
 
 ### `forge doctor`
