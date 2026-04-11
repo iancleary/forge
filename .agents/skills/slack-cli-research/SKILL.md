@@ -17,7 +17,7 @@ Start narrow:
 
 Working rules:
 
-- Use `--json` for retrieval and chaining.
+- Use `--json` for retrieval because the skill is consumed by agents and should stay deterministic and low-token.
 - Resolve a permalink first when the user provides a Slack URL.
 - Search with a small limit first, then expand only if needed.
 - Use `read-thread` for the whole conversation and `thread-context` when only local context around one reply is needed.

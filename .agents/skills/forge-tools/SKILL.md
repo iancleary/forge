@@ -17,7 +17,7 @@ Pick the narrowest CLI skill that matches the job:
 Default operating rules:
 
 - Prefer the crate-specific skill once the target CLI is clear.
-- Prefer `--json` for all reads and for any output that will be chained into another command.
+- Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.
 - Treat write commands as explicit actions; do not infer a mutation from a read request.
 - Keep work inside the CLI contract instead of reconstructing external API calls yourself.

@@ -220,7 +220,7 @@ fn main() {
         };
         eprintln!(
             "{}",
-            serde_json::to_string_pretty(&error).unwrap_or_else(|_| {
+            serde_json::to_string(&error).unwrap_or_else(|_| {
                 "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
             })
         );
@@ -264,7 +264,7 @@ where
 {
     println!(
         "{}",
-        serde_json::to_string_pretty(value).context("failed to render JSON output")?
+        serde_json::to_string(value).context("failed to render JSON output")?
     );
     Ok(())
 }

@@ -269,7 +269,7 @@ async fn main() {
         let cli_error = classify_error(&err);
         eprintln!(
             "{}",
-            serde_json::to_string_pretty(&ErrorEnvelope {
+            serde_json::to_string(&ErrorEnvelope {
                 ok: false,
                 error: cli_error,
             })
@@ -347,7 +347,7 @@ where
 {
     println!(
         "{}",
-        serde_json::to_string_pretty(value).context("failed to render JSON output")?
+        serde_json::to_string(value).context("failed to render JSON output")?
     );
     Ok(())
 }
