@@ -1,6 +1,6 @@
 [package]
 name = "codex-threads"
-version = "2026.410.2"
+version = "2026.410.3"
 edition = "2024"
 
 [dependencies]

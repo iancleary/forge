@@ -11,6 +11,7 @@ Agent-friendly CLIs built as Rust binaries.
 
 - `forge` for shared config and self-management
 - `slack-cli` for Slack research workflows
+- `linear-cli` for Linear issue, project, and milestone workflows
 - `openclaw-slack` for stricter OpenClaw Slack workflows
 
 ## Token Strategy
@@ -38,6 +39,8 @@ Run from source during development:
 cargo run -p forge -- self update-check --force
 cargo run -p slack-cli -- --help
 cargo run -p codex-threads -- --json sync
+cargo run -p linear-cli -- auth login
+cargo run -p linear-cli -- --json viewer
 ```
 
 Install locally:
@@ -46,6 +49,7 @@ Install locally:
 cargo install --path crates/forge
 cargo install --path crates/slack-cli
 cargo install --path crates/codex-threads
+cargo install --path crates/linear-cli
 ```
 
 Then run:
@@ -54,4 +58,6 @@ Then run:
 forge self update-check --force
 slack-cli search "actual PDF" --limit 5
 codex-threads --json messages search "build a CLI" --limit 5
+linear-cli auth login
+linear-cli --json project list --limit 5
 ```
