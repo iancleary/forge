@@ -21,6 +21,9 @@ Default operating rules:
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.
 - Treat write commands as explicit actions; do not infer a mutation from a read request.
 - Keep work inside the CLI contract instead of reconstructing external API calls yourself.
+- Use `jq` only for one-off local reshaping after the CLI has already returned the right record set.
+- Keep `rg` for repo and local-file exploration; do not substitute it for a Forge domain command.
+- If the same shell shaping keeps recurring, treat that as product feedback to add a narrow Forge primitive rather than normalizing the pipeline in every session.
 
 Adjacent capabilities:
 

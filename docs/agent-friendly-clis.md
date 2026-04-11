@@ -92,6 +92,14 @@ linear-lite-cli issues list --team ENG --limit 25
 - Human-readable mode can exist, but JSON is the primary interface for agents
 - Include IDs the next command can reuse
 
+For Forge-style CLIs, "low-token, deterministic" means:
+
+- the command returns only the fields needed for the next decision or follow-up command
+- field names and shapes stay stable across runs
+- the command supports narrow reads with `--limit`, paging, or a specific read target
+- errors are shaped and actionable instead of forcing the agent to parse prose
+- the CLI does the repeated normalization work once so every future agent run does not rebuild the same shell pipeline
+
 Preferred top-level JSON shape:
 
 ```json
@@ -131,6 +139,53 @@ Preferred error shape:
 - If the source system pages, expose a cursor or page token
 - Support "fetch a little first" workflows
 - Do not dump huge payloads by default
+
+## Forge CLI-First Policy
+
+When Forge already has a CLI for the target system, prefer the Forge command first and fall back to shell tools only when the job is still exploratory or one-off.
+
+Use the Forge CLI first when:
+
+- the operation is part of the stable product contract
+- the same post-processing keeps showing up across sessions
+- the agent needs reusable IDs, normalized fields, or predictable error codes
+- the output will likely be chained into another command
+- the agent would otherwise need the same `jq` transformation repeatedly
+
+Use `jq` as an acceptable fallback when:
+
+- the CLI already returned the right record set and only a one-off local projection is needed
+- you are validating or exploring a new output shape before deciding whether Forge should absorb it
+- the transformation is local presentation, not part of the CLI contract
+
+Do not treat repeated `jq` pipelines as the steady state. If the same projection keeps recurring, that is product feedback that the CLI probably needs a narrower flag, subcommand, or output mode.
+
+Use `rg` as the right tool when:
+
+- the task is repository or local-file exploration rather than an external system contract
+- the search space is unstructured text and the user is still discovering where the target lives
+- you are looking for implementation references, docs, tests, or config snippets
+
+Do not pull `rg`-style exploration into Forge unless the search target is part of a stable domain-specific contract and the CLI can return meaningfully normalized results instead of raw text matches.
+
+## Folding Pain Into Forge
+
+Use this pattern to decide when recurring agent pain should become a Forge primitive:
+
+1. Notice repetition. The same shell pipeline, copied query, or cleanup step appears across multiple sessions.
+2. Confirm the target is stable. The agent is not just exploring; it is trying to perform the same real task each time.
+3. Isolate the narrow job. Name the exact thing the agent wants, such as "list projects with IDs and status" rather than "make the JSON nicer."
+4. Define the minimal contract. Pick the fields, flags, limits, and error codes that remove the repeated post-processing.
+5. Keep the first cut small. Add one narrow flag, view, or subcommand instead of a generic query language.
+6. Leave exploration outside. Keep `jq` and `rg` available for ad hoc shaping and repo discovery.
+
+Heuristics for opening a follow-up Forge change instead of writing another shell pipeline:
+
+- the same `jq` expression has appeared three or more times
+- the agent repeatedly drops the same noisy fields before it can reason
+- the same IDs or summaries are needed for the next command every time
+- mistakes are coming from inconsistent local shaping rather than the source API itself
+- the desired output can be described as a stable command example in the docs
 
 ### Safety model
 
