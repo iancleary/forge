@@ -68,30 +68,31 @@ if [[ ! -f "$repo_root/Cargo.toml" ]]; then
 fi
 
 bin_packages() {
-  cargo metadata --no-deps --format-version 1 --manifest-path "$repo_root/Cargo.toml" \
-    | python3 - <<'PY'
-import json, sys
-data = json.load(sys.stdin)
-pkgs = []
-for p in data.get("packages", []):
-    if any("bin" in t.get("kind", []) for t in p.get("targets", [])):
-        pkgs.append(p["name"])
-for name in pkgs:
-    print(name)
-PY
+  cargo metadata --quiet --no-deps --format-version 1 --manifest-path "$repo_root/Cargo.toml" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); rows=[(p["name"],p["manifest_path"]) for p in d.get("packages",[]) if any("bin" in t.get("kind",[]) for t in p.get("targets",[]))]; sys.stdout.write("".join(["%s\t%s\n"%(n,m) for (n,m) in rows]))'
 }
 
-mapfile -t pkgs < <(bin_packages)
-if [[ ${#pkgs[@]} -eq 0 ]]; then
+tmp_pkgs="$(mktemp "/tmp/forge-dev-bin-packages.XXXXXX")"
+trap 'rm -f "$tmp_pkgs"' EXIT
+
+bin_packages >"$tmp_pkgs"
+if [[ ! -s "$tmp_pkgs" ]]; then
   echo "error: no binary packages found in workspace at $repo_root" >&2
   exit 1
 fi
 
-echo "Installing ${#pkgs[@]} binaries from local checkout: $repo_root"
-printf '  - %s\n' "${pkgs[@]}"
+pkg_count="$(wc -l <"$tmp_pkgs" | tr -d ' ')"
+echo "Installing $pkg_count binaries from local checkout: $repo_root"
+while IFS=$'\t' read -r pkg_name pkg_manifest; do
+  if [[ -n "${pkg_name:-}" ]]; then
+    echo "  - $pkg_name"
+  fi
+done <"$tmp_pkgs"
 
-for pkg in "${pkgs[@]}"; do
-  # --path is the workspace root; -p selects the package (binary crate).
-  cargo install --locked $force --path "$repo_root" -p "$pkg"
-done
-
+while IFS=$'\t' read -r pkg_name pkg_manifest; do
+  if [[ -z "${pkg_name:-}" || -z "${pkg_manifest:-}" ]]; then
+    continue
+  fi
+  pkg_dir="$(dirname "$pkg_manifest")"
+  cargo install --locked $force --path "$pkg_dir"
+done <"$tmp_pkgs"
