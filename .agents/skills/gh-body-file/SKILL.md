@@ -28,6 +28,23 @@ Use this skill for `gh` workflows that send substantial markdown to GitHub.
 - Avoid shell-interpolated multiline markdown when it contains backticks, `$HOME`-style paths, angle brackets, fenced code blocks, or other content likely to break quoting.
 - Prefer a local file because it is reviewable before submission and more deterministic for Codex.
 
+### Preferred File Creation
+
+Default to creating the body file with `apply_patch` into a deterministic path under `/tmp`, then pass it to `gh --body-file`.
+
+Reasons:
+
+- avoids brittle shell quoting
+- avoids extra approval prompts for shell-wrapped commands
+- makes the markdown easy to review before submission
+
+Recommended pattern:
+
+1. Write `/tmp/forge-gh-body.md` (or `/tmp/forge-gh-issue.md`, `/tmp/forge-gh-pr.md`) via `apply_patch`.
+2. Run the `gh` command with `--body-file /tmp/...`.
+
+Avoid generating multi-line markdown bodies with `printf`, heredocs, or shell interpolation unless the user explicitly requests it.
+
 ## Common Patterns
 
 ```sh
