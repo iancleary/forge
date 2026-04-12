@@ -6,13 +6,11 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use slack_core::{
     ErrorBody, OutputMode, classify_slack_error_code, config_dir_path as shared_config_dir_path,
-    emit_output, format_error_human, normalize_token, parse_slack_json_response, prepare_config_dir,
-    print_error_json, prompt_for_token, read_token as shared_read_token,
-    slack_client as shared_slack_client, write_token_file,
+    emit_output, format_error_human, normalize_token, prepare_config_dir, print_error_json,
+    prompt_for_token, read_token as shared_read_token, slack_client as shared_slack_client,
+    slack_get, write_token_file,
 };
 use url::Url;
-
-const API_BASE: &str = "https://slack.com/api";
 
 #[derive(Parser, Debug)]
 #[command(name = "slack-query")]
@@ -196,16 +194,12 @@ struct Message {
 
 #[derive(Debug, Deserialize)]
 struct SlackListResponse<T> {
-    ok: bool,
-    error: Option<String>,
     messages: Option<Vec<T>>,
     response_metadata: Option<SlackCursor>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SlackSearchResponse {
-    ok: bool,
-    error: Option<String>,
     messages: Option<SlackSearchMessages>,
 }
 
@@ -552,20 +546,17 @@ async fn read_thread(
     thread_ts: &str,
     limit: u32,
 ) -> Result<ThreadResult> {
-    let response = client
-        .get(format!("{API_BASE}/conversations.replies"))
-        .query(&[
-            ("channel", channel_id),
-            ("ts", thread_ts),
-            ("limit", &limit.to_string()),
-            ("inclusive", "true"),
-        ])
-        .send()
-        .await
-        .context("failed to call conversations.replies")?;
-
-    let rate_limited = response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS;
-    let payload = parse_list_response(response).await?;
+    let payload: SlackListResponse<Message> = slack_get(
+        client,
+        "conversations.replies",
+        &[
+            ("channel".to_string(), channel_id.to_string()),
+            ("ts".to_string(), thread_ts.to_string()),
+            ("limit".to_string(), limit.to_string()),
+            ("inclusive".to_string(), "true".to_string()),
+        ],
+    )
+    .await?;
     let messages = payload.messages.unwrap_or_default();
 
     Ok(ThreadResult {
@@ -573,7 +564,7 @@ async fn read_thread(
         thread_ts: thread_ts.to_string(),
         messages,
         response_metadata: ResponseMetadata {
-            rate_limited,
+            rate_limited: false,
             next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
         },
     })
@@ -711,30 +702,14 @@ async fn fetch_history(
         query.push(("latest".to_string(), latest.to_string()));
     }
 
-    let response = client
-        .get(format!("{API_BASE}/conversations.history"))
-        .query(&query)
-        .send()
-        .await
-        .context("failed to call conversations.history")?;
-
-    let rate_limited = response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS;
-    let payload = parse_list_response(response).await?;
+    let payload: SlackListResponse<Message> =
+        slack_get(client, "conversations.history", &query).await?;
 
     Ok(HistoryWindow {
         messages: payload.messages.unwrap_or_default(),
-        rate_limited,
+        rate_limited: false,
         next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
     })
-}
-
-async fn parse_list_response(response: reqwest::Response) -> Result<SlackListResponse<Message>> {
-    let payload = parse_slack_json_response::<SlackListResponse<Message>>(response).await?;
-    if !payload.ok {
-        bail!(payload.error.unwrap_or_else(|| "slack_api_error".to_string()));
-    }
-
-    Ok(payload)
 }
 
 async fn search_messages(
@@ -745,22 +720,18 @@ async fn search_messages(
     sort: &str,
     sort_dir: &str,
 ) -> Result<SearchResult> {
-    let response = client
-        .get(format!("{API_BASE}/search.messages"))
-        .query(&[
-            ("query", query),
-            ("count", &limit.to_string()),
-            ("page", &page.to_string()),
-            ("sort", sort),
-            ("sort_dir", sort_dir),
-        ])
-        .send()
-        .await
-        .context("failed to call search.messages")?;
-    let payload = parse_slack_json_response::<SlackSearchResponse>(response).await?;
-    if !payload.ok {
-        bail!(payload.error.unwrap_or_else(|| "slack_api_error".to_string()));
-    }
+    let payload: SlackSearchResponse = slack_get(
+        client,
+        "search.messages",
+        &[
+            ("query".to_string(), query.to_string()),
+            ("count".to_string(), limit.to_string()),
+            ("page".to_string(), page.to_string()),
+            ("sort".to_string(), sort.to_string()),
+            ("sort_dir".to_string(), sort_dir.to_string()),
+        ],
+    )
+    .await?;
 
     let messages = payload.messages.unwrap_or(SlackSearchMessages {
         matches: Vec::new(),
