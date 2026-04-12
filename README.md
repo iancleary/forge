@@ -2,81 +2,13 @@
 
 Agent-friendly CLIs built as Rust binaries.
 
-## Layout
-
-- `docs/` contains product and design specs for each CLI
-- `crates/` contains Rust crates for each CLI implementation
-
-Key design notes:
-
-- `docs/agent-friendly-clis.md` for the cross-repo CLI contract
-- `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
-- `docs/codex.md` for Forge as the first-party source of truth for Codex skills, routing, and portable policy
-
-Installed Forge skills also carry this sequence through the `design-algorithm` managed skill, so the shaping workflow propagates beyond the repo checkout.
-
-## Current CLIs
-
-- `forge` for shared config and self-management
-- `slack-cli` for Slack research workflows
-- `linear` for Linear issue, project, and milestone workflows
-- `openclaw-slack` for stricter OpenClaw Slack workflows
-
-## Token Strategy
-
-- `slack-cli` uses a user token because it is intended to read and act on behalf of the user across the conversations the user can access
-- `openclaw-slack` uses a bot token because it is intended to operate as a distinct assistant identity with tighter workflow-specific permissions
-
-## Versioning
-
-Forge uses semver-compatible calendar versioning:
-
-- format: `YYYYMMDD.0.N`
-- example: `20260410.0.0`
-- `YYYY` is the calendar year
-- `MMDD` is month and day with two digits each
-- the middle `0` keeps the version Cargo- and semver-valid
-- `N` is the release counter for that day
-- release dates use the `America/Phoenix` calendar day rather than UTC
-
-This keeps the date fixed-width while staying Cargo- and semver-safe.
-
-## Install And Run
-
-Run from source during development:
-
-```sh
-cargo run -p forge -- self update-check --force
-cargo run -p slack-cli -- --help
-cargo run -p codex-threads -- --json sync
-cargo run -p linear -- auth login
-cargo run -p linear -- --json viewer
-```
-
-Install locally:
-
-```sh
-cargo install --path crates/forge
-cargo install --path crates/slack-cli
-cargo install --path crates/codex-threads
-cargo install --path crates/linear
-```
-
-Then run:
-
-```sh
-forge self update-check --force
-slack-cli search "actual PDF" --limit 5
-codex-threads --json messages search "build a CLI" --limit 5
-linear auth login
-linear --json project list --limit 5
-```
-
-## Install From A Release
+## Install (User-First)
 
 Prerequisite: install Rust and Cargo first with `rustup` from <https://rustup.rs>.
 
-Recommended user story:
+This section is the primary path: using Forge as an installed tool on a machine.
+
+Recommended patterns:
 
 1. simplest bootstrap on a new machine
 2. deterministic bootstrap pinned to a specific release when needed
@@ -94,8 +26,8 @@ That installer:
 
 - resolves the latest published Forge release tag by default
 - installs the four Forge binaries from that tagged release source
-- installs Forge-managed skills into `~/.agents/skills`
-- installs the managed Codex baseline into `~/.codex/`
+- installs Forge-managed skills into `~/.agents/skills` by default
+- installs the managed Codex baseline into `~/.codex/` by default
 
 ### 2. Deterministic Bootstrap
 
@@ -137,7 +69,26 @@ In release mode, that path now:
 
 The `curl` installer remains useful for first install and recovery, but it is no longer the steady-state update path.
 
-## Install For Codex
+## What Gets Installed
+
+Forge installs two managed surfaces by default:
+
+- skills under `~/.agents/skills` (`forge skills install --all --target user`)
+- Codex user baseline under `~/.codex/` (`forge codex install`)
+
+These are intentionally narrower than taking ownership of all local Codex state.
+
+## Key Commands
+
+```sh
+forge doctor
+forge self update-check
+forge self update
+forge skills status
+forge codex diff
+```
+
+## Codex Notes
 
 If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `~/.agents/skills`.
 
@@ -205,6 +156,34 @@ If you temporarily install skills from a local checkout and want to switch back 
 ```sh
 forge skills revert --all --target user
 ```
+
+## Development
+
+Local development lifecycle is documented in `docs/development.md`.
+
+## Reference
+
+Repo layout:
+
+- `docs/` contains product and design specs for each CLI
+- `crates/` contains Rust crates for each CLI implementation
+
+Current CLIs:
+
+- `forge` for shared config and self-management
+- `slack-cli` for Slack research workflows
+- `linear` for Linear issue, project, and milestone workflows
+- `openclaw-slack` for stricter OpenClaw Slack workflows
+
+Key design notes:
+
+- `docs/agent-friendly-clis.md` for the cross-repo CLI contract
+- `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
+- `docs/codex.md` for Forge as the first-party source of truth for Codex skills, routing, and portable policy
+
+Versioning:
+
+- format: `YYYYMMDD.0.N` (America/Phoenix calendar day)
 
 ## Recommended Codex Companions
 
