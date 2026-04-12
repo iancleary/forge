@@ -386,12 +386,11 @@ Source model:
 
 ## Recommended Next Steps
 
-1. Add a Forge-managed source file for the user `AGENTS.md` baseline.
-2. Add a Forge-managed source file for `user-policy.rules`.
-3. Keep `principles.md` as an authoring input only, not as a separate runtime file.
-4. Add a documented portable config template, not a full managed replacement for live `config.toml`.
-5. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
-6. Define explicit `render`, `diff`, and `install` semantics before adding any automatic deployment behavior.
+1. Use the v1 render/diff/install workflow in practice and tighten the baseline only where real usage shows friction.
+2. Keep `principles.md` as an authoring input only, not as a separate runtime file.
+3. Keep the portable config template narrow unless a clearly stable merge contract emerges.
+4. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
+5. Revisit broader deployment behavior only after the explicit v1 workflow has proven stable.
 
 ## Acceptance Test For Putting Something In Forge
 
