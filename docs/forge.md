@@ -232,8 +232,9 @@ When those signals are present, fold the pain into Forge as the smallest possibl
 
 Forge uses semver-compatible calendar versioning for crates:
 
-- format: `YYYYMMDD.N`
-- first release on April 10, 2026: `20260410.0`
-- second release the same day: `20260410.1`
+- format: `YYYYMMDD.0.N`
+- first release on April 10, 2026: `20260410.0.0`
+- second release the same day: `20260410.0.1`
+- release dates use the `America/Phoenix` calendar day rather than UTC
 
 This keeps crate versions valid for Cargo while allowing multiple releases per day.

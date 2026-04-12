@@ -16,7 +16,7 @@ Usage:
 
 Examples:
   install-forge-release.sh
-  install-forge-release.sh --tag 20260411.2
+  install-forge-release.sh --tag 20260411.0.3
 EOF
 }
 

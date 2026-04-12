@@ -11,7 +11,7 @@ Recommended sequence:
 ```sh
 cargo check
 git push origin main
-gh release create 20260411.2 --target main --title 20260411.2 --generate-notes --latest
+gh release create 20260411.0.3 --target main --title 20260411.0.3 --generate-notes --latest
 ```
 
 Shell note:
@@ -29,8 +29,9 @@ Why:
 
 Release tags should match the crate version policy:
 
-- format: `YYYYMMDD.N`
-- example: `20260410.0`
+- format: `YYYYMMDD.0.N`
+- example: `20260410.0.0`
+- release dates are based on `America/Phoenix`
 
 The release tag should match the versions in:
 
@@ -45,7 +46,7 @@ Target command shape:
 
 ```sh
 forge release cut
-forge release cut --version 20260410.1
+forge release cut --version 20260410.0.1
 forge release cut --dry-run
 forge release cut --notes-file notes.md
 ```
@@ -98,7 +99,7 @@ That script:
 Deterministic install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.2
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.0.3
 ```
 
 Update story:

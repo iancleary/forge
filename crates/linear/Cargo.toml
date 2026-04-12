@@ -1,6 +1,6 @@
 [package]
 name = "linear"
-version = "2026.411.2"
+version = "20260411.0.3"
 edition = "2024"
 
 [dependencies]

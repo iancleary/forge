@@ -31,11 +31,13 @@ Installed Forge skills also carry this sequence through the `design-algorithm` m
 
 Forge uses semver-compatible calendar versioning:
 
-- format: `YYYYMMDD.N`
-- example: `20260410.0`
+- format: `YYYYMMDD.0.N`
+- example: `20260410.0.0`
 - `YYYY` is the calendar year
 - `MMDD` is month and day with two digits each
+- the middle `0` keeps the version Cargo- and semver-valid
 - `N` is the release counter for that day
+- release dates use the `America/Phoenix` calendar day rather than UTC
 
 This keeps the date fixed-width while staying Cargo- and semver-safe.
 
@@ -100,7 +102,7 @@ That installer:
 If you want a deterministic install pinned to a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.2
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.0.3
 ```
 
 If you want the binaries but not the Codex baseline:
