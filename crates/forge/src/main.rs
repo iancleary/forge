@@ -218,8 +218,12 @@ struct SkillsInstallArgs {
     skill: Option<String>,
     #[arg(long, help = "Install every available skill")]
     all: bool,
-    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(
+        long,
+        default_value = "user",
+        help = "Target: user, forge_repo, or path:/absolute/path"
+    )]
+    target: String,
     #[arg(long, value_enum, help = "Use repo or release as the source")]
     source: Option<SkillSourceArg>,
     #[arg(long, value_enum, help = "Mark the install as mainline or development")]
@@ -1155,7 +1159,7 @@ fn skills_install(args: SkillsInstallArgs) -> Result<SkillsInstallResult> {
             all: args.all,
             source_kind: args.source.map(map_cli_source),
             repo_path,
-            target: args.target,
+            target: Some(args.target),
             target_role: args.target_role.map(map_target_role),
             resolved_target: None,
             force: args.force,

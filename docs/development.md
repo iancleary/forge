@@ -35,7 +35,7 @@ forge self update-check --force
 When developing, install skills from the repo source:
 
 ```sh
-forge skills install --all --source repo --target user
+forge skills install --all --source repo
 ```
 
 If you want to test non-user targets explicitly:

@@ -73,7 +73,7 @@ The `curl` installer remains useful for first install and recovery, but it is no
 
 Forge installs two managed surfaces by default:
 
-- skills under `~/.agents/skills` (`forge skills install --all --target user`)
+- skills under `~/.agents/skills` (`forge skills install --all`)
 - Codex user baseline under `~/.codex/` (`forge codex install`)
 
 These are intentionally narrower than taking ownership of all local Codex state.
@@ -98,7 +98,7 @@ From a local checkout:
 
 ```sh
 just install-dev-local
-forge skills install --all --source repo --target user
+forge skills install --all --source repo
 ```
 
 When adding or removing CLIs, update the embedded list in `scripts/install-forge-release.sh` and ensure the repo check passes:
@@ -110,7 +110,7 @@ just install-list-check
 From an installed Forge release or after pointing an agent at this repo:
 
 ```sh
-forge skills install --all --target user
+forge skills install --all
 forge skills status
 forge codex diff
 forge codex install
