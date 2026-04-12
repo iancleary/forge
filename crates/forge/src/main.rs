@@ -5224,6 +5224,39 @@ mod tests {
     }
 
     #[test]
+    fn doctor_json_output_does_not_include_color_codes() {
+        let envelope = Envelope {
+            ok: true,
+            data: DoctorResult {
+                summary: DoctorSummary {
+                    status: "warn".to_string(),
+                    ready: false,
+                    passed: 1,
+                    warnings: 1,
+                    failures: 0,
+                },
+                checks: vec![DoctorCheck {
+                    id: "gh_auth".to_string(),
+                    category: "auth".to_string(),
+                    status: "warn".to_string(),
+                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                        .to_string(),
+                    detail: None,
+                    remediation: vec![
+                        "Verify interactively in your terminal with `gh auth status`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                    ],
+                    upgrades: Vec::new(),
+                }],
+            },
+        };
+
+        let json = serde_json::to_string(&envelope).expect("serialize doctor envelope");
+        assert!(!json.contains("\x1b["));
+        assert!(json.contains(r#""status":"warn""#));
+    }
+
+    #[test]
     fn doctor_windows_remediation_prefers_winget_for_gh_and_git() {
         assert_eq!(
             platform_tool_remediation("windows", "git"),
