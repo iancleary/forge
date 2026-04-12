@@ -1,0 +1,23 @@
+version = 1
+
+[[skills]]
+name = "forge-tools"
+
+[[skills]]
+name = "design-algorithm"
+
+[[skills]]
+name = "gh-body-file"
+
+[[skills]]
+name = "linear-cli"
+
+[[skills]]
+name = "slack-query-research"
+legacy_names = ["slack-cli-research"]
+
+[[skills]]
+name = "codex-threads-cli"
+
+[[skills]]
+name = "forge-cli-admin"

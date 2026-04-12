@@ -74,7 +74,7 @@ Output contract for `forge skills ...`:
 ### `forge skills list`
 
 ```sh
-forge skills list [--source repo|release|all] [--json]
+forge skills list [--source repo|release|all] [--repo-path <path>] [--json]
 ```
 
 Lists Forge-managed skills available from the current source and known installed targets.
@@ -103,7 +103,7 @@ States:
 ### `forge skills validate`
 
 ```sh
-forge skills validate [<skill>|--all] [--json]
+forge skills validate [<skill>|--all] [--source repo|release] [--repo-path <path>] [--json]
 ```
 
 Checks:
@@ -119,18 +119,18 @@ The intent is to keep the user-scope skill surface deterministic. Descriptions a
 ### `forge skills install`
 
 ```sh
-forge skills install <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
-forge skills install --all [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
+forge skills install <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--repo-path <path>] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
+forge skills install --all [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--repo-path <path>] [--target-role mainline|development] [--force] [--force-unmanaged] [--json]
 ```
 
 Installs or updates Forge-managed skills to a target.
 
 Behavior:
 
-- `--source repo` uses the configured Forge repo checkout
+- `--source repo` requires `--repo-path <path>`
 - `--source release` uses the installed Forge release payload
 - when omitted, Forge resolves the source automatically:
-  - use `repo` if a valid Forge repo checkout is configured
+  - use `repo` only when `--repo-path` is provided
   - otherwise use `release`
 - `--target` defaults to `user` (installs into `~/.agents/skills`)
 - target role defaults:
@@ -144,7 +144,7 @@ Behavior:
 ### `forge skills diff`
 
 ```sh
-forge skills diff <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--json]
+forge skills diff <skill> [--target user|forge_repo|path:<abs-path>] [--source release|repo] [--repo-path <path>] [--json]
 ```
 
 Shows differences between the current Forge source copy and the installed target.
@@ -152,8 +152,8 @@ Shows differences between the current Forge source copy and the installed target
 ### `forge skills revert`
 
 ```sh
-forge skills revert <skill> [--target user|forge_repo|path:<abs-path>] [--target-role mainline|development] [--json]
-forge skills revert --all [--target user|forge_repo|path:<abs-path>] [--target-role mainline|development] [--json]
+forge skills revert <skill> [--target user|forge_repo|path:<abs-path>] [--repo-path <path>] [--target-role mainline|development] [--json]
+forge skills revert --all [--target user|forge_repo|path:<abs-path>] [--repo-path <path>] [--target-role mainline|development] [--json]
 ```
 
 Switches a managed target back to the standard Forge install source.
@@ -193,7 +193,7 @@ For a Forge-first Codex setup, this is the primary deploy target for portable sk
 
 ### `forge_repo`
 
-A path relative to the configured Forge repo root.
+A path relative to the explicit `--repo-path <path>` Forge repo root.
 
 Use a fixed subpath rather than cwd inference.
 
@@ -339,23 +339,25 @@ Recommended result shape:
 
 Behavior:
 
-- updates the active Forge source
-- reconciles managed skill installs against that source
-- reconciles `mainline` managed skill installs against that source by default
+- updates the active Forge release
+- reconciles managed skill installs against that release
+- reconciles `mainline` managed skill installs against that release by default
 - overwrites Forge-managed targets as needed
 - leaves unmanaged collisions untouched unless the user explicitly took ownership beforehand
+- compares the running Forge version to the newest repo tag
+- installs the newest tagged release with Cargo when needed
+- then uses the installed release payload as source
+- uses the release tool contract to migrate declared legacy config dirs and remove declared legacy binaries safely
+- uses the release skill contract to migrate declared legacy managed skill names and installed directories safely
 
-In `repo_checkout` mode:
+Release skill naming and migration are defined in `config/release-skills.toml`.
 
-- update the local repo first
-- then reconcile managed installs from the repo source
+That file is the release-scoped source of truth for:
 
-In `release` mode:
+- current Forge-managed skill names
+- legacy skill names that should migrate to a current name during `forge self update`
 
-- compare the running Forge version to the newest repo tag
-- install the newest tagged release with Cargo when needed
-- then use the installed release payload as source
-- reconcile managed installs without requiring a local checkout
+Forge does not guess skill renames. Any managed skill rename must be declared there explicitly.
 
 ## Switching Back To Standard Install
 
@@ -368,7 +370,7 @@ Supported pattern:
 1. User installs from checkout:
 
 ```sh
-forge skills install linear-cli --source repo --json
+forge skills install linear-cli --source repo --repo-path /abs/path/to/forge --json
 ```
 
 2. Later the user returns to the standard installed source:
@@ -386,7 +388,7 @@ forge skills install linear-cli --source release --json
 Persistent non-user target example:
 
 ```sh
-forge skills install --all --source repo --target path:/opt/forge-skills --target-role mainline --json
+forge skills install --all --source repo --repo-path /abs/path/to/forge --target path:/opt/forge-skills --target-role mainline --json
 forge skills status --target path:/opt/forge-skills --json
 ```
 

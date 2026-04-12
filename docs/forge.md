@@ -86,49 +86,53 @@ Applies the expected local permissions:
 ### `forge self update-check`
 
 ```sh
-forge self update-check [--force] [--repo-path <path>] [--json]
+forge self update-check [--force] [--json]
 ```
 
 Checks whether the local Forge install is out of date.
 
 Behavior:
 
-- reads `~/.config/forge/config.toml` when present
 - caches the last check result in `~/.config/forge/state.toml`
 - uses a TTL to avoid hitting the network on every run
 - `--force` bypasses the cache
-- checks both Forge binary/repo drift and Forge-managed skill drift
+- checks Forge release drift and Forge-managed skill drift
 - checks `mainline` Forge-managed skill drift by default
-- uses the configured Forge repo when running in repo-checkout mode
-- otherwise uses the installed Forge release as the canonical source for managed skills
+- uses the installed Forge release as the canonical source for managed skills
 
 ### `forge self update`
 
 ```sh
-forge self update [--repo-path <path>] [--branch <name>] [--json]
+forge self update [--json]
 ```
 
-Updates the active Forge source of truth and reconciles Forge-managed surfaces.
-
-In repo-checkout mode, Forge updates the local repo using:
-
-```sh
-git pull --rebase origin <branch>
-```
-
-Default branch behavior:
-
-- prefer the remote default branch when it can be resolved
-- otherwise fall back to `main`
-
-In release mode, Forge uses the installed release payload as the canonical source and updates `mainline` Forge-managed skills without requiring a local checkout.
+Updates to the newest published Forge release and reconciles Forge-managed surfaces.
 
 Important boundary:
 
-- in repo-checkout mode, `forge self update` pulls the configured repo and then reconciles managed skills
-- in release mode, `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
-- in release mode, `forge self update` installs the newest tagged release with Cargo when needed
+- `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
+- `forge self update` resolves the target tag's binary list from that tag's release installer before calling Cargo
+- `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
+- `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
+- after install, `forge self update` migrates declared legacy tool config dirs, removes declared legacy binaries when their replacements exist, and removes declared obsolete root files under `~/.config/forge`
+- after install, `forge self update` migrates declared legacy Forge-managed skill installs and updates their recorded names in local state
+- when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
+
+### `forge dev install`
+
+```sh
+forge dev install [--repo-path <path>] [--no-force] [--json]
+```
+
+Installs Forge binaries from a local checkout for explicit development workflows.
+
+Behavior:
+
+- defaults `--repo-path` to the current Git worktree root when available, otherwise the current directory
+- reads the managed binary list from `scripts/install-forge-release.sh` in that checkout
+- installs those crates with `cargo install --path`
+- does not affect `forge self update` source-of-truth behavior
 
 ### `forge codex render`
 
@@ -148,7 +152,7 @@ Behavior:
 - defaults to all managed assets
 - defaults to `user`, which maps to `~/.codex`
 - supports `path:<abs-path>` targets for testing and explicit non-default installs
-- uses repo source when running from a Forge checkout unless `--source release` is selected explicitly
+- `--source repo` requires `--repo-path <path>`
 - default output renders human-readable file sections
 - `--json` emits deterministic compact JSON that includes rendered content and the resolved target paths
 
@@ -184,7 +188,11 @@ Behavior:
 
 ## Config
 
-Preferred config file:
+Root Forge config is intentionally narrow.
+
+`forge self update-check` and `forge self update` do not use it.
+
+Current supported root setting:
 
 ```text
 ~/.config/forge/config.toml
@@ -193,10 +201,7 @@ Preferred config file:
 Example:
 
 ```toml
-auto_check_updates = true
-auto_update = false
-update_check_ttl_minutes = 1440
-repo_path = "~/src/forge"
+forge_repo_install_subpath = ".agents/skills-installed"
 ```
 
 Skill lifecycle configuration is documented in `docs/forge-skills.md`.
@@ -215,11 +220,10 @@ State cache:
 
 ## Notes
 
-- `auto_check_updates` is the intended default pattern
-- `auto_update` should stay off by default until the toolchain is more mature
 - `forge self update-check` is safe to run frequently with cache enabled
 - `forge self update` is explicit on purpose
 - Forge-managed skills are deployed artifacts, not peer sources of truth
+- local-checkout workflows should use `forge dev install` and explicit `--repo-path` flags rather than root-config inference
 
 ## Forge CLI-First Guidance
 

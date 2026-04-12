@@ -8,6 +8,7 @@ If you want to use Forge as an installed tool on a machine, start in `README.md`
 
 ```sh
 cargo run -p forge -- self update-check --force
+cargo run -p forge -- dev install --repo-path "$(pwd)"
 cargo run -p slack-agent -- --help
 cargo run -p slack-query -- --help
 cargo run -p codex-threads -- --json sync
@@ -29,6 +30,7 @@ Then:
 
 ```sh
 forge doctor
+forge dev install --repo-path "$(pwd)"
 forge self update-check --force
 ```
 
@@ -37,13 +39,13 @@ forge self update-check --force
 When developing, install skills from the repo source:
 
 ```sh
-forge skills install --all --source repo
+forge skills install --all --source repo --repo-path "$(pwd)"
 ```
 
 If you want to test non-user targets explicitly:
 
 ```sh
-forge skills install --all --source repo --target path:/opt/forge-skills --target-role mainline
+forge skills install --all --source repo --repo-path "$(pwd)" --target path:/opt/forge-skills --target-role mainline
 forge skills status --target path:/opt/forge-skills
 ```
 
