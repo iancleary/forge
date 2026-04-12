@@ -2115,6 +2115,7 @@ fn doctor_slack_agent_auth_check() -> DoctorCheck {
 
 fn format_doctor_human(result: &DoctorResult) -> String {
     let mut out = String::new();
+    let use_color = io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none();
     let headline = if result.summary.failures > 0 {
         "not ready"
     } else if result.summary.warnings > 0 {
@@ -2132,7 +2133,7 @@ fn format_doctor_human(result: &DoctorResult) -> String {
         let _ = writeln!(
             out,
             "[{}] {}: {}",
-            doctor_status_label(&check.status),
+            doctor_status_label(&check.status, use_color),
             check.id,
             check.summary
         );
@@ -2153,12 +2154,20 @@ fn format_doctor_human(result: &DoctorResult) -> String {
     out.trim_end().to_string()
 }
 
-fn doctor_status_label(status: &str) -> &'static str {
+fn doctor_status_label(status: &str, use_color: bool) -> String {
     match status {
-        "pass" => "PASS",
-        "warn" => "WARN",
-        "fail" => "FAIL",
-        _ => "INFO",
+        "pass" => doctor_status_style("PASS", use_color, "32"),
+        "warn" => doctor_status_style("WARN", use_color, "33"),
+        "fail" => doctor_status_style("FAIL", use_color, "31"),
+        _ => doctor_status_style("INFO", use_color, "36"),
+    }
+}
+
+fn doctor_status_style(text: &str, use_color: bool, color: &str) -> String {
+    if use_color {
+        format!("\x1b[{color}m{text}\x1b[0m")
+    } else {
+        text.to_string()
     }
 }
 
