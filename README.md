@@ -175,12 +175,13 @@ Current CLIs:
 
 - `forge` for shared config and self-management
 - `codex-threads` for local Codex session archive search and retrieval
-- `slack-cli` for Slack research workflows
+- `slack-agent` for stricter assistant Slack workflows
+- `slack-query` for Slack research workflows
 - `linear` for Linear issue, project, and milestone workflows
 
-Planned CLIs:
+Internal support crates:
 
-- `openclaw-slack` for stricter OpenClaw Slack workflows
+- `slack-core` as a shared library crate for Slack auth/config/client code used by `slack-query` and `slack-agent`
 
 Key design notes:
 

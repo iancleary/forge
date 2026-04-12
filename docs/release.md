@@ -38,7 +38,8 @@ The release tag should match the versions in:
 - `crates/forge/Cargo.toml`
 - `crates/codex-threads/Cargo.toml`
 - `crates/linear/Cargo.toml`
-- `crates/slack-cli/Cargo.toml`
+- `crates/slack-agent/Cargo.toml`
+- `crates/slack-query/Cargo.toml`
 
 ## Future `forge release cut`
 

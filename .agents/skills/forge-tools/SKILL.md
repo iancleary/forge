@@ -10,7 +10,7 @@ Use this skill as the lightweight entry point for the Forge CLI bundle.
 Pick the narrowest CLI skill that matches the job:
 
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
-- `slack-cli-research`: Slack permalink resolution, search, thread reads, and nearby message context.
+- `slack-query-research`: Slack permalink resolution, search, thread reads, and nearby message context.
 - `codex-threads-cli`: local Codex session sync, search, thread resolution, and event inspection.
 - `forge-cli-admin`: local Forge config, permission checks, and self-update commands.
 - `design-algorithm`: shaping and scope-reduction workflow for deciding what should exist before building or automating it.

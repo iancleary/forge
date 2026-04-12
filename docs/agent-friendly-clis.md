@@ -6,7 +6,7 @@ Source material:
 
 - OpenAI use case: `https://developers.openai.com/codex/use-cases/agent-friendly-clis`
 - Referenced skill: `https://github.com/openai/skills/tree/main/skills/.curated/cli-creator`
-- Original examples discussed here: `codex-threads`, `slack-cli`, `typefully-cli`
+- Original examples discussed here: `codex-threads`, `slack-query`, `typefully-cli`
 
 ## Why Build These
 
@@ -52,10 +52,10 @@ An agent-friendly CLI should have:
 Examples:
 
 ```sh
-slack-cli search "app server auth" --all-pages --max-pages 3 --json
-slack-cli resolve-permalink "https://openai.slack.com/archives/..."
-slack-cli read-thread L143 123522523239.633199 --json
-slack-cli context R152 25723525099.626199 --before 5 --after 5 --json
+slack-query search "app server auth" --all-pages --max-pages 3 --json
+slack-query resolve-permalink "https://openai.slack.com/archives/..."
+slack-query read-thread L143 123522523239.633199 --json
+slack-query context R152 25723525099.626199 --before 5 --after 5 --json
 ```
 
 ```sh
@@ -242,7 +242,7 @@ When a repo ships multiple agent-friendly CLIs, prefer:
 For this repo, that means:
 
 - `linear-cli`
-- `slack-cli-research`
+- `slack-query-research`
 - `codex-threads-cli`
 - `forge-cli-admin`
 - `forge-tools` as a short entry point that routes Codex to the correct crate skill

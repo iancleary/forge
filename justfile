@@ -36,8 +36,11 @@ run-forge *args:
 run-linear *args:
   cargo run -p linear -- {{args}}
 
-run-slack *args:
-  cargo run -p slack-cli -- {{args}}
+run-slack-query *args:
+  cargo run -p slack-query -- {{args}}
+
+run-slack-agent *args:
+  cargo run -p slack-agent -- {{args}}
 
 run-codex-threads *args:
   cargo run -p codex-threads -- {{args}}

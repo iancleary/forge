@@ -8,7 +8,8 @@ If you want to use Forge as an installed tool on a machine, start in `README.md`
 
 ```sh
 cargo run -p forge -- self update-check --force
-cargo run -p slack-cli -- --help
+cargo run -p slack-agent -- --help
+cargo run -p slack-query -- --help
 cargo run -p codex-threads -- --json sync
 cargo run -p linear -- auth login
 cargo run -p linear -- --json viewer
@@ -18,7 +19,8 @@ cargo run -p linear -- --json viewer
 
 ```sh
 cargo install --path crates/forge
-cargo install --path crates/slack-cli
+cargo install --path crates/slack-query
+cargo install --path crates/slack-agent
 cargo install --path crates/codex-threads
 cargo install --path crates/linear
 ```

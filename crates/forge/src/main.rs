@@ -18,7 +18,8 @@ const REPO_SKILLS_SUBPATH: &str = ".agents/skills";
 const REPO_CODEX_USER_SUBPATH: &str = "codex/user";
 const CODEX_AGENTS_REL_PATH: &str = "AGENTS.md";
 const CODEX_RULES_REL_PATH: &str = "rules/user-policy.rules";
-const RELEASE_PACKAGES: &[&str] = &["forge", "codex-threads", "linear", "slack-cli"];
+const RELEASE_PACKAGES: &[&str] =
+    &["forge", "codex-threads", "linear", "slack-agent", "slack-query"];
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -864,6 +865,7 @@ fn doctor() -> Result<DoctorResult> {
         doctor_command_check("jq", "tool", "jq", &["--version"]),
         doctor_gh_auth_check(),
         doctor_linear_auth_check(),
+        doctor_slack_agent_auth_check(),
         doctor_slack_auth_check(),
         doctor_config_dir_check(&config_dir),
     ];
@@ -1216,7 +1218,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             for required in [
                 "design-algorithm",
                 "linear-cli",
-                "slack-cli-research",
+                "slack-query-research",
                 "codex-threads-cli",
                 "forge-cli-admin",
             ] {
@@ -1635,9 +1637,15 @@ fn managed_permission_targets() -> Result<Vec<PermissionTarget>> {
         PermissionTarget::dir(forge_dir.clone(), 0o700),
         PermissionTarget::file(forge_dir.join("config.toml"), 0o600),
         PermissionTarget::file(forge_dir.join("state.toml"), 0o600),
-        PermissionTarget::dir(forge_dir.join("slack-cli"), 0o700),
-        PermissionTarget::file(forge_dir.join("slack-cli").join("config.toml"), 0o600),
-        PermissionTarget::file(forge_dir.join("slack-cli").join("token"), 0o600),
+        PermissionTarget::dir(forge_dir.join("slack-agent"), 0o700),
+        PermissionTarget::file(
+            forge_dir.join("slack-agent").join("config.toml"),
+            0o600,
+        ),
+        PermissionTarget::file(forge_dir.join("slack-agent").join("token"), 0o600),
+        PermissionTarget::dir(forge_dir.join("slack-query"), 0o700),
+        PermissionTarget::file(forge_dir.join("slack-query").join("config.toml"), 0o600),
+        PermissionTarget::file(forge_dir.join("slack-query").join("token"), 0o600),
         PermissionTarget::dir(forge_dir.join("linear"), 0o700),
         PermissionTarget::file(forge_dir.join("linear").join("token"), 0o600),
         PermissionTarget::file(forge_dir.join("linear").join("config.toml"), 0o600),
@@ -1884,28 +1892,57 @@ fn doctor_linear_auth_check() -> DoctorCheck {
 }
 
 fn doctor_slack_auth_check() -> DoctorCheck {
-    let sources = slack_auth_sources();
+    let sources = slack_query_auth_sources();
 
     if sources.is_empty() {
         return DoctorCheck {
-            id: "slack_auth".to_string(),
+            id: "slack_query_auth".to_string(),
             category: "auth".to_string(),
             status: "warn".to_string(),
-            summary: "Slack auth is not configured".to_string(),
-            detail: Some("No Slack token source was found.".to_string()),
+            summary: "Slack query auth is not configured".to_string(),
+            detail: Some("No Slack query token source was found.".to_string()),
             remediation: slack_auth_remediation(),
             upgrades: Vec::new(),
         };
     }
 
     DoctorCheck {
-        id: "slack_auth".to_string(),
+        id: "slack_query_auth".to_string(),
         category: "auth".to_string(),
         status: "pass".to_string(),
-        summary: "Slack auth source is configured".to_string(),
+        summary: "Slack query auth source is configured".to_string(),
         detail: Some(describe_auth_sources(&sources)),
         remediation: vec![
-            "To validate the token, run a Slack read command such as `slack-cli search \"hello\" --limit 1` in an interactive terminal.".to_string(),
+            "To validate the token, run a Slack read command such as `slack-query search \"hello\" --limit 1` in an interactive terminal.".to_string(),
+        ],
+        upgrades: Vec::new(),
+    }
+}
+
+fn doctor_slack_agent_auth_check() -> DoctorCheck {
+    let sources = slack_agent_auth_sources();
+
+    if sources.is_empty() {
+        return DoctorCheck {
+            id: "slack_agent_auth".to_string(),
+            category: "auth".to_string(),
+            status: "warn".to_string(),
+            summary: "Slack agent auth is not configured".to_string(),
+            detail: Some("No Slack agent token source was found.".to_string()),
+            remediation: slack_agent_auth_remediation(),
+            upgrades: Vec::new(),
+        };
+    }
+
+    DoctorCheck {
+        id: "slack_agent_auth".to_string(),
+        category: "auth".to_string(),
+        status: "pass".to_string(),
+        summary: "Slack agent auth source is configured".to_string(),
+        detail: Some(describe_auth_sources(&sources)),
+        remediation: vec![
+            "To validate the token, run a narrow command such as `slack-agent dm open U123 --json` in an interactive terminal."
+                .to_string(),
         ],
         upgrades: Vec::new(),
     }
@@ -2473,8 +2510,15 @@ fn linear_auth_remediation() -> Vec<String> {
 
 fn slack_auth_remediation() -> Vec<String> {
     vec![
-        "Store credentials with `slack-cli auth login` or by writing ~/.config/forge/slack-cli/token.".to_string(),
-        "See docs/slack-cli.md for the supported token layout, scopes, and setup flow.".to_string(),
+        "Store credentials with `slack-query auth login` or by writing ~/.config/forge/slack-query/token.".to_string(),
+        "See docs/slack-query.md for the supported token layout, scopes, and setup flow.".to_string(),
+    ]
+}
+
+fn slack_agent_auth_remediation() -> Vec<String> {
+    vec![
+        "Store credentials with `slack-agent auth login` or by writing ~/.config/forge/slack-agent/token.".to_string(),
+        "See docs/slack-agent.md for the supported token layout, scopes, and thread-first write contract.".to_string(),
     ]
 }
 
@@ -2487,11 +2531,20 @@ fn linear_auth_sources() -> Vec<String> {
     )
 }
 
-fn slack_auth_sources() -> Vec<String> {
+fn slack_query_auth_sources() -> Vec<String> {
     auth_sources_from_dir(
-        slack_config_dir_path(),
-        env_var_present("SLACK_API_TOKEN"),
-        "SLACK_API_TOKEN",
+        slack_query_config_dir_path(),
+        env_var_present("SLACK_QUERY_API_TOKEN"),
+        "SLACK_QUERY_API_TOKEN",
+        parse_slack_doctor_config,
+    )
+}
+
+fn slack_agent_auth_sources() -> Vec<String> {
+    auth_sources_from_dir(
+        slack_agent_config_dir_path(),
+        env_var_present("SLACK_AGENT_API_TOKEN"),
+        "SLACK_AGENT_API_TOKEN",
         parse_slack_doctor_config,
     )
 }
@@ -2583,11 +2636,21 @@ fn linear_config_dir_path() -> PathBuf {
     base_forge_config_dir().join("linear")
 }
 
-fn slack_config_dir_path() -> PathBuf {
-    if let Ok(path) = env::var("FORGE_SLACK_CLI_CONFIG_DIR") {
+fn slack_query_config_dir_path() -> PathBuf {
+    if let Ok(path) = env::var("FORGE_SLACK_QUERY_CONFIG_DIR") {
         return expand_path(&path);
     }
-    base_forge_config_dir().join("slack-cli")
+    base_forge_config_dir().join("slack-query")
+}
+
+fn slack_agent_config_dir_path() -> PathBuf {
+    if let Ok(path) = env::var("FORGE_SLACK_AGENT_CONFIG_DIR") {
+        return expand_path(&path);
+    }
+    if let Ok(path) = env::var("FORGE_CONFIG_DIR") {
+        return expand_path(&path).join("slack-agent");
+    }
+    base_forge_config_dir().join("slack-agent")
 }
 
 fn base_forge_config_dir() -> PathBuf {
@@ -3006,7 +3069,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("design-algorithm"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
-        embedded_skill!("slack-cli-research"),
+        embedded_skill!("slack-query-research"),
         embedded_skill!("codex-threads-cli"),
         embedded_skill!("forge-cli-admin"),
     ]
@@ -3046,13 +3109,17 @@ fn load_repo_skills(repo_path: &Path) -> Result<Vec<SkillDefinition>> {
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("invalid skill directory name: {}", path.display()))?
             .to_string();
+        let files = load_skill_files_from_dir(&path)?;
+        if !files.contains_key("SKILL.md") {
+            continue;
+        }
         defs.push(SkillDefinition {
             name,
             source_kind: SkillSourceKind::RepoCheckout,
             source_path: Some(path.clone()),
             source_ref: git_repo_ref(repo_path).unwrap_or_else(|| "repo".to_string()),
             source_repo_path: Some(repo_path.to_path_buf()),
-            files: load_skill_files_from_dir(&path)?,
+            files,
         });
     }
     defs.sort_by(|a, b| a.name.cmp(&b.name));

@@ -47,7 +47,8 @@ default_binaries() {
 forge
 codex-threads
 linear
-slack-cli
+slack-agent
+slack-query
 EOF
   # END FORGE_BINARIES
 }

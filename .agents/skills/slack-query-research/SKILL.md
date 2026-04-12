@@ -1,21 +1,21 @@
 ---
-name: slack-cli-research
-description: "Use the Forge `slack-cli` for deterministic Slack research: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious."
+name: slack-query-research
+description: "Use the Forge `slack-query` CLI for deterministic Slack research: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious."
 ---
 
-# Slack CLI Research
+# Slack Query Research
 
-This skill covers the Forge `slack-cli` binary. If the user only knows they need "one of the Forge tools," check `forge-tools` first and then use this skill when the task is clearly Slack research.
+This skill covers the Forge `slack-query` binary. If the user only knows they need "one of the Forge tools," check `forge-tools` first and then use this skill when the task is clearly Slack research.
 
 If the task is actually about shaping a new Forge workflow rather than retrieving Slack evidence, route to `design-algorithm` first.
 
 Start narrow:
 
-- `slack-cli resolve-permalink <url> --json`
-- `slack-cli search <query> --limit 5 --json`
-- `slack-cli read-thread <channel-id> <thread-ts> --limit 15 --json`
-- `slack-cli channel-context <channel-id> <message-ts> --before 3 --after 3 --json`
-- `slack-cli thread-context <channel-id> <thread-ts> <message-ts> --before 3 --after 3 --json`
+- `slack-query resolve-permalink <url> --json`
+- `slack-query search <query> --limit 5 --json`
+- `slack-query read-thread <channel-id> <thread-ts> --limit 15 --json`
+- `slack-query channel-context <channel-id> <message-ts> --before 3 --after 3 --json`
+- `slack-query thread-context <channel-id> <thread-ts> <message-ts> --before 3 --after 3 --json`
 
 Working rules:
 
@@ -43,7 +43,7 @@ Common flow:
 
 ## Output
 
-- narrow `slack-cli ... --json` commands + evidence summary
+- narrow `slack-query ... --json` commands + evidence summary
 
 ## Checks
 

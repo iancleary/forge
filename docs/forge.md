@@ -35,7 +35,8 @@ Current checks:
 - required tools: `cargo`, `git`, `gh`, `rg`, `jq`
 - GitHub CLI auth readiness via `gh auth status`
 - Linear token-source presence via `LINEAR_API_KEY`, `~/.config/forge/linear/config.toml`, and `~/.config/forge/linear/token`
-- Slack token-source presence via `SLACK_API_TOKEN`, `~/.config/forge/slack-cli/config.toml`, and `~/.config/forge/slack-cli/token`
+- Slack agent token-source presence via `SLACK_AGENT_API_TOKEN`, `~/.config/forge/slack-agent/config.toml`, and `~/.config/forge/slack-agent/token`
+- Slack query token-source presence via `SLACK_QUERY_API_TOKEN`, `~/.config/forge/slack-query/config.toml`, and `~/.config/forge/slack-query/token`
 - Forge config directory presence at `~/.config/forge/` or `FORGE_CONFIG_DIR`
 
 Behavior:
@@ -50,8 +51,8 @@ Behavior:
 - auth checks are advisory and should not block Codex from continuing
 - `gh` auth should warn gracefully when it cannot be confirmed from a non-interactive subprocess
 - when that happens, the primary remediation is to ask the user to run `gh auth status` in an interactive terminal
-- file-based auth tools such as `linear` and `slack-cli` should report configured token sources, not claim a verified logged-in session
-- for those file-based tools, doctor should surface the exact CLI commands and docs to use next, such as `linear config`, `linear auth login`, and `slack-cli auth login`
+- file-based auth tools such as `linear`, `slack-query`, and `slack-agent` should report configured token sources, not claim a verified logged-in session
+- for those file-based tools, doctor should surface the exact CLI commands and docs to use next, such as `linear config`, `linear auth login`, `slack-query auth login`, and `slack-agent auth login`
 - Windows install hints should prefer `winget` for `git` and `gh`
 - Windows upgrade hints should prefer `winget upgrade --id ...` for `git` and `gh`
 - on macOS and Linux, use `cargo` for tools that support it such as `rg` and `jq`
@@ -65,7 +66,8 @@ forge permissions check [--json]
 Audits known Forge-managed config directories and secret files, including:
 
 - `~/.config/forge/`
-- `~/.config/forge/slack-cli/`
+- `~/.config/forge/slack-agent/`
+- `~/.config/forge/slack-query/`
 - `~/.config/forge/linear/`
 
 It reports whether directories and token files match the expected owner-only modes.

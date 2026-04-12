@@ -1,10 +1,10 @@
-# Slack CLI
+# Slack Query CLI
 
-This document defines the reusable Slack utility CLI for this repo.
+This document defines the reusable read-only Slack query CLI for this repo.
 
 ## Goal
 
-Provide a stable Slack CLI that Codex can use across sessions for deterministic Slack operations.
+Provide a stable Slack query CLI that Codex can use across sessions for deterministic Slack retrieval operations.
 
 The initial implementation is read-heavy and optimized for workspace research. It is not the conversational assistant layer.
 
@@ -23,7 +23,7 @@ Use the official Slack `slack` CLI for:
 - app deployment and manifests
 - local development against Slack apps
 
-Use this repo's `slack-cli` for:
+Use this repo's `slack-query` for:
 
 - saving a local Slack token with explicit auth login
 - resolving permalinks into Slack identifiers
@@ -31,7 +31,7 @@ Use this repo's `slack-cli` for:
 - pulling nearby channel context around a message
 - pulling nearby thread context around a message
 - searching messages
-- later, a small set of explicit write actions if they are broadly useful outside OpenClaw
+- later, a small set of explicit write actions if they are broadly useful outside the assistant actor CLI
 
 ## Setup
 
@@ -60,18 +60,18 @@ For public repo docs, prefer naming the UI location instead:
 
 - v1 is read-only
 - no commands for posting, editing, deleting, reacting, joining, or mutating channels
-- preferred auth is a local config directory under `~/.config/forge/slack-cli/`
-- `SLACK_API_TOKEN` remains supported as an override for ad hoc use and CI
+- preferred auth is a local config directory under `~/.config/forge/slack-query/`
+- `SLACK_QUERY_API_TOKEN` remains supported as an override for ad hoc use and CI
 - the expected setup is: create a Slack app, grant read scopes, install it to the workspace, then store the token locally
 - official Slack CLI authentication can be revisited later, but it is not required for the initial implementation
 
-Future broad write actions in `slack-cli` should stay explicit and narrow, for example:
+Future broad write actions in `slack-query` should stay explicit and narrow, for example:
 
 - `post-message`
 - `reply`
 - `bookmark add`
 
-OpenClaw-specific workflows belong in `openclaw-slack`, not here.
+Assistant-specific write workflows belong in `slack-agent`, not here.
 
 ## Permission Scopes
 
@@ -81,11 +81,11 @@ Recommended token type:
 
 Decision:
 
-- `slack-cli` uses a user token
+- `slack-query` uses a user token
 - reason: this CLI is the shared primitive layer for Codex sessions and should reflect what the user can read and explicitly do in Slack
 - this also aligns with `search:read`, which is needed for message search
 
-Recommended scopes for the reusable `slack-cli`:
+Recommended scopes for the reusable `slack-query`:
 
 - `channels:history`
 - `groups:history`
@@ -113,7 +113,7 @@ Scopes to avoid in this CLI unless a broadly reusable command requires them:
 Preferred auth layout:
 
 ```text
-~/.config/forge/slack-cli/
+~/.config/forge/slack-query/
   config.toml
   token
 ```
@@ -121,30 +121,30 @@ Preferred auth layout:
 Place the copied user token here:
 
 ```text
-~/.config/forge/slack-cli/token
+~/.config/forge/slack-query/token
 ```
 
 You can also save it with:
 
 ```sh
-slack-cli auth login
-slack-cli auth login --token xoxp-... --force
+slack-query auth login
+slack-query auth login --token xoxp-... --force
 ```
 
 Supported lookup order:
 
-1. `SLACK_API_TOKEN`
-2. `~/.config/forge/slack-cli/config.toml`
-3. `~/.config/forge/slack-cli/token`
+1. `SLACK_QUERY_API_TOKEN`
+2. `~/.config/forge/slack-query/config.toml`
+3. `~/.config/forge/slack-query/token`
 
 Optional override:
 
-- `FORGE_SLACK_CLI_CONFIG_DIR`
+- `FORGE_SLACK_QUERY_CONFIG_DIR`
 
 Recommended `config.toml`:
 
 ```toml
-token_file = "~/.config/forge/slack-cli/token"
+token_file = "~/.config/forge/slack-query/token"
 ```
 
 Alternative `config.toml`:
@@ -171,16 +171,16 @@ The env var remains useful for:
 ### `auth login`
 
 ```sh
-slack-cli auth login
-slack-cli auth login --token xoxp-... --force
+slack-query auth login
+slack-query auth login --token xoxp-... --force
 ```
 
-Prompts for a Slack API token and writes it to `~/.config/forge/slack-cli/token`. Use `--token` for non-interactive setup and `--force` to overwrite an existing token file.
+Prompts for a Slack API token and writes it to `~/.config/forge/slack-query/token`. Use `--token` for non-interactive setup and `--force` to overwrite an existing token file.
 
 ### `resolve-permalink`
 
 ```sh
-slack-cli resolve-permalink <permalink> [--json]
+slack-query resolve-permalink <permalink> [--json]
 ```
 
 Resolves a Slack permalink into identifiers that later commands can reuse.
@@ -204,7 +204,7 @@ Expected fields:
 ### `read-thread`
 
 ```sh
-slack-cli read-thread <channel-id> <thread-ts> [--limit <n>] [--json]
+slack-query read-thread <channel-id> <thread-ts> [--limit <n>] [--json]
 ```
 
 Reads the root message and replies for a thread.
@@ -233,7 +233,7 @@ Expected fields:
 ### `search`
 
 ```sh
-slack-cli search <query> [--limit <n>] [--page <n>] [--json]
+slack-query search <query> [--limit <n>] [--page <n>] [--json]
 ```
 
 Searches Slack messages the user token can access.
@@ -267,7 +267,7 @@ Expected fields:
 ### `channel-context`
 
 ```sh
-slack-cli channel-context <channel-id> <message-ts> [--before <n>] [--after <n>] [--json]
+slack-query channel-context <channel-id> <message-ts> [--before <n>] [--after <n>] [--json]
 ```
 
 Reads nearby top-level channel messages around a target message.
@@ -297,7 +297,7 @@ This command returns parent-channel timeline context, not thread replies.
 ### `thread-context`
 
 ```sh
-slack-cli thread-context <channel-id> <thread-ts> <message-ts> [--before <n>] [--after <n>] [--json]
+slack-query thread-context <channel-id> <thread-ts> <message-ts> [--before <n>] [--after <n>] [--json]
 ```
 
 Reads nearby messages within a thread around a target thread message.
@@ -329,11 +329,11 @@ This command returns thread-local context, not surrounding top-level channel mes
 These commands have been exercised successfully against a real Slack workspace using the current implementation:
 
 ```sh
-slack-cli resolve-permalink "https://workspace.slack.com/archives/C123/p1712785154123456"
-slack-cli read-thread C123 1712785154.123456 --limit 20
-slack-cli channel-context C123 1712785154.123456 --before 2 --after 2
-slack-cli thread-context C123 1712785000.000001 1712785154.123456 --before 2 --after 2
-slack-cli search "actual PDF" --limit 5
+slack-query resolve-permalink "https://workspace.slack.com/archives/C123/p1712785154123456"
+slack-query read-thread C123 1712785154.123456 --limit 20
+slack-query channel-context C123 1712785154.123456 --before 2 --after 2
+slack-query thread-context C123 1712785000.000001 1712785154.123456 --before 2 --after 2
+slack-query search "actual PDF" --limit 5
 ```
 
 ## Planned Next Commands
@@ -341,8 +341,8 @@ slack-cli search "actual PDF" --limit 5
 Broadly useful future write commands, if needed:
 
 ```sh
-slack-cli post-message <channel-id> --body-file message.md [--json]
-slack-cli reply <channel-id> <thread-ts> --body-file reply.md [--json]
+slack-query post-message <channel-id> --body-file message.md [--json]
+slack-query reply <channel-id> <thread-ts> --body-file reply.md [--json]
 ```
 
 ## API Mapping
@@ -369,17 +369,17 @@ Relevant Slack constraints from the official docs:
 - `search.messages` requires a user token with `search:read`
 - for newer non-Marketplace external apps, `conversations.history` and `conversations.replies` are subject to tighter rate limits
 
-## Relationship To OpenClaw
+## Relationship To Slack Agent
 
-`slack-cli` is the shared primitive layer.
+`slack-query` is the shared primitive layer.
 
-It should expose deterministic commands with stable JSON and minimal policy. OpenClaw-specific triage, drafting, batching, and approval-heavy behavior should live in a separate `openclaw-slack` CLI.
+It should expose deterministic commands with stable JSON and minimal policy. Assistant-specific triage, drafting, batching, and approval-heavy behavior should live in a separate `slack-agent` CLI.
 
 Token boundary:
 
-- `slack-cli` uses a user token
-- `openclaw-slack` uses a bot token
-- this keeps the shared utility CLI aligned with user access while allowing OpenClaw to operate as a separate assistant identity
+- `slack-query` uses a user token
+- `slack-agent` uses a bot token or another explicit actor-aligned token
+- this keeps the shared utility CLI aligned with user access while allowing an assistant to operate as a separate actor identity
 
 Public references:
 
