@@ -9,6 +9,7 @@ prefix_rule(pattern=["find"], decision="allow")
 prefix_rule(pattern=["git", "status"], decision="allow")
 prefix_rule(pattern=["git", "diff"], decision="allow")
 prefix_rule(pattern=["git", "log"], decision="allow")
+prefix_rule(pattern=["git", "rev-parse", "HEAD"], decision="allow")
 prefix_rule(pattern=["git", "checkout", "-b"], decision="allow")
 
 prefix_rule(pattern=["/bin/zsh", "-lc"], decision="prompt")
