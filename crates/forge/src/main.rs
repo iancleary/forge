@@ -50,8 +50,13 @@ macro_rules! embedded_codex_asset {
 #[derive(Parser, Debug)]
 #[command(name = "forge")]
 #[command(about = "Forge manager CLI")]
+#[command(after_help = "Output:\n  - Most commands print pretty JSON by default.\n  - Use --json for compact (token-efficient) JSON.\n  - `forge doctor` prints a human summary by default; use --json for JSON.")]
 struct Cli {
-    #[arg(long, global = true, help = "Emit machine-readable JSON")]
+    #[arg(
+        long,
+        global = true,
+        help = "Emit compact (token-efficient) machine-readable JSON"
+    )]
     json: bool,
     #[command(subcommand)]
     command: Command,
@@ -83,14 +88,20 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum SelfCommand {
-    #[command(name = "update-check")]
+    #[command(
+        name = "update-check",
+        about = "Check whether an update is available (cached by default)"
+    )]
     UpdateCheck(UpdateCheckArgs),
+    #[command(about = "Apply updates and reconcile managed installs")]
     Update(UpdateArgs),
 }
 
 #[derive(Subcommand, Debug)]
 enum PermissionsCommand {
+    #[command(about = "Inspect whether Forge-managed paths have expected permissions")]
     Check,
+    #[command(about = "Repair permissions for Forge-managed paths")]
     Fix,
 }
 
@@ -243,8 +254,12 @@ struct SkillsInstallArgs {
 struct SkillsDiffArgs {
     #[arg(help = "Skill name to diff")]
     skill: String,
-    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(
+        long,
+        default_value = "user",
+        help = "Target: user, forge_repo, or path:/absolute/path"
+    )]
+    target: String,
     #[arg(long, value_enum, help = "Use repo or release as the source")]
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
@@ -257,8 +272,12 @@ struct SkillsRevertArgs {
     skill: Option<String>,
     #[arg(long, help = "Revert every installed Forge-managed skill")]
     all: bool,
-    #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(
+        long,
+        default_value = "user",
+        help = "Target: user, forge_repo, or path:/absolute/path"
+    )]
+    target: String,
     #[arg(
         long,
         value_enum,
@@ -281,11 +300,11 @@ struct CodexRenderArgs {
     #[arg(
         long,
         value_enum,
-        help = "Render one asset: agents or rules; repeat to select multiple assets"
+        help = "Render one asset: agents or rules; repeat to select multiple assets (default: all)"
     )]
     asset: Vec<CodexAssetArg>,
-    #[arg(long, help = "Target: user or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(long, default_value = "user", help = "Target: user or path:/absolute/path")]
+    target: String,
     #[arg(long, value_enum, help = "Use repo or release as the source")]
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
@@ -297,11 +316,11 @@ struct CodexDiffArgs {
     #[arg(
         long,
         value_enum,
-        help = "Diff one asset: agents or rules; repeat to select multiple assets"
+        help = "Diff one asset: agents or rules; repeat to select multiple assets (default: all)"
     )]
     asset: Vec<CodexAssetArg>,
-    #[arg(long, help = "Target: user or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(long, default_value = "user", help = "Target: user or path:/absolute/path")]
+    target: String,
     #[arg(long, value_enum, help = "Use repo or release as the source")]
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
@@ -313,11 +332,11 @@ struct CodexInstallArgs {
     #[arg(
         long,
         value_enum,
-        help = "Install one asset: agents or rules; repeat to select multiple assets"
+        help = "Install one asset: agents or rules; repeat to select multiple assets (default: all)"
     )]
     asset: Vec<CodexAssetArg>,
-    #[arg(long, help = "Target: user or path:/absolute/path")]
-    target: Option<String>,
+    #[arg(long, default_value = "user", help = "Target: user or path:/absolute/path")]
+    target: String,
     #[arg(long, value_enum, help = "Use repo or release as the source")]
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
@@ -732,55 +751,107 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::Self_(SelfCommand::UpdateCheck(args)) => {
             let data = update_check(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Self_(SelfCommand::Update(args)) => {
             let data = update(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Permissions(PermissionsCommand::Check) => {
             let data = inspect_permissions(false)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Permissions(PermissionsCommand::Fix) => {
             let data = inspect_permissions(true)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::List(args)) => {
             let data = skills_list(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::Status(args)) => {
             let data = skills_status(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::Validate(args)) => {
             let data = skills_validate(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::Install(args)) => {
             let data = skills_install(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::Diff(args)) => {
             let data = skills_diff(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Skills(SkillsCommand::Revert(args)) => {
             let data = skills_revert(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Codex(CodexCommand::Render(args)) => {
             let data = codex_render(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Codex(CodexCommand::Diff(args)) => {
             let data = codex_diff(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
         Command::Codex(CodexCommand::Install(args)) => {
             let data = codex_install(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            if cli.json {
+                print_json(&Envelope { ok: true, data })?;
+            } else {
+                print_json_pretty(&Envelope { ok: true, data })?;
+            }
         }
     }
 
@@ -885,7 +956,7 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
     )?;
     let codex_status = codex_diff(CodexDiffArgs {
         asset: Vec::new(),
-        target: None,
+        target: "user".to_string(),
         source: Some(match source_kind {
             SkillSourceKind::RepoCheckout => SkillSourceArg::Repo,
             SkillSourceKind::Release => SkillSourceArg::Release,
@@ -987,7 +1058,7 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     }
     let codex_result = codex_install(CodexInstallArgs {
         asset: Vec::new(),
-        target: None,
+        target: "user".to_string(),
         source: Some(match source_kind {
             SkillSourceKind::RepoCheckout => SkillSourceArg::Repo,
             SkillSourceKind::Release => SkillSourceArg::Release,
@@ -1177,7 +1248,7 @@ fn skills_diff(args: SkillsDiffArgs) -> Result<SkillsDiffResult> {
     let repo_path = discover_repo_path(args.repo_path, &config);
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
     let def = load_skill_definition(&source_kind, repo_path.as_deref(), &args.skill)?;
-    let target = resolve_target(args.target.as_deref(), &config, repo_path.as_deref(), None)?;
+    let target = resolve_target(Some(&args.target), &config, repo_path.as_deref(), None)?;
     let target_path = target.root.join(&args.skill);
     let target_files = if target_path.exists() {
         load_skill_files_from_dir(&target_path)?
@@ -1210,7 +1281,7 @@ fn skills_revert(args: SkillsRevertArgs) -> Result<SkillsInstallResult> {
             all: args.all,
             source_kind: Some(SkillSourceKind::Release),
             repo_path,
-            target: args.target,
+            target: Some(args.target),
             target_role: args.target_role.map(map_target_role),
             resolved_target: None,
             force: args.force,
@@ -1226,7 +1297,7 @@ fn codex_render(args: CodexRenderArgs) -> Result<CodexRenderResult> {
     let config = load_config()?;
     let repo_path = discover_repo_path(args.repo_path, &config);
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
-    let target = resolve_codex_target(args.target.as_deref())?;
+    let target = resolve_codex_target(Some(&args.target))?;
     let assets = select_codex_assets(
         load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
         &args.asset,
@@ -1260,7 +1331,7 @@ fn codex_diff(args: CodexDiffArgs) -> Result<CodexDiffResult> {
     let config = load_config()?;
     let repo_path = discover_repo_path(args.repo_path, &config);
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
-    let target = resolve_codex_target(args.target.as_deref())?;
+    let target = resolve_codex_target(Some(&args.target))?;
     let assets = select_codex_assets(
         load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
         &args.asset,
@@ -1308,7 +1379,7 @@ fn codex_install(args: CodexInstallArgs) -> Result<CodexInstallResult> {
     let config = load_config()?;
     let repo_path = discover_repo_path(args.repo_path, &config);
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
-    let target = resolve_codex_target(args.target.as_deref())?;
+    let target = resolve_codex_target(Some(&args.target))?;
     let assets = select_codex_assets(
         load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
         &args.asset,
@@ -2106,6 +2177,17 @@ where
     println!(
         "{}",
         serde_json::to_string(value).context("failed to render JSON output")?
+    );
+    Ok(())
+}
+
+fn print_json_pretty<T>(value: &T) -> Result<()>
+where
+    T: Serialize,
+{
+    println!(
+        "{}",
+        serde_json::to_string_pretty(value).context("failed to render pretty JSON output")?
     );
     Ok(())
 }
@@ -3275,7 +3357,7 @@ mod tests {
 
         let result = codex_install(CodexInstallArgs {
             asset: vec![CodexAssetArg::Agents],
-            target: Some(format!("path:{}", target_root.display())),
+            target: format!("path:{}", target_root.display()),
             source: Some(SkillSourceArg::Release),
             repo_path: None,
         })
@@ -3317,7 +3399,7 @@ mod tests {
 
         let result = codex_diff(CodexDiffArgs {
             asset: vec![CodexAssetArg::Agents, CodexAssetArg::Rules],
-            target: Some(format!("path:{}", target_root.display())),
+            target: format!("path:{}", target_root.display()),
             source: Some(SkillSourceArg::Release),
             repo_path: None,
         })
