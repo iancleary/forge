@@ -2115,6 +2115,7 @@ fn doctor_slack_agent_auth_check() -> DoctorCheck {
 
 fn format_doctor_human(result: &DoctorResult) -> String {
     let mut out = String::new();
+    let use_color = io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none();
     let headline = if result.summary.failures > 0 {
         "not ready"
     } else if result.summary.warnings > 0 {
@@ -2132,7 +2133,7 @@ fn format_doctor_human(result: &DoctorResult) -> String {
         let _ = writeln!(
             out,
             "[{}] {}: {}",
-            doctor_status_label(&check.status),
+            doctor_status_label(&check.status, use_color),
             check.id,
             check.summary
         );
@@ -2153,12 +2154,20 @@ fn format_doctor_human(result: &DoctorResult) -> String {
     out.trim_end().to_string()
 }
 
-fn doctor_status_label(status: &str) -> &'static str {
+fn doctor_status_label(status: &str, use_color: bool) -> String {
     match status {
-        "pass" => "PASS",
-        "warn" => "WARN",
-        "fail" => "FAIL",
-        _ => "INFO",
+        "pass" => doctor_status_style("PASS", use_color, "32"),
+        "warn" => doctor_status_style("WARN", use_color, "33"),
+        "fail" => doctor_status_style("FAIL", use_color, "31"),
+        _ => doctor_status_style("INFO", use_color, "36"),
+    }
+}
+
+fn doctor_status_style(text: &str, use_color: bool, color: &str) -> String {
+    if use_color {
+        format!("\x1b[{color}m{text}\x1b[0m")
+    } else {
+        text.to_string()
     }
 }
 
@@ -5157,6 +5166,120 @@ mod tests {
         assert_eq!(failures, 0);
         assert!(!ready);
         assert_eq!(status, "warn");
+    }
+
+    #[test]
+    fn doctor_status_label_supports_colorless_and_colored_output() {
+        assert_eq!(doctor_status_label("pass", false), "PASS");
+        assert_eq!(doctor_status_label("warn", false), "WARN");
+        assert_eq!(doctor_status_label("fail", false), "FAIL");
+        assert_eq!(doctor_status_label("info", false), "INFO");
+        assert_eq!(doctor_status_label("pass", true), "\x1b[32mPASS\x1b[0m");
+        assert_eq!(doctor_status_label("warn", true), "\x1b[33mWARN\x1b[0m");
+        assert_eq!(doctor_status_label("fail", true), "\x1b[31mFAIL\x1b[0m");
+        assert_eq!(doctor_status_label("info", true), "\x1b[36mINFO\x1b[0m");
+    }
+
+    #[test]
+    fn doctor_human_output_without_terminal_does_not_include_color_codes() {
+        let result = DoctorResult {
+            summary: DoctorSummary {
+                status: "warn".to_string(),
+                ready: false,
+                passed: 1,
+                warnings: 1,
+                failures: 0,
+            },
+            checks: vec![
+                DoctorCheck {
+                    id: "cargo".to_string(),
+                    category: "tool".to_string(),
+                    status: "pass".to_string(),
+                    summary: "cargo is available".to_string(),
+                    detail: None,
+                    remediation: Vec::new(),
+                    upgrades: Vec::new(),
+                },
+                DoctorCheck {
+                    id: "gh_auth".to_string(),
+                    category: "auth".to_string(),
+                    status: "warn".to_string(),
+                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                        .to_string(),
+                    detail: None,
+                    remediation: vec![
+                        "Verify interactively in your terminal with `gh auth status`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                    ],
+                    upgrades: Vec::new(),
+                },
+            ],
+        };
+
+        let output = format_doctor_human(&result);
+
+        assert!(!output.contains("\x1b["));
+        assert!(output.contains("[PASS] cargo: cargo is available"));
+        assert!(output.contains("[WARN] gh_auth: GitHub CLI auth could not be confirmed in this non-interactive context"));
+    }
+
+    #[test]
+    fn doctor_json_output_does_not_include_color_codes() {
+        let envelope = Envelope {
+            ok: true,
+            data: DoctorResult {
+                summary: DoctorSummary {
+                    status: "warn".to_string(),
+                    ready: false,
+                    passed: 1,
+                    warnings: 1,
+                    failures: 0,
+                },
+                checks: vec![DoctorCheck {
+                    id: "gh_auth".to_string(),
+                    category: "auth".to_string(),
+                    status: "warn".to_string(),
+                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                        .to_string(),
+                    detail: None,
+                    remediation: vec![
+                        "Verify interactively in your terminal with `gh auth status`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                    ],
+                    upgrades: Vec::new(),
+                }],
+            },
+        };
+
+        let json = serde_json::to_string(&envelope).expect("serialize doctor envelope");
+        assert!(!json.contains("\x1b["));
+        assert!(json.contains(r#""status":"warn""#));
+    }
+
+    #[test]
+    fn doctor_human_output_uses_terminal_probe_for_color() {
+        let result = DoctorResult {
+            summary: DoctorSummary {
+                status: "ready".to_string(),
+                ready: true,
+                passed: 1,
+                warnings: 0,
+                failures: 0,
+            },
+            checks: vec![DoctorCheck {
+                id: "cargo".to_string(),
+                category: "tool".to_string(),
+                status: "pass".to_string(),
+                summary: "cargo is available".to_string(),
+                detail: None,
+                remediation: Vec::new(),
+                upgrades: Vec::new(),
+            }],
+        };
+
+        let output = format_doctor_human(&result);
+
+        assert!(output.contains("[PASS] cargo: cargo is available") == !output.contains("\x1b["));
     }
 
     #[test]
