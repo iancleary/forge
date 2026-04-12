@@ -29,8 +29,8 @@ Why:
 
 Release tags should match the crate version policy:
 
-- format: `YYYY.MMDD.N`
-- example: `2026.410.0`
+- format: `YYYYMMDD.N`
+- example: `20260410.0`
 
 The release tag should match the versions in:
 
@@ -45,7 +45,7 @@ Target command shape:
 
 ```sh
 forge release cut
-forge release cut --version 2026.410.1
+forge release cut --version 20260410.1
 forge release cut --dry-run
 forge release cut --notes-file notes.md
 ```

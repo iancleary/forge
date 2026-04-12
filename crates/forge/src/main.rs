@@ -2287,15 +2287,31 @@ fn latest_release_version_from_lines(lines: &[String]) -> Option<String> {
         .map(|(_, tag)| tag)
 }
 
-fn parse_calver(value: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = value.split('.');
-    let year = parts.next()?.parse::<u32>().ok()?;
-    let month_day = parts.next()?.parse::<u32>().ok()?;
-    let sequence = parts.next()?.parse::<u32>().ok()?;
-    if parts.next().is_some() {
-        return None;
+fn parse_calver(value: &str) -> Option<(u32, u32)> {
+    let parts = value.split('.').collect::<Vec<_>>();
+    match parts.as_slice() {
+        [date, sequence] => {
+            let date = date.parse::<u32>().ok()?;
+            let sequence = sequence.parse::<u32>().ok()?;
+            if date < 10000000 {
+                return None;
+            }
+            Some((date, sequence))
+        }
+        [year, month_day, sequence] => {
+            let year = year.parse::<u32>().ok()?;
+            let month_day = month_day.parse::<u32>().ok()?;
+            let sequence = sequence.parse::<u32>().ok()?;
+            if month_day > 1231 {
+                return None;
+            }
+            let date = year
+                .checked_mul(10000)?
+                .checked_add(month_day)?;
+            Some((date, sequence))
+        }
+        _ => None,
     }
-    Some((year, month_day, sequence))
 }
 
 fn install_release_packages(version: &str) -> Result<()> {
@@ -3425,8 +3441,9 @@ mod tests {
 
     #[test]
     fn parse_calver_accepts_expected_shape() {
-        assert_eq!(parse_calver("2026.411.2"), Some((2026, 411, 2)));
-        assert_eq!(parse_calver("2026.1012.0"), Some((2026, 1012, 0)));
+        assert_eq!(parse_calver("2026.411.2"), Some((20260411, 2)));
+        assert_eq!(parse_calver("2026.1012.0"), Some((20261012, 0)));
+        assert_eq!(parse_calver("20260412.0"), Some((20260412, 0)));
     }
 
     #[test]
@@ -3435,6 +3452,7 @@ mod tests {
         assert_eq!(parse_calver("2026.411"), None);
         assert_eq!(parse_calver("2026.411.two"), None);
         assert_eq!(parse_calver("2026.411.2.extra"), None);
+        assert_eq!(parse_calver("202604.0"), None);
     }
 
     #[test]
@@ -3443,13 +3461,14 @@ mod tests {
             "abc\trefs/tags/2026.411.1".to_string(),
             "def\trefs/tags/2026.411.1^{}".to_string(),
             "ghi\trefs/tags/2026.411.2".to_string(),
+            "pqr\trefs/tags/20260412.0".to_string(),
             "jkl\trefs/tags/not-a-release".to_string(),
-            "mno\trefs/tags/2026.1012.0".to_string(),
+            "mno\trefs/tags/2026.411.9".to_string(),
         ];
 
         assert_eq!(
             latest_release_version_from_lines(&lines),
-            Some("2026.1012.0".to_string())
+            Some("20260412.0".to_string())
         );
     }
 
