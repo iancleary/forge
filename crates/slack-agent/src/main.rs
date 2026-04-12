@@ -3,15 +3,14 @@ use std::{env, fmt::Write as _, fs, path::{Path, PathBuf}};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use reqwest::{Client, multipart::{Form, Part}};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use slack_core::{
     ErrorBody, OutputMode, classify_slack_error_code, config_dir_path as shared_config_dir_path,
-    emit_output, format_error_human, normalize_token, parse_slack_json_response, prepare_config_dir,
-    print_error_json, prompt_for_token, slack_client as shared_slack_client, write_token_file,
+    emit_output, format_error_human, normalize_token, prepare_config_dir, print_error_json,
+    prompt_for_token, slack_client as shared_slack_client, slack_get, slack_post_form,
+    slack_post_json, write_token_file,
 };
-
-const API_BASE: &str = "https://slack.com/api";
 
 #[derive(Parser, Debug)]
 #[command(name = "slack-agent")]
@@ -368,6 +367,11 @@ struct ConversationsOpenResponse {
     channel: SlackChannel,
     #[serde(default)]
     already_open: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConversationsJoinResponse {
+    channel: SlackChannel,
 }
 
 #[derive(Debug, Deserialize)]
@@ -767,7 +771,7 @@ async fn read_thread(
     thread_ts: &str,
     limit: u32,
 ) -> Result<ThreadResult> {
-    let value = slack_get_value(
+    let payload: ThreadApiResponse = slack_get(
         client,
         "conversations.replies",
         &[
@@ -778,8 +782,6 @@ async fn read_thread(
         ],
     )
     .await?;
-    let payload: ThreadApiResponse =
-        serde_json::from_value(value).context("failed to decode conversations.replies payload")?;
 
     Ok(ThreadResult {
         channel_id: channel_id.to_string(),
@@ -799,19 +801,18 @@ async fn reply_send(
     body: &str,
     broadcast: bool,
 ) -> Result<ReplySendResult> {
-    let value = slack_post_json_value(
+    let body = json!({
+        "channel": channel_id,
+        "thread_ts": thread_ts,
+        "text": body,
+        "reply_broadcast": broadcast,
+    });
+    let payload: PostMessageResponse = slack_post_json(
         client,
         "chat.postMessage",
-        json!({
-            "channel": channel_id,
-            "thread_ts": thread_ts,
-            "text": body,
-            "reply_broadcast": broadcast,
-        }),
+        &body,
     )
     .await?;
-    let payload: PostMessageResponse =
-        serde_json::from_value(value).context("failed to decode chat.postMessage payload")?;
 
     Ok(ReplySendResult {
         channel_id: payload.channel,
@@ -827,7 +828,7 @@ async fn reaction_add(
     message_ts: &str,
     name: &str,
 ) -> Result<ReactionAddResult> {
-    let _ = slack_post_form_value(
+    let _: Value = slack_post_form(
         client,
         "reactions.add",
         &[
@@ -886,14 +887,12 @@ async fn file_upload(
         body.insert("initial_comment".to_string(), json!(comment));
     }
 
-    let value = slack_post_json_value(
+    let payload: CompleteUploadResponse = slack_post_json(
         client,
         "files.completeUploadExternal",
-        Value::Object(body),
+        &Value::Object(body),
     )
     .await?;
-    let payload: CompleteUploadResponse = serde_json::from_value(value)
-        .context("failed to decode files.completeUploadExternal payload")?;
     let file = payload
         .files
         .into_iter()
@@ -931,14 +930,12 @@ async fn upload_external_file(upload_url: &str, bytes: Vec<u8>, filename: &str) 
 }
 
 async fn file_info(client: &Client, file_id: &str) -> Result<FileInfoResult> {
-    let value = slack_get_value(
+    let payload: FileInfoApiResponse = slack_get(
         client,
         "files.info",
         &[("file".to_string(), file_id.to_string())],
     )
     .await?;
-    let payload: FileInfoApiResponse =
-        serde_json::from_value(value).context("failed to decode files.info payload")?;
 
     Ok(FileInfoResult {
         file: payload.file.into(),
@@ -946,14 +943,9 @@ async fn file_info(client: &Client, file_id: &str) -> Result<FileInfoResult> {
 }
 
 async fn dm_open(client: &Client, user_id: &str) -> Result<DmOpenResult> {
-    let value = slack_post_json_value(
-        client,
-        "conversations.open",
-        json!({ "users": user_id }),
-    )
-    .await?;
+    let body = json!({ "users": user_id });
     let payload: ConversationsOpenResponse =
-        serde_json::from_value(value).context("failed to decode conversations.open payload")?;
+        slack_post_json(client, "conversations.open", &body).await?;
 
     Ok(DmOpenResult {
         user_id: user_id.to_string(),
@@ -964,17 +956,16 @@ async fn dm_open(client: &Client, user_id: &str) -> Result<DmOpenResult> {
 
 async fn dm_send(client: &Client, user_id: &str, body: &str) -> Result<DmSendResult> {
     let opened = dm_open(client, user_id).await?;
-    let value = slack_post_json_value(
+    let body = json!({
+        "channel": opened.channel_id,
+        "text": body,
+    });
+    let payload: PostMessageResponse = slack_post_json(
         client,
         "chat.postMessage",
-        json!({
-            "channel": opened.channel_id,
-            "text": body,
-        }),
+        &body,
     )
     .await?;
-    let payload: PostMessageResponse =
-        serde_json::from_value(value).context("failed to decode chat.postMessage payload")?;
 
     Ok(DmSendResult {
         user_id: user_id.to_string(),
@@ -985,85 +976,18 @@ async fn dm_send(client: &Client, user_id: &str, body: &str) -> Result<DmSendRes
 }
 
 async fn channel_join(client: &Client, channel_id: &str) -> Result<ChannelJoinResult> {
-    let value = slack_post_form_value(
+    let payload: ConversationsJoinResponse = slack_post_form(
         client,
         "conversations.join",
         &[("channel".to_string(), channel_id.to_string())],
     )
     .await?;
-    let payload: SlackChannel =
-        serde_json::from_value(value["channel"].clone()).context("failed to decode joined channel")?;
 
     Ok(ChannelJoinResult {
-        channel_id: payload.id,
-        name: payload.name,
-        is_member: payload.is_member.unwrap_or(true),
+        channel_id: payload.channel.id,
+        name: payload.channel.name,
+        is_member: payload.channel.is_member.unwrap_or(true),
     })
-}
-
-async fn slack_get_value(
-    client: &Client,
-    method: &str,
-    query: &[(String, String)],
-) -> Result<Value> {
-    let response = client
-        .get(format!("{API_BASE}/{method}"))
-        .query(query)
-        .send()
-        .await
-        .with_context(|| format!("failed to call {method}"))?;
-    parse_slack_response(response).await
-}
-
-async fn slack_post_form_value(
-    client: &Client,
-    method: &str,
-    form: &[(String, String)],
-) -> Result<Value> {
-    let response = client
-        .post(format!("{API_BASE}/{method}"))
-        .form(form)
-        .send()
-        .await
-        .with_context(|| format!("failed to call {method}"))?;
-    parse_slack_response(response).await
-}
-
-async fn slack_post_json_value(client: &Client, method: &str, body: Value) -> Result<Value> {
-    let response = client
-        .post(format!("{API_BASE}/{method}"))
-        .json(&body)
-        .send()
-        .await
-        .with_context(|| format!("failed to call {method}"))?;
-    parse_slack_response(response).await
-}
-
-async fn slack_post_form<T>(
-    client: &Client,
-    method: &str,
-    form: &[(String, String)],
-) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let value = slack_post_form_value(client, method, form).await?;
-    serde_json::from_value(value)
-        .with_context(|| format!("failed to decode {method} payload"))
-}
-
-async fn parse_slack_response(response: reqwest::Response) -> Result<Value> {
-    let value = parse_slack_json_response::<Value>(response).await?;
-    if value.get("ok").and_then(Value::as_bool) != Some(true) {
-        let message = value
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("slack_api_error")
-            .to_string();
-        bail!(message);
-    }
-
-    Ok(value)
 }
 
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
