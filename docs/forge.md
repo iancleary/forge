@@ -99,7 +99,7 @@ Behavior:
 forge self update [--repo-path <path>] [--branch <name>] [--json]
 ```
 
-Updates the local Forge installation and reconciles Forge-managed skills.
+Updates the active Forge source of truth and reconciles Forge-managed surfaces.
 
 In repo-checkout mode, Forge updates the local repo using:
 
@@ -113,6 +113,13 @@ Default branch behavior:
 - otherwise fall back to `main`
 
 In release mode, Forge uses the installed release payload as the canonical source and updates `mainline` Forge-managed skills without requiring a local checkout.
+
+Important boundary:
+
+- in repo-checkout mode, `forge self update` pulls the configured repo and then reconciles managed skills
+- in release mode, `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
+- in release mode, `forge self update` installs the newest tagged release with Cargo when needed
+- after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
 
 ### `forge codex render`
 
