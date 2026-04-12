@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "2026.411.1"
+version = "2026.411.2"
 edition = "2024"
 
 [dependencies]

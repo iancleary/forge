@@ -305,6 +305,7 @@ Checks:
 
 - whether the Forge repo or installed release is out of date
 - whether any mainline managed skill install is stale relative to the active Forge source
+- whether the managed Codex baseline is stale relative to the active Forge source
 
 Recommended result shape:
 
@@ -344,8 +345,10 @@ In `repo_checkout` mode:
 
 In `release` mode:
 
-- use the installed release payload as source
-- reconcile managed installs without requiring Git
+- compare the running Forge version to the newest repo tag
+- install the newest tagged release with Cargo when needed
+- then use the installed release payload as source
+- reconcile managed installs without requiring a local checkout
 
 ## Switching Back To Standard Install
 

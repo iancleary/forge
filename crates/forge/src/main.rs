@@ -11,11 +11,13 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
+const FORGE_REPO_URL: &str = "https://github.com/iancleary/forge";
 const DEFAULT_FORGE_REPO_INSTALL_SUBPATH: &str = ".agents/skills-installed";
 const REPO_SKILLS_SUBPATH: &str = ".agents/skills";
 const REPO_CODEX_USER_SUBPATH: &str = "codex/user";
 const CODEX_AGENTS_REL_PATH: &str = "AGENTS.md";
 const CODEX_RULES_REL_PATH: &str = "rules/user-policy.rules";
+const RELEASE_PACKAGES: &[&str] = &["forge", "codex-threads", "linear", "slack-cli"];
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -419,9 +421,12 @@ struct UpdateCheckResult {
     local_head: Option<String>,
     remote_head: Option<String>,
     remote_default_branch: Option<String>,
+    current_version: Option<String>,
+    latest_version: Option<String>,
     update_available: bool,
     checked_at_unix: u64,
     skills_out_of_date: bool,
+    codex_out_of_date: bool,
     skills: Vec<SkillStatusEntry>,
 }
 
@@ -432,8 +437,11 @@ struct UpdateResult {
     branch: Option<String>,
     before_head: Option<String>,
     after_head: Option<String>,
+    before_version: Option<String>,
+    after_version: Option<String>,
     changed: bool,
     skills_reconciled: usize,
+    codex_reconciled: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -822,6 +830,8 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
     } else {
         SkillSourceKind::Release
     };
+    let mut current_version = None;
+    let mut latest_version = None;
 
     let (local_head, remote_head, remote_default_branch, update_available) =
         if let Some(path) = repo_path.as_ref() {
@@ -838,7 +848,18 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
                 update_available,
             )
         } else {
-            (None, None, None, false)
+            current_version = Some(env!("CARGO_PKG_VERSION").to_string());
+            latest_version = latest_release_version()?;
+            let update_available = latest_version
+                .as_ref()
+                .zip(current_version.as_ref())
+                .is_some_and(|(latest, current)| latest != current);
+            (
+                current_version.clone(),
+                latest_version.clone(),
+                None,
+                update_available,
+            )
         };
 
     let mut state = load_state_or_default()?;
@@ -858,6 +879,15 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         SkillsStatusScope::Mainline,
         None,
     )?;
+    let codex_status = codex_diff(CodexDiffArgs {
+        asset: Vec::new(),
+        target: None,
+        source: Some(match source_kind {
+            SkillSourceKind::RepoCheckout => SkillSourceArg::Repo,
+            SkillSourceKind::Release => SkillSourceArg::Release,
+        }),
+        repo_path: repo_path.clone(),
+    })?;
     let _ = args.force;
 
     Ok(UpdateCheckResult {
@@ -867,12 +897,15 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         local_head,
         remote_head,
         remote_default_branch,
+        current_version,
+        latest_version,
         update_available,
         checked_at_unix,
         skills_out_of_date: status
             .entries
             .iter()
             .any(|entry| entry.state == "out_of_date" || entry.state == "missing"),
+        codex_out_of_date: !codex_status.identical,
         skills: status.entries,
     })
 }
@@ -889,6 +922,8 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     let mut before_head = None;
     let mut after_head = None;
     let mut branch = None;
+    let mut before_version = None;
+    let mut after_version = None;
 
     if let Some(path) = repo_path.as_ref() {
         ensure_git_repo(path)?;
@@ -909,6 +944,19 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
             ],
         )?;
         after_head = Some(git_stdout(path, &["rev-parse", "HEAD"])?);
+    } else {
+        if args.branch.is_some() {
+            bail!("--branch is only supported in repo-checkout mode");
+        }
+        before_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        let target_version = latest_release_version()?
+            .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
+        if before_version.as_deref() != Some(target_version.as_str()) {
+            install_release_packages(&target_version)?;
+            after_version = Some(target_version);
+        } else {
+            after_version = before_version.clone();
+        }
     }
 
     let mut state = load_state_or_default()?;
@@ -933,10 +981,24 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         )?;
         installs.extend(result.installs);
     }
+    let codex_result = codex_install(CodexInstallArgs {
+        asset: Vec::new(),
+        target: None,
+        source: Some(match source_kind {
+            SkillSourceKind::RepoCheckout => SkillSourceArg::Repo,
+            SkillSourceKind::Release => SkillSourceArg::Release,
+        }),
+        repo_path: repo_path.clone(),
+    })?;
     save_state(&state_file_path()?, &state)?;
 
-    let changed =
-        before_head != after_head || installs.iter().any(|item| item.status != "unchanged");
+    let changed = before_head != after_head
+        || before_version != after_version
+        || installs.iter().any(|item| item.status != "unchanged")
+        || codex_result
+            .assets
+            .iter()
+            .any(|item| item.status != "unchanged");
 
     Ok(UpdateResult {
         source_kind: source_kind_name(&source_kind).to_string(),
@@ -944,8 +1006,11 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         branch,
         before_head,
         after_head,
+        before_version,
+        after_version,
         changed,
         skills_reconciled: installs.len(),
+        codex_reconciled: codex_result.assets.len(),
     })
 }
 
@@ -2156,6 +2221,16 @@ fn run_command(path: &Path, program: &str, args: &[&str]) -> Result<std::process
         .with_context(|| format!("failed to run {program} {}", args.join(" ")))
 }
 
+fn run_command_capture_lines(program: &str, args: &[&str]) -> Result<Vec<String>> {
+    let output = run_command_capture(program, args)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("{program} {} failed: {}", args.join(" "), stderr.trim());
+    }
+    let stdout = String::from_utf8(output.stdout).context("command output was not UTF-8")?;
+    Ok(stdout.lines().map(|line| line.to_string()).collect())
+}
+
 fn config_dir_path() -> Result<PathBuf> {
     if let Ok(path) = env::var("FORGE_CONFIG_DIR") {
         return Ok(expand_path(&path));
@@ -2194,6 +2269,62 @@ fn now_unix() -> Result<u64> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| anyhow!("system clock is before UNIX_EPOCH"))?
         .as_secs())
+}
+
+fn latest_release_version() -> Result<Option<String>> {
+    let lines = run_command_capture_lines("git", &["ls-remote", "--tags", FORGE_REPO_URL])?;
+    Ok(latest_release_version_from_lines(&lines))
+}
+
+fn latest_release_version_from_lines(lines: &[String]) -> Option<String> {
+    lines
+        .iter()
+        .filter_map(|line| line.split_once('\t').map(|(_, refname)| refname))
+        .filter_map(|refname| refname.strip_prefix("refs/tags/"))
+        .filter(|tag| !tag.ends_with("^{}"))
+        .filter_map(|tag| parse_calver(tag).map(|parts| (parts, tag.to_string())))
+        .max_by_key(|(parts, _)| *parts)
+        .map(|(_, tag)| tag)
+}
+
+fn parse_calver(value: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = value.split('.');
+    let year = parts.next()?.parse::<u32>().ok()?;
+    let month_day = parts.next()?.parse::<u32>().ok()?;
+    let sequence = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((year, month_day, sequence))
+}
+
+fn install_release_packages(version: &str) -> Result<()> {
+    for package in RELEASE_PACKAGES {
+        let output = run_command_capture(
+            "cargo",
+            &[
+                "install",
+                "--git",
+                FORGE_REPO_URL,
+                "--tag",
+                version,
+                "--locked",
+                "--force",
+                package,
+            ],
+        )?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "cargo install --git {} --tag {} --locked --force {} failed: {}",
+                FORGE_REPO_URL,
+                version,
+                package,
+                stderr.trim()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
@@ -3289,6 +3420,36 @@ mod tests {
         assert_eq!(
             tool_upgrade_commands_for("windows", "gh"),
             vec!["winget upgrade --id GitHub.cli"]
+        );
+    }
+
+    #[test]
+    fn parse_calver_accepts_expected_shape() {
+        assert_eq!(parse_calver("2026.411.2"), Some((2026, 411, 2)));
+        assert_eq!(parse_calver("2026.1012.0"), Some((2026, 1012, 0)));
+    }
+
+    #[test]
+    fn parse_calver_rejects_invalid_values() {
+        assert_eq!(parse_calver("main"), None);
+        assert_eq!(parse_calver("2026.411"), None);
+        assert_eq!(parse_calver("2026.411.two"), None);
+        assert_eq!(parse_calver("2026.411.2.extra"), None);
+    }
+
+    #[test]
+    fn latest_release_version_from_lines_uses_highest_calver_tag() {
+        let lines = vec![
+            "abc\trefs/tags/2026.411.1".to_string(),
+            "def\trefs/tags/2026.411.1^{}".to_string(),
+            "ghi\trefs/tags/2026.411.2".to_string(),
+            "jkl\trefs/tags/not-a-release".to_string(),
+            "mno\trefs/tags/2026.1012.0".to_string(),
+        ];
+
+        assert_eq!(
+            latest_release_version_from_lines(&lines),
+            Some("2026.1012.0".to_string())
         );
     }
 

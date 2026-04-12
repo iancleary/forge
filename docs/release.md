@@ -9,8 +9,9 @@ Use GitHub CLI directly for now.
 Recommended sequence:
 
 ```sh
+cargo check
 git push origin main
-gh release create 2026.410.0 --target main --title 2026.410.0 --generate-notes --latest
+gh release create 2026.411.2 --target main --title 2026.411.2 --generate-notes --latest
 ```
 
 Shell note:
@@ -34,6 +35,8 @@ Release tags should match the crate version policy:
 The release tag should match the versions in:
 
 - `crates/forge/Cargo.toml`
+- `crates/codex-threads/Cargo.toml`
+- `crates/linear/Cargo.toml`
 - `crates/slack-cli/Cargo.toml`
 
 ## Future `forge release cut`
@@ -74,6 +77,31 @@ Initial default:
 ```sh
 cargo check
 ```
+
+## User Install And Update Story
+
+The current user-facing release bootstrap path is a tagged source install driven by a small installer script in this repo.
+
+New machine install:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2
+```
+
+That script:
+
+- installs `forge`, `codex-threads`, `linear`, and `slack-cli` from the tagged release source
+- installs Forge-managed skills into `~/.agents/skills`
+- installs the managed Codex baseline into `~/.codex/`
+
+Update story:
+
+- use the installer script for first install and recovery
+- use `forge self update-check` and `forge self update` as the steady-state release update path
+- in release mode, that path checks the latest repo tag and upgrades the installed Forge binaries with Cargo when needed
+- after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
+
+This is intentionally narrower than a full artifact-packaging system. Forge does not yet publish platform-specific tarballs or native package-manager formulas.
 
 Later this can expand to:
 

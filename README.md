@@ -70,6 +70,54 @@ linear auth login
 linear --json project list --limit 5
 ```
 
+## Install From A Release
+
+Prerequisite: install Rust and Cargo first with `rustup` from <https://rustup.rs>.
+
+Use `curl` as the bootstrap path on a new machine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2
+```
+
+That installer:
+
+- installs the four Forge binaries from the tagged release source
+- installs Forge-managed skills into `~/.agents/skills`
+- installs the managed Codex baseline into `~/.codex/`
+
+If you want the binaries but not the Codex baseline:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2 --skip-codex
+```
+
+After installation, a good first verification step is:
+
+```sh
+forge doctor
+forge skills status
+forge codex diff
+```
+
+## Update From A Release
+
+After bootstrap, prefer the Forge-managed update path:
+
+```sh
+forge self update-check
+forge self update
+```
+
+In release mode, that path now:
+
+- checks GitHub release tags by querying the Forge repo tags
+- updates installed Forge binaries to the newest tagged release with Cargo when needed
+- reconciles Forge-managed skills
+- reapplies the managed Codex baseline
+
+The `curl` installer remains useful for first install and recovery, but it is no longer the steady-state update path.
+
 ## Install For Codex
 
 If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `~/.agents/skills`.
