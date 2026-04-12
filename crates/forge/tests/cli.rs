@@ -45,9 +45,7 @@ fn cli_install_and_status_use_mainline_user_target() {
     fs::create_dir_all(&install_root).expect("create install root");
 
     let install = run_forge(
-        &[
-            "--json", "skills", "install", "--all", "--source", "repo", "--target", "user",
-        ],
+        &["--json", "skills", "install", "--all", "--source", "repo"],
         &config_dir,
         &home_dir,
     );

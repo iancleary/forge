@@ -126,6 +126,7 @@ Behavior:
 - when omitted, Forge resolves the source automatically:
   - use `repo` if a valid Forge repo checkout is configured
   - otherwise use `release`
+- `--target` defaults to `user` (installs into `~/.agents/skills`)
 - target role defaults:
   - `user` => `mainline`
   - `forge_repo` => `development`
@@ -361,7 +362,7 @@ Supported pattern:
 1. User installs from checkout:
 
 ```sh
-forge skills install linear-cli --source repo --target user --json
+forge skills install linear-cli --source repo --json
 ```
 
 2. Later the user returns to the standard installed source:
@@ -373,7 +374,7 @@ forge skills revert linear-cli --target user --json
 or:
 
 ```sh
-forge skills install linear-cli --source release --target user --json
+forge skills install linear-cli --source release --json
 ```
 
 Persistent non-user target example:

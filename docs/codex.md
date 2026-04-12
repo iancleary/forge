@@ -70,7 +70,7 @@ Portable user-scoped Forge skills belong in the Codex `USER` skill location:
 ~/.agents/skills
 ```
 
-That location is deterministic. Forge should install managed user-scope skills there via `forge skills install --target user`.
+That location is deterministic. Forge installs managed user-scope skills there by default via `forge skills install`.
 
 Repo-local skills and repo `AGENTS.md` guidance are still useful, but they should reinforce user-scope behavior rather than replace it.
 
