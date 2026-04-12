@@ -86,16 +86,14 @@ Applies the expected local permissions:
 ### `forge self update-check`
 
 ```sh
-forge self update-check [--force] [--json]
+forge self update-check [--json]
 ```
 
 Checks whether the local Forge install is out of date.
 
 Behavior:
 
-- caches the last check result in `~/.config/forge/state.toml`
-- uses a TTL to avoid hitting the network on every run
-- `--force` bypasses the cache
+- always checks the latest Forge release live
 - checks Forge release drift and Forge-managed skill drift
 - checks `mainline` Forge-managed skill drift by default
 - uses the installed Forge release as the canonical source for managed skills
@@ -114,6 +112,9 @@ Important boundary:
 - `forge self update` resolves the target tag's binary list from that tag's release installer before calling Cargo
 - `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
 - `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
+- in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
+- in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
+- in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly
 - after install, `forge self update` migrates declared legacy tool config dirs, removes declared legacy binaries when their replacements exist, and removes declared obsolete root files under `~/.config/forge`
 - after install, `forge self update` migrates declared legacy Forge-managed skill installs and updates their recorded names in local state
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
@@ -212,7 +213,7 @@ Optional override:
 
 - `FORGE_CONFIG_DIR`
 
-State cache:
+State file:
 
 ```text
 ~/.config/forge/state.toml
@@ -220,7 +221,7 @@ State cache:
 
 ## Notes
 
-- `forge self update-check` is safe to run frequently with cache enabled
+- `forge self update-check` is safe to run frequently as a live network check
 - `forge self update` is explicit on purpose
 - Forge-managed skills are deployed artifacts, not peer sources of truth
 - local-checkout workflows should use `forge dev install` and explicit `--repo-path` flags rather than root-config inference

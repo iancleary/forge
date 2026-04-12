@@ -1,11 +1,11 @@
 ---
-name: slack-query-research
-description: "Use the Forge `slack-query` CLI for deterministic Slack research: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious."
+name: slack-query-cli
+description: "Use the Forge `slack-query` CLI for deterministic Slack retrieval: permalink resolution, message search, thread reads, channel context, and thread context. See `forge-tools` first if the correct Forge CLI is not obvious."
 ---
 
-# Slack Query Research
+# Slack Query CLI
 
-This skill covers the Forge `slack-query` binary. If the user only knows they need "one of the Forge tools," check `forge-tools` first and then use this skill when the task is clearly Slack research.
+This skill covers the Forge `slack-query` binary. If the user only knows they need one of the Forge tools, check `forge-tools` first and then use this skill when the task is clearly Slack retrieval or research.
 
 If the task is actually about shaping a new Forge workflow rather than retrieving Slack evidence, route to `design-algorithm` first.
 

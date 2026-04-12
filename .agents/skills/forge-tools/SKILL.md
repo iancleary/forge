@@ -1,6 +1,6 @@
 ---
 name: forge-tools
-description: Route Codex to the right Forge CLI skill for Linear, Slack research, Codex session retrieval, or local Forge management. Use when a task may involve more than one Forge CLI or when the correct CLI is not obvious yet.
+description: Route Codex to the right Forge CLI skill for Linear, Slack retrieval or assistant actions, Codex session retrieval, or local Forge management. Use when a task may involve more than one Forge CLI or when the correct CLI is not obvious yet.
 ---
 
 # Forge Tools
@@ -10,9 +10,10 @@ Use this skill as the lightweight entry point for the Forge CLI bundle.
 Pick the narrowest CLI skill that matches the job:
 
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
-- `slack-query-research`: Slack permalink resolution, search, thread reads, and nearby message context.
+- `slack-query-cli`: Slack permalink resolution, search, thread reads, and nearby message context.
+- `slack-agent-cli`: assistant-oriented Slack thread replies, reactions, file uploads, DMs, and channel joins.
 - `codex-threads-cli`: local Codex session sync, search, thread resolution, and event inspection.
-- `forge-cli-admin`: local Forge config, permission checks, and self-update commands.
+- `forge-cli`: local Forge config, permission checks, self-update commands, and managed-surface deployment.
 - `design-algorithm`: shaping and scope-reduction workflow for deciding what should exist before building or automating it.
 
 Default operating rules:

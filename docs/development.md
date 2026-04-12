@@ -7,7 +7,7 @@ If you want to use Forge as an installed tool on a machine, start in `README.md`
 ## Run From Source
 
 ```sh
-cargo run -p forge -- self update-check --force
+cargo run -p forge -- self update-check
 cargo run -p forge -- dev install --repo-path "$(pwd)"
 cargo run -p slack-agent -- --help
 cargo run -p slack-query -- --help
@@ -31,7 +31,7 @@ Then:
 ```sh
 forge doctor
 forge dev install --repo-path "$(pwd)"
-forge self update-check --force
+forge self update-check
 ```
 
 ## Use Repo-Sourced Skills While Developing

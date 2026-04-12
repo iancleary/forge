@@ -31,9 +31,10 @@ Initial Forge-managed skills:
 - `gh-body-file`
 - `forge-tools`
 - `linear-cli`
-- `slack-query-research`
+- `slack-query-cli`
+- `slack-agent-cli`
 - `codex-threads-cli`
-- `forge-cli-admin`
+- `forge-cli`
 
 Repo source of truth during development:
 
@@ -322,7 +323,7 @@ Recommended result shape:
   "data": {
     "source_kind": "release",
     "update_available": true,
-    "skills_out_of_date": true,
+    "skills_need_reconcile": true,
     "managed_skill_count": 6,
     "skills": [
       {
@@ -343,7 +344,8 @@ Behavior:
 - reconciles managed skill installs against that release
 - reconciles `mainline` managed skill installs against that release by default
 - overwrites Forge-managed targets as needed
-- leaves unmanaged collisions untouched unless the user explicitly took ownership beforehand
+- in interactive human mode, prompts per unmanaged collision to overwrite or skip that skill
+- in non-interactive or JSON mode, fails clearly on unmanaged collisions
 - compares the running Forge version to the newest repo tag
 - installs the newest tagged release with Cargo when needed
 - then uses the installed release payload as source

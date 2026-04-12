@@ -3,13 +3,15 @@ use std::{
     env,
     fmt::Write as _,
     fs,
+    io::{self, IsTerminal, Write as _},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
@@ -78,11 +80,46 @@ enum OutputMode {
 
 impl OutputMode {
     fn from_json_flag(json: bool) -> Self {
-        if json {
-            Self::Json
-        } else {
-            Self::Human
+        if json { Self::Json } else { Self::Human }
+    }
+}
+
+struct UpdateProgress {
+    bar: ProgressBar,
+}
+
+impl UpdateProgress {
+    fn new(mode: OutputMode) -> Self {
+        if mode != OutputMode::Human || !io::stderr().is_terminal() {
+            return Self {
+                bar: ProgressBar::hidden(),
+            };
         }
+
+        let bar = ProgressBar::new_spinner();
+        let style = ProgressStyle::with_template("{spinner} {msg}")
+            .expect("spinner template should be valid")
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
+        bar.set_style(style);
+        bar.enable_steady_tick(Duration::from_millis(100));
+        Self { bar }
+    }
+
+    fn step(&self, message: impl Into<String>) {
+        self.bar.set_message(message.into());
+    }
+
+    fn suspend<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        self.bar.suspend(f)
+    }
+}
+
+impl Drop for UpdateProgress {
+    fn drop(&mut self) {
+        self.bar.finish_and_clear();
     }
 }
 
@@ -114,10 +151,7 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum SelfCommand {
-    #[command(
-        name = "update-check",
-        about = "Check whether an update is available (cached by default)"
-    )]
+    #[command(name = "update-check", about = "Check whether an update is available")]
     UpdateCheck(UpdateCheckArgs),
     #[command(about = "Apply updates and reconcile managed installs")]
     Update(UpdateArgs),
@@ -166,13 +200,24 @@ enum CodexCommand {
 }
 
 #[derive(Args, Debug)]
-struct UpdateCheckArgs {
-    #[arg(long, help = "Force a fresh check instead of using cached state")]
-    force: bool,
-}
+struct UpdateCheckArgs {}
 
 #[derive(Args, Debug)]
 struct UpdateArgs {}
+
+#[derive(Debug, Default)]
+struct CollisionResolution {
+    force_paths: BTreeSet<String>,
+    skipped_by_root: BTreeMap<String, BTreeSet<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CollisionPromptChoice {
+    OverwriteOne,
+    OverwriteAll,
+    SkipOne,
+    SkipAll,
+}
 
 #[derive(Args, Debug)]
 struct DevInstallArgs {
@@ -482,7 +527,7 @@ struct UpdateCheckResult {
     latest_version: Option<String>,
     update_available: bool,
     checked_at_unix: u64,
-    skills_out_of_date: bool,
+    skills_need_reconcile: bool,
     codex_out_of_date: bool,
     skills: Vec<SkillStatusEntry>,
 }
@@ -899,7 +944,7 @@ fn run(cli: Cli) -> Result<()> {
             emit_output(output, data, format_update_check_human)?;
         }
         Command::Self_(SelfCommand::Update(args)) => {
-            let data = update(args)?;
+            let data = update(args, output)?;
             emit_output(output, data, format_update_human)?;
         }
         Command::Permissions(PermissionsCommand::Check) => {
@@ -1008,7 +1053,7 @@ fn dev_install(args: DevInstallArgs) -> Result<DevInstallResult> {
     })
 }
 
-fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
+fn update_check(_args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
     let checked_at_unix = now_unix()?;
     let config = ForgeConfig::default();
     let source_kind = SkillSourceKind::Release;
@@ -1045,7 +1090,6 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         source: Some(SkillSourceArg::Release),
         repo_path: None,
     })?;
-    let _ = args.force;
 
     Ok(UpdateCheckResult {
         source_kind: source_kind_name(&source_kind).to_string(),
@@ -1058,25 +1102,27 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         latest_version,
         update_available,
         checked_at_unix,
-        skills_out_of_date: status
-            .entries
-            .iter()
-            .any(|entry| entry.state == "out_of_date" || entry.state == "missing"),
+        skills_need_reconcile: status.entries.iter().any(skill_status_requires_update),
         codex_out_of_date: !codex_status.identical,
         skills: status.entries,
     })
 }
 
-fn update(args: UpdateArgs) -> Result<UpdateResult> {
+fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let config = ForgeConfig::default();
     let source_kind = SkillSourceKind::Release;
+    let total_steps = 6usize;
     let before_head = None;
     let after_head = None;
     let branch = None;
     let mut skills_reconciled = 0;
     let mut codex_reconciled = 0;
+    let progress = UpdateProgress::new(output);
 
     let mut state = load_state_or_default()?;
+    progress.step(format!(
+        "[1/{total_steps}] Checking managed skill ownership"
+    ));
     // Before attempting updates/installs, detect unmanaged collisions and provide a single actionable error.
     // This keeps the default safety posture (no implicit takeover) while making remediation obvious.
     let status = skills_status_with_source(
@@ -1092,30 +1138,33 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         .iter()
         .filter(|entry| entry.state == "unmanaged_collision")
         .collect::<Vec<_>>();
-    if !collisions.is_empty() {
-        let mut lines = Vec::new();
-        for entry in &collisions {
-            lines.push(format!("- {}: {}", entry.name, entry.target_path));
-        }
-        let list = lines.join("\n");
-        bail!(
-            "unmanaged collisions detected for {} skills:\n{}\n\nTo take ownership once:\nforge skills install --all --force-unmanaged --source {}\n\nThen:\nforge codex diff\nforge codex install\nforge self update-check\nforge self update",
-            collisions.len(),
-            list,
-            "release"
-        );
-    }
+    let collision_resolution = resolve_unmanaged_collisions(output, &progress, &collisions)?;
 
     let _ = args;
     let before_version = Some(env!("CARGO_PKG_VERSION").to_string());
+    progress.step(format!("[2/{total_steps}] Checking latest Forge release"));
     let target_version = latest_release_version()?
         .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
+    progress.step(format!(
+        "[3/{total_steps}] Loading release contracts for {target_version}"
+    ));
     let release_contract = fetch_release_tools_contract(&target_version)?;
     let release_skill_contract = fetch_release_skills_contract(&target_version)?;
+    let release_skill_names = release_skill_contract
+        .skills
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<Vec<_>>();
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
+            progress.step(format!(
+                "[4/{total_steps}] Installing Forge {target_version}"
+            ));
             install_release_packages(&target_version)?;
             let after_version = Some(target_version.clone());
+            progress.step(format!(
+                "[5/{total_steps}] Applying release migration contract"
+            ));
             let local_contract = reconcile_release_local_contract(
                 &release_contract,
                 &release_skill_contract,
@@ -1123,7 +1172,15 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
             )?;
             save_state(&state_file_path()?, &state)?;
             let targets = mainline_targets_for_reconcile(&config, &state, None)?;
-            let delegated = reconcile_release_with_installed_forge(&targets)?;
+            progress.step(format!(
+                "[6/{total_steps}] Reconciling managed skills and Codex"
+            ));
+            let delegated = reconcile_release_with_installed_forge(
+                &targets,
+                &release_skill_names,
+                &collision_resolution,
+                &progress,
+            )?;
             skills_reconciled = delegated.skills_reconciled;
             codex_reconciled = delegated.codex_reconciled;
             let reconcile_changed = delegated.changed
@@ -1133,6 +1190,12 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
                 || local_contract.legacy_skill_installs_migrated > 0;
             (after_version, local_contract, reconcile_changed)
         } else {
+            progress.step(format!(
+                "[4/{total_steps}] Install step skipped; already on {target_version}"
+            ));
+            progress.step(format!(
+                "[5/{total_steps}] Applying release migration contract"
+            ));
             let local_contract = reconcile_release_local_contract(
                 &release_contract,
                 &release_skill_contract,
@@ -1150,12 +1213,26 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         let targets = mainline_targets_for_reconcile(&config, &state, None)?;
         let mut installs = Vec::new();
         for target in targets {
+            let target_root = target.root.display().to_string();
+            let selected_names =
+                if let Some(skipped) = collision_resolution.skipped_by_root.get(&target_root) {
+                    release_skill_names
+                        .iter()
+                        .filter(|name| !skipped.contains(name.as_str()))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                } else {
+                    release_skill_names.clone()
+                };
+            if selected_names.is_empty() {
+                continue;
+            }
             let result = skills_install_internal(
                 &config,
                 &mut state,
                 InstallRequest {
-                    skill_names: Vec::new(),
-                    all: true,
+                    skill_names: selected_names,
+                    all: false,
                     source_kind: Some(source_kind.clone()),
                     repo_path: None,
                     target: None,
@@ -1163,11 +1240,15 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
                     resolved_target: Some(target),
                     force: true,
                     force_unmanaged: false,
+                    force_unmanaged_paths: collision_resolution.force_paths.clone(),
                     restrict_to_targets: None,
                 },
             )?;
             installs.extend(result.installs);
         }
+        progress.step(format!(
+            "[6/{total_steps}] Reconciling managed Codex assets"
+        ));
         let codex_result = codex_install(CodexInstallArgs {
             asset: Vec::new(),
             target: "user".to_string(),
@@ -1300,9 +1381,10 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             for required in [
                 "design-algorithm",
                 "linear-cli",
-                "slack-query-research",
+                "slack-query-cli",
+                "slack-agent-cli",
                 "codex-threads-cli",
-                "forge-cli-admin",
+                "forge-cli",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -1348,6 +1430,7 @@ fn skills_install(args: SkillsInstallArgs) -> Result<SkillsInstallResult> {
             resolved_target: None,
             force: args.force,
             force_unmanaged: args.force_unmanaged,
+            force_unmanaged_paths: BTreeSet::new(),
             restrict_to_targets: None,
         },
     )?;
@@ -1399,6 +1482,7 @@ fn skills_revert(args: SkillsRevertArgs) -> Result<SkillsInstallResult> {
             resolved_target: None,
             force: args.force,
             force_unmanaged: args.force_unmanaged,
+            force_unmanaged_paths: BTreeSet::new(),
             restrict_to_targets: None,
         },
     )?;
@@ -1553,6 +1637,7 @@ struct InstallRequest {
     resolved_target: Option<ResolvedTarget>,
     force: bool,
     force_unmanaged: bool,
+    force_unmanaged_paths: BTreeSet<String>,
     restrict_to_targets: Option<Vec<String>>,
 }
 
@@ -1632,7 +1717,11 @@ fn skills_install_internal(
         });
 
         if target_path.exists() {
-            if !managed && !req.force_unmanaged {
+            let allow_unmanaged_replace = req.force_unmanaged
+                || req
+                    .force_unmanaged_paths
+                    .contains(&target_path.display().to_string());
+            if !managed && !allow_unmanaged_replace {
                 bail!(
                     "destination already exists for unmanaged skill {}: {}",
                     def.name,
@@ -1668,7 +1757,7 @@ fn skills_install_internal(
                 });
                 continue;
             }
-            if managed || req.force_unmanaged || req.force {
+            if managed || allow_unmanaged_replace || req.force {
                 fs::remove_dir_all(&target_path)
                     .with_context(|| format!("failed to replace {}", target_path.display()))?;
             }
@@ -1933,7 +2022,7 @@ fn doctor_config_dir_check(config_dir: &Path) -> DoctorCheck {
         detail: Some(config_dir.display().to_string()),
         remediation: vec![
             format!("mkdir -p {}", shell_escape_path(config_dir)),
-            "Run a Forge command that writes config or state, such as `forge self update-check --force --json`.".to_string(),
+            "Run a Forge command that writes config or state, such as `forge self update-check --json`.".to_string(),
         ],
         upgrades: Vec::new(),
     }
@@ -2122,7 +2211,7 @@ fn format_dev_install_human(result: &DevInstallResult) -> String {
 fn format_update_check_human(result: &UpdateCheckResult) -> String {
     let mut out = String::new();
     let headline =
-        if result.update_available || result.skills_out_of_date || result.codex_out_of_date {
+        if result.update_available || result.skills_need_reconcile || result.codex_out_of_date {
             "updates available"
         } else {
             "up to date"
@@ -2175,6 +2264,109 @@ fn format_update_check_human(result: &UpdateCheckResult) -> String {
     }
 
     out.trim_end().to_string()
+}
+
+fn skill_status_requires_update(entry: &SkillStatusEntry) -> bool {
+    matches!(
+        entry.state.as_str(),
+        "out_of_date" | "missing" | "diverged" | "unmanaged_collision"
+    )
+}
+
+fn resolve_unmanaged_collisions(
+    output: OutputMode,
+    progress: &UpdateProgress,
+    collisions: &[&SkillStatusEntry],
+) -> Result<CollisionResolution> {
+    if collisions.is_empty() {
+        return Ok(CollisionResolution::default());
+    }
+
+    if output == OutputMode::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        bail!(format_unmanaged_collision_error(collisions));
+    }
+
+    let mut resolution = CollisionResolution::default();
+    let mut apply_to_rest = None;
+    for collision in collisions {
+        let choice = if let Some(choice) = apply_to_rest {
+            choice
+        } else {
+            let choice = progress.suspend(|| prompt_take_ownership(collision))?;
+            if matches!(
+                choice,
+                CollisionPromptChoice::OverwriteAll | CollisionPromptChoice::SkipAll
+            ) {
+                apply_to_rest = Some(choice);
+            }
+            choice
+        };
+        if matches!(
+            choice,
+            CollisionPromptChoice::OverwriteOne | CollisionPromptChoice::OverwriteAll
+        ) {
+            resolution.force_paths.insert(collision.target_path.clone());
+        } else {
+            let root = PathBuf::from(&collision.target_path)
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from(&collision.target_path))
+                .display()
+                .to_string();
+            resolution
+                .skipped_by_root
+                .entry(root)
+                .or_default()
+                .insert(collision.name.clone());
+        }
+    }
+
+    Ok(resolution)
+}
+
+fn prompt_take_ownership(collision: &SkillStatusEntry) -> Result<CollisionPromptChoice> {
+    let mut stderr = io::stderr().lock();
+    writeln!(
+        stderr,
+        "unmanaged skill collision: {} at {}",
+        collision.name, collision.target_path
+    )
+    .context("failed to write collision prompt")?;
+    write!(
+        stderr,
+        "Take ownership and overwrite it? [y]es / [n]o / [a]ll / [s]kip-all [n] "
+    )
+    .context("failed to write collision prompt")?;
+    stderr.flush().context("failed to flush collision prompt")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read collision prompt response")?;
+    Ok(parse_collision_prompt_choice(&input).unwrap_or(CollisionPromptChoice::SkipOne))
+}
+
+fn parse_collision_prompt_choice(input: &str) -> Option<CollisionPromptChoice> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Some(CollisionPromptChoice::OverwriteOne),
+        "a" | "all" => Some(CollisionPromptChoice::OverwriteAll),
+        "" | "n" | "no" => Some(CollisionPromptChoice::SkipOne),
+        "s" | "skip-all" => Some(CollisionPromptChoice::SkipAll),
+        _ => None,
+    }
+}
+
+fn format_unmanaged_collision_error(collisions: &[&SkillStatusEntry]) -> String {
+    let mut lines = Vec::new();
+    for entry in collisions {
+        lines.push(format!("- {}: {}", entry.name, entry.target_path));
+    }
+    let list = lines.join("\n");
+    format!(
+        "unmanaged collisions detected for {} skills:\n{}\n\nRun `forge self update` in an interactive terminal to confirm each overwrite, or take ownership once with:\nforge skills install --all --force-unmanaged --source release\n\nThen:\nforge codex diff\nforge codex install\nforge self update-check\nforge self update",
+        collisions.len(),
+        list
+    )
 }
 
 fn format_update_human(result: &UpdateResult) -> String {
@@ -3753,7 +3945,12 @@ fn json_command_entries<'a>(
         .ok_or_else(|| anyhow!("command JSON missing data.{field} array"))
 }
 
-fn reconcile_release_with_installed_forge(targets: &[ResolvedTarget]) -> Result<ReconcileSummary> {
+fn reconcile_release_with_installed_forge(
+    targets: &[ResolvedTarget],
+    skill_names: &[String],
+    collision_resolution: &CollisionResolution,
+    progress: &UpdateProgress,
+) -> Result<ReconcileSummary> {
     let forge_bin = installed_forge_binary_path()?;
     if !forge_bin.exists() {
         bail!(
@@ -3763,6 +3960,20 @@ fn reconcile_release_with_installed_forge(targets: &[ResolvedTarget]) -> Result<
     }
 
     let mut summary = ReconcileSummary::default();
+    let delegated_total = targets
+        .iter()
+        .map(|target| {
+            let skipped = collision_resolution
+                .skipped_by_root
+                .get(&target.root.display().to_string());
+            skill_names
+                .iter()
+                .filter(|name| !skipped.is_some_and(|names| names.contains(name.as_str())))
+                .count()
+        })
+        .sum::<usize>()
+        + 1;
+    let mut delegated_index = 0usize;
 
     for target in targets {
         let target_arg = match target.kind {
@@ -3770,31 +3981,56 @@ fn reconcile_release_with_installed_forge(targets: &[ResolvedTarget]) -> Result<
             SkillTargetKind::ForgeRepo => "forge_repo".to_string(),
             SkillTargetKind::Path => format!("path:{}", target.root.display()),
         };
-        let args = vec![
-            "--json".to_string(),
-            "skills".to_string(),
-            "install".to_string(),
-            "--all".to_string(),
-            "--source".to_string(),
-            "release".to_string(),
-            "--target".to_string(),
-            target_arg,
-            "--target-role".to_string(),
-            target_role_name(&target.role).to_string(),
-            "--force".to_string(),
-        ];
-        let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-        let value = run_json_command(&forge_bin, &arg_refs)?;
-        let installs = json_command_entries(&value, "installs")?;
-        summary.skills_reconciled += installs.len();
-        summary.changed |= installs.iter().any(|entry| {
-            entry
-                .get("status")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|status| status != "unchanged")
-        });
+        let skipped = collision_resolution
+            .skipped_by_root
+            .get(&target.root.display().to_string());
+        for skill_name in skill_names {
+            if skipped.is_some_and(|names| names.contains(skill_name.as_str())) {
+                continue;
+            }
+            delegated_index += 1;
+            progress.step(format!(
+                "[6/6] Reconciling skill {delegated_index}/{delegated_total}: {} -> {}",
+                skill_name,
+                target.root.display()
+            ));
+            let target_path = target.root.join(skill_name);
+            let mut args = vec![
+                "--json".to_string(),
+                "skills".to_string(),
+                "install".to_string(),
+                skill_name.clone(),
+                "--source".to_string(),
+                "release".to_string(),
+                "--target".to_string(),
+                target_arg.clone(),
+                "--target-role".to_string(),
+                target_role_name(&target.role).to_string(),
+                "--force".to_string(),
+            ];
+            if collision_resolution
+                .force_paths
+                .contains(&target_path.display().to_string())
+            {
+                args.push("--force-unmanaged".to_string());
+            }
+            let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+            let value = run_json_command(&forge_bin, &arg_refs)?;
+            let installs = json_command_entries(&value, "installs")?;
+            summary.skills_reconciled += installs.len();
+            summary.changed |= installs.iter().any(|entry| {
+                entry
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| status != "unchanged")
+            });
+        }
     }
 
+    progress.step(format!(
+        "[6/6] Reconciling managed Codex assets ({}/{})",
+        delegated_total, delegated_total
+    ));
     let value = run_json_command(
         &forge_bin,
         &[
@@ -3935,9 +4171,10 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("design-algorithm"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
-        embedded_skill!("slack-query-research"),
+        embedded_skill!("slack-query-cli"),
+        embedded_skill!("slack-agent-cli"),
         embedded_skill!("codex-threads-cli"),
-        embedded_skill!("forge-cli-admin"),
+        embedded_skill!("forge-cli"),
     ]
 }
 
@@ -4706,6 +4943,7 @@ mod tests {
                 resolved_target: None,
                 force: true,
                 force_unmanaged: true,
+                force_unmanaged_paths: BTreeSet::new(),
                 restrict_to_targets: None,
             },
         )
@@ -4714,11 +4952,13 @@ mod tests {
         assert_eq!(result.target_kind, "path");
         assert_eq!(result.target_role, "mainline");
         assert!(!result.installs.is_empty());
-        assert!(state
-            .managed_skill_installs
-            .iter()
-            .all(|entry| entry.target_role == SkillTargetRole::Mainline
-                && entry.target_root == install_root.display().to_string()));
+        assert!(
+            state
+                .managed_skill_installs
+                .iter()
+                .all(|entry| entry.target_role == SkillTargetRole::Mainline
+                    && entry.target_root == install_root.display().to_string())
+        );
 
         let _ = fs::remove_dir_all(install_root);
     }
@@ -4985,9 +5225,11 @@ EOF
         let installer = "default_binaries() {\n  cat <<'EOF'\nforge\nEOF\n}\n";
         let error = parse_release_packages_from_installer(installer).expect_err("missing markers");
 
-        assert!(error
-            .to_string()
-            .contains("failed to extract embedded binaries list"));
+        assert!(
+            error
+                .to_string()
+                .contains("failed to extract embedded binaries list")
+        );
     }
 
     #[test]
@@ -4995,10 +5237,12 @@ EOF
         let contract = release_tools_contract().expect("parse embedded release tools contract");
         assert_eq!(contract.version, 1);
         assert!(contract.tools.iter().any(|tool| tool.binary == "forge"));
-        assert!(contract
-            .tools
-            .iter()
-            .any(|tool| tool.binary == "slack-query"));
+        assert!(
+            contract
+                .tools
+                .iter()
+                .any(|tool| tool.binary == "slack-query")
+        );
     }
 
     #[test]
@@ -5023,14 +5267,24 @@ EOF
     fn embedded_release_skills_contract_is_valid() {
         let contract = release_skills_contract().expect("parse embedded release skills contract");
         assert_eq!(contract.version, 1);
-        assert!(contract
-            .skills
-            .iter()
-            .any(|skill| skill.name == "forge-tools"));
-        assert!(contract
-            .skills
-            .iter()
-            .any(|skill| skill.name == "slack-query-research"));
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "forge-tools")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "slack-query-cli")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "slack-agent-cli")
+        );
     }
 
     #[test]
@@ -5107,8 +5361,8 @@ EOF
 
         let legacy_skill = load_release_skills()
             .into_iter()
-            .find(|skill| skill.name == "slack-query-research")
-            .expect("slack-query-research release skill");
+            .find(|skill| skill.name == "slack-query-cli")
+            .expect("slack-query-cli release skill");
         let legacy_root = skills_root.join("slack-cli-research");
         write_skill_definition(&legacy_root, &legacy_skill).expect("write legacy skill dir");
 
@@ -5139,17 +5393,14 @@ EOF
 
         assert_eq!(migrated, 1);
         assert!(!legacy_root.exists());
-        assert!(skills_root.join("slack-query-research").exists());
+        assert!(skills_root.join("slack-query-cli").exists());
         assert_eq!(
             state.managed_skill_installs[0].skill_name,
-            "slack-query-research"
+            "slack-query-cli"
         );
         assert_eq!(
             state.managed_skill_installs[0].target_path,
-            skills_root
-                .join("slack-query-research")
-                .display()
-                .to_string()
+            skills_root.join("slack-query-cli").display().to_string()
         );
 
         let _ = fs::remove_dir_all(root);
@@ -5197,15 +5448,21 @@ EOF
 
         assert!(sources.iter().any(|item| item == "env:LINEAR_API_KEY"));
         assert!(sources.iter().any(|item| item == "config:inline_token"));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("config:token_file:{}", configured_token.display())));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("file:{}", root.join("config.toml").display())));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("file:{}", root.join("token").display())));
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("config:token_file:{}", configured_token.display()))
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("file:{}", root.join("config.toml").display()))
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("file:{}", root.join("token").display()))
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -5262,7 +5519,7 @@ EOF
             latest_version: None,
             update_available: true,
             checked_at_unix: 123,
-            skills_out_of_date: true,
+            skills_need_reconcile: true,
             codex_out_of_date: false,
             skills: vec![
                 SkillStatusEntry {
@@ -5294,6 +5551,54 @@ EOF
         assert!(
             rendered.contains("[OUT_OF_DATE] linear-cli user@mainline -> /tmp/skills/linear-cli")
         );
+    }
+
+    #[test]
+    fn skill_status_requires_update_counts_diverged_and_unmanaged_collision() {
+        for state in ["out_of_date", "missing", "diverged", "unmanaged_collision"] {
+            assert!(skill_status_requires_update(&SkillStatusEntry {
+                name: "forge-tools".to_string(),
+                target_kind: "user".to_string(),
+                target_role: "mainline".to_string(),
+                target_path: "/tmp/skills/forge-tools".to_string(),
+                state: state.to_string(),
+                source_kind: "release".to_string(),
+                source_hash: Some("abc".to_string()),
+                target_hash: Some("def".to_string()),
+            }));
+        }
+
+        assert!(!skill_status_requires_update(&SkillStatusEntry {
+            name: "forge-tools".to_string(),
+            target_kind: "user".to_string(),
+            target_role: "mainline".to_string(),
+            target_path: "/tmp/skills/forge-tools".to_string(),
+            state: "up_to_date".to_string(),
+            source_kind: "release".to_string(),
+            source_hash: Some("abc".to_string()),
+            target_hash: Some("abc".to_string()),
+        }));
+    }
+
+    #[test]
+    fn parse_collision_prompt_choice_supports_apply_to_rest_options() {
+        assert_eq!(
+            parse_collision_prompt_choice("y"),
+            Some(CollisionPromptChoice::OverwriteOne)
+        );
+        assert_eq!(
+            parse_collision_prompt_choice("all"),
+            Some(CollisionPromptChoice::OverwriteAll)
+        );
+        assert_eq!(
+            parse_collision_prompt_choice(""),
+            Some(CollisionPromptChoice::SkipOne)
+        );
+        assert_eq!(
+            parse_collision_prompt_choice("s"),
+            Some(CollisionPromptChoice::SkipAll)
+        );
+        assert_eq!(parse_collision_prompt_choice("maybe"), None);
     }
 
     #[test]
@@ -5357,8 +5662,10 @@ EOF
             },
         );
 
-        assert!(rendered
-            .contains("forge skills install: 2 entries to user@mainline /tmp/skills from repo"));
+        assert!(
+            rendered
+                .contains("forge skills install: 2 entries to user@mainline /tmp/skills from repo")
+        );
         assert!(rendered.contains("summary: 1 installed, 1 unchanged"));
         assert!(rendered.contains("[INSTALLED] linear-cli -> /tmp/skills/linear-cli"));
         assert!(rendered.contains("[UNCHANGED] forge-tools -> /tmp/skills/forge-tools"));
