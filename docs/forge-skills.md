@@ -348,6 +348,16 @@ Behavior:
 - installs the newest tagged release with Cargo when needed
 - then uses the installed release payload as source
 - uses the release tool contract to migrate declared legacy config dirs and remove declared legacy binaries safely
+- uses the release skill contract to migrate declared legacy managed skill names and installed directories safely
+
+Release skill naming and migration are defined in `config/release-skills.toml`.
+
+That file is the release-scoped source of truth for:
+
+- current Forge-managed skill names
+- legacy skill names that should migrate to a current name during `forge self update`
+
+Forge does not guess skill renames. Any managed skill rename must be declared there explicitly.
 
 ## Switching Back To Standard Install
 

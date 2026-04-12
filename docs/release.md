@@ -109,6 +109,7 @@ Update story:
 - use `forge self update-check` and `forge self update` as the steady-state release update path
 - in release mode, that path checks the latest repo tag and upgrades the installed Forge binaries with Cargo when needed
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
+- in release mode, `config/release-skills.toml` is the source of truth for current and legacy managed skill names used during local skill migration
 - after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
 
 This is intentionally narrower than a full artifact-packaging system. Forge does not yet publish platform-specific tarballs or native package-manager formulas.
@@ -143,6 +144,18 @@ Update it when:
 - deprecating a root Forge config file that `forge self update` should remove
 
 This file should declare only explicit, deterministic migrations. Do not infer renames in code.
+
+## Maintaining The Release Skill Contract
+
+Forge also keeps a release-scoped skill contract in `config/release-skills.toml`.
+
+Update it when:
+
+- adding or removing a Forge-managed release skill
+- renaming a managed skill directory under `.agents/skills`
+- preserving a legacy managed skill name that should migrate during `forge self update`
+
+This file should declare only explicit, deterministic migrations. Do not infer skill renames in code.
 
 ### 4. Push `main`
 

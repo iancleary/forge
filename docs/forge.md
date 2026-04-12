@@ -113,7 +113,9 @@ Important boundary:
 - `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
 - `forge self update` resolves the target tag's binary list from that tag's release installer before calling Cargo
 - `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
+- `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
 - after install, `forge self update` migrates declared legacy tool config dirs, removes declared legacy binaries when their replacements exist, and removes declared obsolete root files under `~/.config/forge`
+- after install, `forge self update` migrates declared legacy Forge-managed skill installs and updates their recorded names in local state
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
 

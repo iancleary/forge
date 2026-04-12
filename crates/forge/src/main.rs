@@ -21,6 +21,7 @@ const CODEX_AGENTS_REL_PATH: &str = "AGENTS.md";
 const CODEX_RULES_REL_PATH: &str = "rules/user-policy.rules";
 const RELEASE_INSTALLER_REL_PATH: &str = "scripts/install-forge-release.sh";
 const RELEASE_TOOLS_REL_PATH: &str = "config/release-tools.toml";
+const RELEASE_SKILLS_REL_PATH: &str = "config/release-skills.toml";
 const RELEASE_BINARIES_BEGIN_MARKER: &str = "  # BEGIN FORGE_BINARIES";
 const RELEASE_BINARIES_END_MARKER: &str = "  # END FORGE_BINARIES";
 
@@ -501,6 +502,7 @@ struct UpdateResult {
     config_dirs_migrated: usize,
     legacy_binaries_removed: usize,
     obsolete_root_files_removed: usize,
+    legacy_skill_installs_migrated: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -522,6 +524,7 @@ struct LocalContractReconcileSummary {
     config_dirs_migrated: usize,
     legacy_binaries_removed: usize,
     obsolete_root_files_removed: usize,
+    legacy_skill_installs_migrated: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,6 +548,19 @@ struct ReleaseToolEntry {
     config_dir: Option<String>,
     #[serde(default)]
     legacy_config_dirs: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseSkillsContract {
+    version: u32,
+    skills: Vec<ReleaseSkillEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseSkillEntry {
+    name: String,
+    #[serde(default)]
+    legacy_names: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -769,6 +785,11 @@ const EMBEDDED_RELEASE_TOOLS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../config/release-tools.toml"
 ));
+#[cfg(test)]
+const EMBEDDED_RELEASE_SKILLS_CONTRACT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../config/release-skills.toml"
+));
 
 #[derive(Debug, Clone)]
 struct ResolvedTarget {
@@ -977,6 +998,7 @@ fn dev_install(args: DevInstallArgs) -> Result<DevInstallResult> {
     let repo_path = resolve_dev_repo_path(args.repo_path)?;
     ensure_forge_repo_root(&repo_path)?;
     let _ = release_tools_contract_from_repo(&repo_path)?;
+    let _ = release_skills_contract_from_repo(&repo_path)?;
     let installed_binaries = install_repo_packages(&repo_path, !args.no_force)?;
 
     Ok(DevInstallResult {
@@ -1089,11 +1111,17 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     let target_version = latest_release_version()?
         .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
     let release_contract = fetch_release_tools_contract(&target_version)?;
+    let release_skill_contract = fetch_release_skills_contract(&target_version)?;
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
             install_release_packages(&target_version)?;
             let after_version = Some(target_version.clone());
-            let local_contract = reconcile_release_local_contract(&release_contract)?;
+            let local_contract = reconcile_release_local_contract(
+                &release_contract,
+                &release_skill_contract,
+                &mut state,
+            )?;
+            save_state(&state_file_path()?, &state)?;
             let targets = mainline_targets_for_reconcile(&config, &state, None)?;
             let delegated = reconcile_release_with_installed_forge(&targets)?;
             skills_reconciled = delegated.skills_reconciled;
@@ -1101,13 +1129,20 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
             let reconcile_changed = delegated.changed
                 || local_contract.config_dirs_migrated > 0
                 || local_contract.legacy_binaries_removed > 0
-                || local_contract.obsolete_root_files_removed > 0;
+                || local_contract.obsolete_root_files_removed > 0
+                || local_contract.legacy_skill_installs_migrated > 0;
             (after_version, local_contract, reconcile_changed)
         } else {
-            let local_contract = reconcile_release_local_contract(&release_contract)?;
+            let local_contract = reconcile_release_local_contract(
+                &release_contract,
+                &release_skill_contract,
+                &mut state,
+            )?;
+            save_state(&state_file_path()?, &state)?;
             let reconcile_changed = local_contract.config_dirs_migrated > 0
                 || local_contract.legacy_binaries_removed > 0
-                || local_contract.obsolete_root_files_removed > 0;
+                || local_contract.obsolete_root_files_removed > 0
+                || local_contract.legacy_skill_installs_migrated > 0;
             (before_version.clone(), local_contract, reconcile_changed)
         };
 
@@ -1165,6 +1200,7 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         config_dirs_migrated: local_contract.config_dirs_migrated,
         legacy_binaries_removed: local_contract.legacy_binaries_removed,
         obsolete_root_files_removed: local_contract.obsolete_root_files_removed,
+        legacy_skill_installs_migrated: local_contract.legacy_skill_installs_migrated,
     })
 }
 
@@ -2184,6 +2220,11 @@ fn format_update_human(result: &UpdateResult) -> String {
         "obsolete root files removed: {}",
         result.obsolete_root_files_removed
     );
+    let _ = writeln!(
+        out,
+        "legacy skill installs migrated: {}",
+        result.legacy_skill_installs_migrated
+    );
     out.trim_end().to_string()
 }
 
@@ -3114,8 +3155,49 @@ fn parse_release_tools_contract(body: &str) -> Result<ReleaseToolsContract> {
     Ok(contract)
 }
 
+fn parse_release_skills_contract(body: &str) -> Result<ReleaseSkillsContract> {
+    let contract: ReleaseSkillsContract =
+        toml::from_str(body).context("failed to parse release skills contract")?;
+    if contract.version != 1 {
+        bail!(
+            "unsupported release skills contract version: {}",
+            contract.version
+        );
+    }
+    if contract.skills.is_empty() {
+        bail!("release skills contract does not declare any skills");
+    }
+
+    let mut names = BTreeSet::new();
+    for skill in &contract.skills {
+        validate_manifest_name(&skill.name, "skill name")?;
+        if !names.insert(skill.name.clone()) {
+            bail!(
+                "duplicate current skill in release skills contract: {}",
+                skill.name
+            );
+        }
+        for legacy_name in &skill.legacy_names {
+            validate_manifest_name(legacy_name, "legacy skill name")?;
+            if !names.insert(legacy_name.clone()) {
+                bail!(
+                    "duplicate legacy skill in release skills contract: {}",
+                    legacy_name
+                );
+            }
+        }
+    }
+
+    Ok(contract)
+}
+
 fn release_tools_contract() -> Result<ReleaseToolsContract> {
     parse_release_tools_contract(EMBEDDED_RELEASE_TOOLS)
+}
+
+#[cfg(test)]
+fn release_skills_contract() -> Result<ReleaseSkillsContract> {
+    parse_release_skills_contract(EMBEDDED_RELEASE_SKILLS_CONTRACT)
 }
 
 fn release_packages_from_repo(repo_path: &Path) -> Result<Vec<String>> {
@@ -3132,6 +3214,13 @@ fn release_tools_contract_from_repo(repo_path: &Path) -> Result<ReleaseToolsCont
     parse_release_tools_contract(&body)
 }
 
+fn release_skills_contract_from_repo(repo_path: &Path) -> Result<ReleaseSkillsContract> {
+    let manifest_path = repo_path.join(RELEASE_SKILLS_REL_PATH);
+    let body = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+    parse_release_skills_contract(&body)
+}
+
 fn fetch_release_installer_script(version: &str) -> Result<String> {
     fetch_release_file(version, RELEASE_INSTALLER_REL_PATH)
 }
@@ -3141,6 +3230,16 @@ fn fetch_release_tools_contract(version: &str) -> Result<ReleaseToolsContract> {
         Ok(body) => parse_release_tools_contract(&body),
         Err(err) if is_missing_release_tools_contract_error(&err) => {
             fallback_release_tools_contract_for_version(version)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn fetch_release_skills_contract(version: &str) -> Result<ReleaseSkillsContract> {
+    match fetch_release_file(version, RELEASE_SKILLS_REL_PATH) {
+        Ok(body) => parse_release_skills_contract(&body),
+        Err(err) if is_missing_release_tools_contract_error(&err) => {
+            fallback_release_skills_contract_for_version(version)
         }
         Err(err) => Err(err),
     }
@@ -3228,6 +3327,65 @@ fn inferred_config_dir_for_binary(binary: &str) -> Option<String> {
     }
 }
 
+fn fallback_release_skills_contract_for_version(version: &str) -> Result<ReleaseSkillsContract> {
+    let skills = fetch_release_skill_names(version)?
+        .into_iter()
+        .map(|name| ReleaseSkillEntry {
+            name,
+            legacy_names: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    Ok(ReleaseSkillsContract { version: 1, skills })
+}
+
+fn fetch_release_skill_names(version: &str) -> Result<Vec<String>> {
+    let temp_dir = temp_path("release-skills-tree");
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create {}", temp_dir.display()))?;
+
+    let result = (|| -> Result<Vec<String>> {
+        let init = run_command(&temp_dir, "git", &["init", "--quiet"])?;
+        if !init.status.success() {
+            let stderr = String::from_utf8_lossy(&init.stderr);
+            bail!("git init failed: {}", stderr.trim());
+        }
+        let fetch = run_command(
+            &temp_dir,
+            "git",
+            &[
+                "fetch",
+                "--depth",
+                "1",
+                FORGE_REPO_URL,
+                &format!("refs/tags/{version}"),
+            ],
+        )?;
+        if !fetch.status.success() {
+            let stderr = String::from_utf8_lossy(&fetch.stderr);
+            bail!("git fetch tag {} failed: {}", version, stderr.trim());
+        }
+        let commit = git_stdout(&temp_dir, &["rev-parse", "FETCH_HEAD^{commit}"])?;
+        let tree_ref = format!("{commit}:.agents/skills");
+        let output = run_command(&temp_dir, "git", &["ls-tree", "--name-only", &tree_ref])?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("git ls-tree {} failed: {}", tree_ref, stderr.trim());
+        }
+        let stdout =
+            String::from_utf8(output.stdout).context("git ls-tree output was not UTF-8")?;
+        let mut names = stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string())
+            .collect::<Vec<_>>();
+        names.sort();
+        Ok(names)
+    })();
+
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
+}
+
 fn install_repo_packages(repo_path: &Path, force: bool) -> Result<Vec<String>> {
     let packages = release_packages_from_repo(repo_path)?;
     for package in &packages {
@@ -3292,11 +3450,20 @@ fn install_release_packages(version: &str) -> Result<()> {
 
 fn reconcile_release_local_contract(
     contract: &ReleaseToolsContract,
+    skill_contract: &ReleaseSkillsContract,
+    state: &mut ForgeState,
 ) -> Result<LocalContractReconcileSummary> {
     let config_root = config_dir_path()?;
     let cargo_bin_root = cargo_bin_dir()?;
-    let summary =
-        reconcile_release_local_contract_at_paths(contract, &config_root, &cargo_bin_root)?;
+    let skills_root = user_skills_dir()?;
+    let summary = reconcile_release_local_contract_at_paths(
+        contract,
+        &config_root,
+        &cargo_bin_root,
+        &skills_root,
+        state,
+        skill_contract,
+    )?;
     let _ = inspect_permissions(true)?;
     Ok(summary)
 }
@@ -3305,6 +3472,9 @@ fn reconcile_release_local_contract_at_paths(
     contract: &ReleaseToolsContract,
     config_root: &Path,
     cargo_bin_root: &Path,
+    skills_root: &Path,
+    state: &mut ForgeState,
+    skill_contract: &ReleaseSkillsContract,
 ) -> Result<LocalContractReconcileSummary> {
     let mut summary = LocalContractReconcileSummary::default();
 
@@ -3332,6 +3502,9 @@ fn reconcile_release_local_contract_at_paths(
             summary.obsolete_root_files_removed += 1;
         }
     }
+
+    summary.legacy_skill_installs_migrated =
+        migrate_managed_skill_installs(skills_root, state, skill_contract)?;
 
     Ok(summary)
 }
@@ -3389,6 +3562,83 @@ fn remove_obsolete_root_file(config_root: &Path, name: &str) -> Result<bool> {
     }
     fs::remove_file(&path).with_context(|| format!("failed to remove {}", path.display()))?;
     Ok(true)
+}
+
+fn migrate_managed_skill_installs(
+    skills_root: &Path,
+    state: &mut ForgeState,
+    contract: &ReleaseSkillsContract,
+) -> Result<usize> {
+    let legacy_map = contract
+        .skills
+        .iter()
+        .flat_map(|skill| {
+            skill
+                .legacy_names
+                .iter()
+                .map(|legacy| (legacy.clone(), skill.name.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    if legacy_map.is_empty() {
+        return Ok(0);
+    }
+
+    let mut migrated = 0;
+    for install in &mut state.managed_skill_installs {
+        let Some(current_name) = legacy_map.get(&install.skill_name).cloned() else {
+            continue;
+        };
+
+        let old_path = PathBuf::from(&install.target_path);
+        let target_root = PathBuf::from(&install.target_root);
+        let new_path = target_root.join(&current_name);
+
+        if old_path.exists() {
+            if is_symlink_path(&old_path)? {
+                bail!(
+                    "refusing to migrate managed skill through symlink: {}",
+                    old_path.display()
+                );
+            }
+            if new_path.exists() {
+                if is_symlink_path(&new_path)? {
+                    bail!(
+                        "refusing to migrate managed skill into symlink target: {}",
+                        new_path.display()
+                    );
+                }
+                if old_path != new_path {
+                    let old_hash = hash_skill_files(&load_skill_files_from_dir(&old_path)?);
+                    let new_hash = hash_skill_files(&load_skill_files_from_dir(&new_path)?);
+                    if old_hash == new_hash {
+                        fs::remove_dir_all(&old_path)
+                            .with_context(|| format!("failed to remove {}", old_path.display()))?;
+                    } else {
+                        bail!(
+                            "managed skill rename target already exists with different contents: {}",
+                            new_path.display()
+                        );
+                    }
+                }
+            } else if old_path.starts_with(skills_root) || old_path.starts_with(&target_root) {
+                fs::rename(&old_path, &new_path).with_context(|| {
+                    format!(
+                        "failed to migrate managed skill {} -> {}",
+                        old_path.display(),
+                        new_path.display()
+                    )
+                })?;
+            }
+        }
+
+        install.skill_name = current_name;
+        install.target_path = new_path.display().to_string();
+        migrated += 1;
+    }
+
+    normalize_managed_installs(state);
+    Ok(migrated)
 }
 
 fn migrate_legacy_config_dir(config_root: &Path, legacy: &str, current: &str) -> Result<bool> {
@@ -3709,6 +3959,14 @@ fn load_release_skills() -> Vec<SkillDefinition> {
         .collect()
 }
 
+#[cfg(test)]
+fn release_skill_names() -> Vec<String> {
+    load_release_skills()
+        .into_iter()
+        .map(|skill| skill.name)
+        .collect::<Vec<_>>()
+}
+
 fn load_repo_skills(repo_path: &Path) -> Result<Vec<SkillDefinition>> {
     let skills_root = repo_skills_dir(repo_path);
     let mut defs = Vec::new();
@@ -4025,11 +4283,18 @@ fn upsert_managed_install(state: &mut ForgeState, entry: ManagedSkillInstall) {
         return;
     }
     state.managed_skill_installs.push(entry);
+    normalize_managed_installs(state);
+}
+
+fn normalize_managed_installs(state: &mut ForgeState) {
     state.managed_skill_installs.sort_by(|a, b| {
         a.skill_name
             .cmp(&b.skill_name)
             .then(a.target_path.cmp(&b.target_path))
     });
+    state
+        .managed_skill_installs
+        .dedup_by(|a, b| a.skill_name == b.skill_name && a.target_path == b.target_path);
 }
 
 fn matches_scope(role: &SkillTargetRole, scope: SkillsStatusScope) -> bool {
@@ -4755,6 +5020,33 @@ EOF
     }
 
     #[test]
+    fn embedded_release_skills_contract_is_valid() {
+        let contract = release_skills_contract().expect("parse embedded release skills contract");
+        assert_eq!(contract.version, 1);
+        assert!(contract
+            .skills
+            .iter()
+            .any(|skill| skill.name == "forge-tools"));
+        assert!(contract
+            .skills
+            .iter()
+            .any(|skill| skill.name == "slack-query-research"));
+    }
+
+    #[test]
+    fn embedded_release_skills_contract_matches_release_skills() {
+        let contract = release_skills_contract().expect("parse embedded release skills contract");
+        let contract_names = contract
+            .skills
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>();
+        let release_names = release_skill_names();
+
+        assert_eq!(contract_names, release_names);
+    }
+
+    #[test]
     fn reconcile_release_local_contract_migrates_legacy_config_and_removes_legacy_binary() {
         let root = temp_path("release-local-contract");
         let config_root = root.join("config");
@@ -4777,13 +5069,23 @@ EOF
         fs::write(&legacy_bin, "legacy").expect("write legacy binary");
 
         let contract = release_tools_contract().expect("release tools contract");
-        let summary =
-            reconcile_release_local_contract_at_paths(&contract, &config_root, &cargo_bin_root)
-                .expect("reconcile release local contract");
+        let skills_root = root.join("skills");
+        fs::create_dir_all(&skills_root).expect("create skills root");
+        let mut state = ForgeState::default();
+        let summary = reconcile_release_local_contract_at_paths(
+            &contract,
+            &config_root,
+            &cargo_bin_root,
+            &skills_root,
+            &mut state,
+            &release_skills_contract().expect("release skills contract"),
+        )
+        .expect("reconcile release local contract");
 
         assert_eq!(summary.config_dirs_migrated, 1);
         assert_eq!(summary.legacy_binaries_removed, 1);
         assert_eq!(summary.obsolete_root_files_removed, 1);
+        assert_eq!(summary.legacy_skill_installs_migrated, 0);
         assert!(!legacy_dir.exists());
         assert_eq!(
             fs::read_to_string(config_root.join("slack-query").join("token"))
@@ -4793,6 +5095,62 @@ EOF
         assert!(!legacy_bin.exists());
         assert!(current_bin.exists());
         assert!(!config_root.join("config.toml").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn migrate_managed_skill_installs_renames_legacy_skill_dirs_and_state() {
+        let root = temp_path("release-skill-migration");
+        let skills_root = root.join("skills");
+        fs::create_dir_all(&skills_root).expect("create skills root");
+
+        let legacy_skill = load_release_skills()
+            .into_iter()
+            .find(|skill| skill.name == "slack-query-research")
+            .expect("slack-query-research release skill");
+        let legacy_root = skills_root.join("slack-cli-research");
+        write_skill_definition(&legacy_root, &legacy_skill).expect("write legacy skill dir");
+
+        let mut state = ForgeState {
+            managed_skill_installs: vec![ManagedSkillInstall {
+                skill_name: "slack-cli-research".to_string(),
+                managed_by: "forge".to_string(),
+                source_kind: SkillSourceKind::Release,
+                source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                source_ref: "test".to_string(),
+                source_hash: hash_skill_files(&legacy_skill.files),
+                source_repo_path: None,
+                target_kind: SkillTargetKind::User,
+                target_role: SkillTargetRole::Mainline,
+                target_root: skills_root.display().to_string(),
+                target_path: legacy_root.display().to_string(),
+                installed_at_unix: 0,
+            }],
+            ..ForgeState::default()
+        };
+
+        let migrated = migrate_managed_skill_installs(
+            &skills_root,
+            &mut state,
+            &release_skills_contract().unwrap(),
+        )
+        .expect("migrate managed skill installs");
+
+        assert_eq!(migrated, 1);
+        assert!(!legacy_root.exists());
+        assert!(skills_root.join("slack-query-research").exists());
+        assert_eq!(
+            state.managed_skill_installs[0].skill_name,
+            "slack-query-research"
+        );
+        assert_eq!(
+            state.managed_skill_installs[0].target_path,
+            skills_root
+                .join("slack-query-research")
+                .display()
+                .to_string()
+        );
 
         let _ = fs::remove_dir_all(root);
     }
