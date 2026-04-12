@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const DEFAULT_FORGE_REPO_INSTALL_SUBPATH: &str = ".agents/skills-installed";
 const REPO_SKILLS_SUBPATH: &str = ".agents/skills";
+const REPO_CODEX_USER_SUBPATH: &str = "codex/user";
+const CODEX_AGENTS_REL_PATH: &str = "AGENTS.md";
+const CODEX_RULES_REL_PATH: &str = "rules/user-policy.rules";
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -23,6 +26,20 @@ macro_rules! embedded_skill {
                 "/../../.agents/skills/",
                 $name,
                 "/SKILL.md"
+            )),
+        }
+    };
+}
+
+macro_rules! embedded_codex_asset {
+    ($name:literal, $relative_path:literal) => {
+        EmbeddedCodexAsset {
+            name: $name,
+            relative_path: $relative_path,
+            contents: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../codex/user/",
+                $relative_path
             )),
         }
     };
@@ -42,12 +59,24 @@ struct Cli {
 enum Command {
     #[command(about = "Check whether the local Forge environment is ready")]
     Doctor,
-    #[command(name = "self", about = "Check for Forge updates and reconcile managed skills", subcommand)]
+    #[command(
+        name = "self",
+        about = "Check for Forge updates and reconcile managed skills",
+        subcommand
+    )]
     Self_(SelfCommand),
     #[command(about = "Check or repair local Forge file permissions", subcommand)]
     Permissions(PermissionsCommand),
-    #[command(about = "Install, validate, diff, and inspect Forge-managed Codex skills", subcommand)]
+    #[command(
+        about = "Install, validate, diff, and inspect Forge-managed Codex skills",
+        subcommand
+    )]
     Skills(SkillsCommand),
+    #[command(
+        about = "Render, diff, and install Forge-managed Codex user config",
+        subcommand
+    )]
+    Codex(CodexCommand),
 }
 
 #[derive(Subcommand, Debug)]
@@ -75,8 +104,20 @@ enum SkillsCommand {
     Install(SkillsInstallArgs),
     #[command(about = "Diff one installed skill against the selected source")]
     Diff(SkillsDiffArgs),
-    #[command(about = "Reinstall skills from the release source, switching back from repo-sourced testing")]
+    #[command(
+        about = "Reinstall skills from the release source, switching back from repo-sourced testing"
+    )]
     Revert(SkillsRevertArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum CodexCommand {
+    #[command(about = "Render Forge-managed Codex assets for the selected target")]
+    Render(CodexRenderArgs),
+    #[command(about = "Diff Forge-managed Codex assets against the selected target")]
+    Diff(CodexDiffArgs),
+    #[command(about = "Install Forge-managed Codex assets to the selected target")]
+    Install(CodexInstallArgs),
 }
 
 #[derive(Args, Debug)]
@@ -91,7 +132,10 @@ struct UpdateCheckArgs {
 struct UpdateArgs {
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
-    #[arg(long, help = "Remote branch to update from; defaults to the remote default branch when known")]
+    #[arg(
+        long,
+        help = "Remote branch to update from; defaults to the remote default branch when known"
+    )]
     branch: Option<String>,
 }
 
@@ -121,6 +165,12 @@ enum SkillsStatusScope {
     All,
 }
 
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+enum CodexAssetArg {
+    Agents,
+    Rules,
+}
+
 #[derive(Args, Debug)]
 struct SkillsListArgs {
     #[arg(long, value_enum, default_value = "all")]
@@ -133,9 +183,16 @@ struct SkillsListArgs {
 struct SkillsStatusArgs {
     #[arg(long, value_enum, default_value = "mainline")]
     scope: SkillsStatusScope,
-    #[arg(long, help = "Filter to one target: user, forge_repo, or path:/absolute/path")]
+    #[arg(
+        long,
+        help = "Filter to one target: user, forge_repo, or path:/absolute/path"
+    )]
     target: Option<String>,
-    #[arg(long, value_enum, help = "Optionally restrict the target filter to one role")]
+    #[arg(
+        long,
+        value_enum,
+        help = "Optionally restrict the target filter to one role"
+    )]
     target_role: Option<SkillTargetRoleArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
@@ -169,7 +226,10 @@ struct SkillsInstallArgs {
     repo_path: Option<PathBuf>,
     #[arg(long, help = "Overwrite an existing Forge-managed install")]
     force: bool,
-    #[arg(long, help = "Take ownership of an unmanaged destination with the same skill name")]
+    #[arg(
+        long,
+        help = "Take ownership of an unmanaged destination with the same skill name"
+    )]
     force_unmanaged: bool,
 }
 
@@ -193,14 +253,69 @@ struct SkillsRevertArgs {
     all: bool,
     #[arg(long, help = "Target: user, forge_repo, or path:/absolute/path")]
     target: Option<String>,
-    #[arg(long, value_enum, help = "Mark the reverted install as mainline or development")]
+    #[arg(
+        long,
+        value_enum,
+        help = "Mark the reverted install as mainline or development"
+    )]
     target_role: Option<SkillTargetRoleArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
     #[arg(long, help = "Overwrite an existing Forge-managed install")]
     force: bool,
-    #[arg(long, help = "Take ownership of an unmanaged destination with the same skill name")]
+    #[arg(
+        long,
+        help = "Take ownership of an unmanaged destination with the same skill name"
+    )]
     force_unmanaged: bool,
+}
+
+#[derive(Args, Debug)]
+struct CodexRenderArgs {
+    #[arg(
+        long,
+        value_enum,
+        help = "Render one asset: agents or rules; repeat to select multiple assets"
+    )]
+    asset: Vec<CodexAssetArg>,
+    #[arg(long, help = "Target: user or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct CodexDiffArgs {
+    #[arg(
+        long,
+        value_enum,
+        help = "Diff one asset: agents or rules; repeat to select multiple assets"
+    )]
+    asset: Vec<CodexAssetArg>,
+    #[arg(long, help = "Target: user or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct CodexInstallArgs {
+    #[arg(
+        long,
+        value_enum,
+        help = "Install one asset: agents or rules; repeat to select multiple assets"
+    )]
+    asset: Vec<CodexAssetArg>,
+    #[arg(long, help = "Target: user or path:/absolute/path")]
+    target: Option<String>,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize)]
@@ -451,6 +566,60 @@ struct SkillsStatusResult {
 }
 
 #[derive(Debug, Serialize)]
+struct CodexRenderResult {
+    source_kind: String,
+    target_kind: String,
+    target_root: String,
+    assets: Vec<CodexRenderEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexRenderEntry {
+    name: String,
+    relative_path: String,
+    source_path: Option<String>,
+    target_path: String,
+    source_hash: String,
+    contents: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexDiffResult {
+    source_kind: String,
+    target_kind: String,
+    target_root: String,
+    identical: bool,
+    assets: Vec<CodexDiffEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexDiffEntry {
+    name: String,
+    relative_path: String,
+    target_path: String,
+    status: String,
+    source_hash: String,
+    target_hash: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexInstallResult {
+    source_kind: String,
+    target_kind: String,
+    target_root: String,
+    assets: Vec<CodexInstallEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexInstallEntry {
+    name: String,
+    relative_path: String,
+    target_path: String,
+    source_hash: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
 struct SkillStatusEntry {
     name: String,
     target_kind: String,
@@ -478,6 +647,13 @@ struct EmbeddedSkill {
     skill_md: &'static str,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct EmbeddedCodexAsset {
+    name: &'static str,
+    relative_path: &'static str,
+    contents: &'static str,
+}
+
 #[derive(Debug, Clone)]
 struct ResolvedTarget {
     kind: SkillTargetKind,
@@ -489,6 +665,27 @@ struct ResolvedTarget {
 struct TargetFilter {
     kind: SkillTargetKind,
     role: Option<SkillTargetRole>,
+    root: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum CodexTargetKind {
+    User,
+    Path,
+}
+
+#[derive(Debug, Clone)]
+struct CodexAssetDefinition {
+    name: String,
+    relative_path: String,
+    source_path: Option<PathBuf>,
+    contents: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedCodexTarget {
+    kind: CodexTargetKind,
     root: PathBuf,
 }
 
@@ -561,6 +758,18 @@ fn run(cli: Cli) -> Result<()> {
             let data = skills_revert(args)?;
             print_json(&Envelope { ok: true, data })?;
         }
+        Command::Codex(CodexCommand::Render(args)) => {
+            let data = codex_render(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Codex(CodexCommand::Diff(args)) => {
+            let data = codex_diff(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
+        Command::Codex(CodexCommand::Install(args)) => {
+            let data = codex_install(args)?;
+            print_json(&Envelope { ok: true, data })?;
+        }
     }
 
     Ok(())
@@ -614,20 +823,23 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         SkillSourceKind::Release
     };
 
-    let (local_head, remote_head, remote_default_branch, update_available) = if let Some(path) = repo_path.as_ref() {
-        ensure_git_repo(path)?;
-        let local_head = git_stdout(path, &["rev-parse", "HEAD"])?;
-        let (remote_default_branch, remote_head) = remote_default_branch_and_head(path)?;
-        let update_available = remote_head.as_ref().is_some_and(|remote| remote != &local_head);
-        (
-            Some(local_head),
-            remote_head,
-            remote_default_branch,
-            update_available,
-        )
-    } else {
-        (None, None, None, false)
-    };
+    let (local_head, remote_head, remote_default_branch, update_available) =
+        if let Some(path) = repo_path.as_ref() {
+            ensure_git_repo(path)?;
+            let local_head = git_stdout(path, &["rev-parse", "HEAD"])?;
+            let (remote_default_branch, remote_head) = remote_default_branch_and_head(path)?;
+            let update_available = remote_head
+                .as_ref()
+                .is_some_and(|remote| remote != &local_head);
+            (
+                Some(local_head),
+                remote_head,
+                remote_default_branch,
+                update_available,
+            )
+        } else {
+            (None, None, None, false)
+        };
 
     let mut state = load_state_or_default()?;
     state.last_checked_unix = Some(checked_at_unix);
@@ -657,7 +869,10 @@ fn update_check(args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
         remote_default_branch,
         update_available,
         checked_at_unix,
-        skills_out_of_date: status.entries.iter().any(|entry| entry.state == "out_of_date" || entry.state == "missing"),
+        skills_out_of_date: status
+            .entries
+            .iter()
+            .any(|entry| entry.state == "out_of_date" || entry.state == "missing"),
         skills: status.entries,
     })
 }
@@ -684,7 +899,15 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
                 .0
                 .unwrap_or_else(|| "main".to_string()),
         });
-        run_git(path, &["pull", "--rebase", "origin", branch.as_deref().unwrap_or("main")])?;
+        run_git(
+            path,
+            &[
+                "pull",
+                "--rebase",
+                "origin",
+                branch.as_deref().unwrap_or("main"),
+            ],
+        )?;
         after_head = Some(git_stdout(path, &["rev-parse", "HEAD"])?);
     }
 
@@ -712,7 +935,8 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     }
     save_state(&state_file_path()?, &state)?;
 
-    let changed = before_head != after_head || installs.iter().any(|item| item.status != "unchanged");
+    let changed =
+        before_head != after_head || installs.iter().any(|item| item.status != "unchanged");
 
     Ok(UpdateResult {
         source_kind: source_kind_name(&source_kind).to_string(),
@@ -797,7 +1021,10 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
     let skills = load_skills_for_source(&source_kind, repo_path.as_deref())?;
     let selected = select_skill_defs(skills, args.skill.as_deref(), args.all)?;
-    let known_names = selected.iter().map(|def| def.name.clone()).collect::<BTreeSet<_>>();
+    let known_names = selected
+        .iter()
+        .map(|def| def.name.clone())
+        .collect::<BTreeSet<_>>();
 
     let mut results = Vec::new();
     for def in selected {
@@ -808,7 +1035,8 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             .ok_or_else(|| anyhow!("skill {} is missing SKILL.md", def.name))?;
         let body = String::from_utf8(skill_md.clone())
             .with_context(|| format!("skill {} SKILL.md was not UTF-8", def.name))?;
-        let metadata = parse_skill_frontmatter(&body).with_context(|| format!("skill {} frontmatter invalid", def.name))?;
+        let metadata = parse_skill_frontmatter(&body)
+            .with_context(|| format!("skill {} frontmatter invalid", def.name))?;
         if metadata.name.is_empty() {
             issues.push("frontmatter field `name` is required".to_string());
         }
@@ -827,7 +1055,9 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                     issues.push(format!("router skill should reference `{required}`"));
                 }
                 if !known_names.contains(required) {
-                    issues.push(format!("referenced skill `{required}` is not available from the selected source"));
+                    issues.push(format!(
+                        "referenced skill `{required}` is not available from the selected source"
+                    ));
                 }
             }
         }
@@ -923,6 +1153,145 @@ fn skills_revert(args: SkillsRevertArgs) -> Result<SkillsInstallResult> {
     Ok(result)
 }
 
+fn codex_render(args: CodexRenderArgs) -> Result<CodexRenderResult> {
+    let config = load_config()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let target = resolve_codex_target(args.target.as_deref())?;
+    let assets = select_codex_assets(
+        load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
+        &args.asset,
+    )?;
+
+    let assets = assets
+        .into_iter()
+        .map(|asset| {
+            let contents = String::from_utf8(asset.contents.clone())
+                .with_context(|| format!("codex asset {} was not UTF-8", asset.name))?;
+            Ok(CodexRenderEntry {
+                name: asset.name,
+                relative_path: asset.relative_path.clone(),
+                source_path: asset.source_path.map(|path| path.display().to_string()),
+                target_path: target.root.join(&asset.relative_path).display().to_string(),
+                source_hash: hash_bytes(&asset.contents),
+                contents,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(CodexRenderResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: codex_target_kind_name(&target.kind).to_string(),
+        target_root: target.root.display().to_string(),
+        assets,
+    })
+}
+
+fn codex_diff(args: CodexDiffArgs) -> Result<CodexDiffResult> {
+    let config = load_config()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let target = resolve_codex_target(args.target.as_deref())?;
+    let assets = select_codex_assets(
+        load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
+        &args.asset,
+    )?;
+
+    let assets = assets
+        .into_iter()
+        .map(|asset| {
+            let target_path = target.root.join(&asset.relative_path);
+            let target_contents = if target_path.exists() {
+                Some(
+                    fs::read(&target_path)
+                        .with_context(|| format!("failed to read {}", target_path.display()))?,
+                )
+            } else {
+                None
+            };
+            let status = match target_contents.as_ref() {
+                Some(existing) if existing == &asset.contents => "same",
+                Some(_) => "changed",
+                None => "missing",
+            };
+            Ok(CodexDiffEntry {
+                name: asset.name,
+                relative_path: asset.relative_path,
+                target_path: target_path.display().to_string(),
+                status: status.to_string(),
+                source_hash: hash_bytes(&asset.contents),
+                target_hash: target_contents.as_ref().map(hash_bytes),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let identical = assets.iter().all(|asset| asset.status == "same");
+    Ok(CodexDiffResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: codex_target_kind_name(&target.kind).to_string(),
+        target_root: target.root.display().to_string(),
+        identical,
+        assets,
+    })
+}
+
+fn codex_install(args: CodexInstallArgs) -> Result<CodexInstallResult> {
+    let config = load_config()?;
+    let repo_path = discover_repo_path(args.repo_path, &config);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let target = resolve_codex_target(args.target.as_deref())?;
+    let assets = select_codex_assets(
+        load_codex_assets_for_source(&source_kind, repo_path.as_deref())?,
+        &args.asset,
+    )?;
+
+    fs::create_dir_all(&target.root)
+        .with_context(|| format!("failed to create {}", target.root.display()))?;
+
+    let mut entries = Vec::new();
+    for asset in assets {
+        let target_path = target.root.join(&asset.relative_path);
+        let status = if target_path.exists() {
+            let existing = fs::read(&target_path)
+                .with_context(|| format!("failed to read {}", target_path.display()))?;
+            if existing == asset.contents {
+                "unchanged"
+            } else {
+                if let Some(parent) = target_path.parent() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("failed to create {}", parent.display()))?;
+                }
+                fs::write(&target_path, &asset.contents)
+                    .with_context(|| format!("failed to write {}", target_path.display()))?;
+                "updated"
+            }
+        } else {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            fs::write(&target_path, &asset.contents)
+                .with_context(|| format!("failed to write {}", target_path.display()))?;
+            "installed"
+        };
+
+        entries.push(CodexInstallEntry {
+            name: asset.name,
+            relative_path: asset.relative_path,
+            target_path: target_path.display().to_string(),
+            source_hash: hash_bytes(&asset.contents),
+            status: status.to_string(),
+        });
+    }
+
+    Ok(CodexInstallResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: codex_target_kind_name(&target.kind).to_string(),
+        target_root: target.root.display().to_string(),
+        assets: entries,
+    })
+}
+
 #[derive(Debug)]
 struct InstallRequest {
     skill_names: Vec<String>,
@@ -937,7 +1306,11 @@ struct InstallRequest {
     restrict_to_targets: Option<Vec<String>>,
 }
 
-fn skills_install_internal(config: &ForgeConfig, state: &mut ForgeState, req: InstallRequest) -> Result<SkillsInstallResult> {
+fn skills_install_internal(
+    config: &ForgeConfig,
+    state: &mut ForgeState,
+    req: InstallRequest,
+) -> Result<SkillsInstallResult> {
     let source_kind = match req.source_kind {
         Some(kind) => kind,
         None => auto_source_kind(req.repo_path.as_deref()),
@@ -979,7 +1352,11 @@ fn skills_install_internal(config: &ForgeConfig, state: &mut ForgeState, req: In
         if req.skill_names.is_empty() {
             bail!("provide a skill name or --all");
         }
-        let wanted = req.skill_names.iter().map(String::as_str).collect::<Vec<_>>();
+        let wanted = req
+            .skill_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
         defs.into_iter()
             .filter(|def| wanted.contains(&def.name.as_str()))
             .collect::<Vec<_>>()
@@ -1000,10 +1377,9 @@ fn skills_install_internal(config: &ForgeConfig, state: &mut ForgeState, req: In
     for def in selected {
         let target_path = target.root.join(&def.name);
         let source_hash = hash_skill_files(&def.files);
-        let managed = state
-            .managed_skill_installs
-            .iter()
-            .any(|entry| entry.skill_name == def.name && entry.target_path == target_path.display().to_string());
+        let managed = state.managed_skill_installs.iter().any(|entry| {
+            entry.skill_name == def.name && entry.target_path == target_path.display().to_string()
+        });
 
         if target_path.exists() {
             if !managed && !req.force_unmanaged {
@@ -1130,7 +1506,10 @@ enum PermissionKind {
     File,
 }
 
-fn inspect_permission_target(target: &PermissionTarget, apply_fixes: bool) -> Result<PermissionItem> {
+fn inspect_permission_target(
+    target: &PermissionTarget,
+    apply_fixes: bool,
+) -> Result<PermissionItem> {
     let exists = target.path.exists();
     let expected_mode = format_mode(target.expected_mode);
 
@@ -1203,7 +1582,12 @@ fn permission_kind_name(kind: PermissionKind) -> &'static str {
     }
 }
 
-fn doctor_command_check(id: &str, category: &str, program: &str, version_args: &[&str]) -> DoctorCheck {
+fn doctor_command_check(
+    id: &str,
+    category: &str,
+    program: &str,
+    version_args: &[&str],
+) -> DoctorCheck {
     let remediation = tool_remediation(program);
     match run_command_capture(program, version_args) {
         Ok(output) if output.status.success() => {
@@ -1255,7 +1639,8 @@ fn doctor_gh_auth_check() -> DoctorCheck {
             id: "gh_auth".to_string(),
             category: "auth".to_string(),
             status: "warn".to_string(),
-            summary: "GitHub CLI auth could not be confirmed in this non-interactive context".to_string(),
+            summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                .to_string(),
             detail: output_failure_detail(&output),
             remediation,
             upgrades: Vec::new(),
@@ -1264,7 +1649,9 @@ fn doctor_gh_auth_check() -> DoctorCheck {
             id: "gh_auth".to_string(),
             category: "auth".to_string(),
             status: "warn".to_string(),
-            summary: "GitHub CLI authentication could not be checked in this non-interactive context".to_string(),
+            summary:
+                "GitHub CLI authentication could not be checked in this non-interactive context"
+                    .to_string(),
             detail: Some(err.to_string()),
             remediation,
             upgrades: Vec::new(),
@@ -1320,7 +1707,8 @@ fn doctor_linear_auth_check() -> DoctorCheck {
         summary: "Linear auth token source is configured".to_string(),
         detail: Some(describe_auth_sources(&sources)),
         remediation: vec![
-            "To validate the token, run `linear --json viewer` in an interactive terminal.".to_string(),
+            "To validate the token, run `linear --json viewer` in an interactive terminal."
+                .to_string(),
         ],
         upgrades: Vec::new(),
     }
@@ -1364,14 +1752,16 @@ fn print_doctor_human(result: &DoctorResult) {
     };
     println!(
         "forge doctor: {} ({} passed, {} warnings, {} failures)",
-        headline,
-        result.summary.passed,
-        result.summary.warnings,
-        result.summary.failures
+        headline, result.summary.passed, result.summary.warnings, result.summary.failures
     );
 
     for check in &result.checks {
-        println!("[{}] {}: {}", doctor_status_label(&check.status), check.id, check.summary);
+        println!(
+            "[{}] {}: {}",
+            doctor_status_label(&check.status),
+            check.id,
+            check.summary
+        );
         if let Some(detail) = check.detail.as_ref() {
             let detail = detail.lines().next().unwrap_or(detail);
             if !detail.is_empty() {
@@ -1449,7 +1839,10 @@ fn platform_tool_remediation(os: &str, program: &str) -> Vec<String> {
         ("macos", "rg") => vec!["cargo install ripgrep".to_string()],
         ("macos", "jq") => vec!["cargo install jq-cli".to_string()],
         ("linux", "git") => vec!["sudo apt install git".to_string()],
-        ("linux", "gh") => vec!["See https://cli.github.com for the recommended install path on your distro.".to_string()],
+        ("linux", "gh") => vec![
+            "See https://cli.github.com for the recommended install path on your distro."
+                .to_string(),
+        ],
         ("linux", "rg") => vec!["cargo install ripgrep".to_string()],
         ("linux", "jq") => vec!["cargo install jq-cli".to_string()],
         (_, "cargo") => vec!["Install Rust with rustup from https://rustup.rs.".to_string()],
@@ -1468,7 +1861,8 @@ fn gh_auth_remediation() -> Vec<String> {
 fn linear_auth_remediation() -> Vec<String> {
     vec![
         "Initialize config with `linear config` if needed.".to_string(),
-        "Store credentials with `linear auth login` or by writing ~/.config/forge/linear/token.".to_string(),
+        "Store credentials with `linear auth login` or by writing ~/.config/forge/linear/token."
+            .to_string(),
         "See docs/linear.md for the supported auth layout and command contract.".to_string(),
     ]
 }
@@ -1541,17 +1935,29 @@ where
 fn parse_linear_doctor_config(body: &str) -> Option<(bool, Option<String>)> {
     toml::from_str::<LinearDoctorConfig>(body)
         .ok()
-        .map(|config| (has_nonempty_option(config.token.as_ref()), config.token_file))
+        .map(|config| {
+            (
+                has_nonempty_option(config.token.as_ref()),
+                config.token_file,
+            )
+        })
 }
 
 fn parse_slack_doctor_config(body: &str) -> Option<(bool, Option<String>)> {
     toml::from_str::<SlackDoctorConfig>(body)
         .ok()
-        .map(|config| (has_nonempty_option(config.token.as_ref()), config.token_file))
+        .map(|config| {
+            (
+                has_nonempty_option(config.token.as_ref()),
+                config.token_file,
+            )
+        })
 }
 
 fn env_var_present(name: &str) -> bool {
-    env::var(name).map(|value| !value.trim().is_empty()).unwrap_or(false)
+    env::var(name)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
 }
 
 fn has_nonempty_option(value: Option<&String>) -> bool {
@@ -1601,7 +2007,10 @@ fn tool_upgrade_commands_for(os: &str, program: &str) -> Vec<String> {
         ("macos", "gh") => vec!["brew upgrade gh".to_string()],
         ("macos", "rg") => vec!["cargo install ripgrep --force".to_string()],
         ("macos", "jq") => vec!["cargo install jq-cli --force".to_string()],
-        ("linux", "gh") => vec!["See https://cli.github.com for the recommended upgrade path on your distro.".to_string()],
+        ("linux", "gh") => vec![
+            "See https://cli.github.com for the recommended upgrade path on your distro."
+                .to_string(),
+        ],
         ("linux", "rg") => vec!["cargo install ripgrep --force".to_string()],
         ("linux", "jq") => vec!["cargo install jq-cli --force".to_string()],
         _ => Vec::new(),
@@ -1640,7 +2049,8 @@ fn load_config() -> Result<ForgeConfig> {
 
     let body = fs::read_to_string(&path)
         .with_context(|| format!("failed to read config file at {}", path.display()))?;
-    toml::from_str(&body).with_context(|| format!("failed to parse config file at {}", path.display()))
+    toml::from_str(&body)
+        .with_context(|| format!("failed to parse config file at {}", path.display()))
 }
 
 fn load_state(path: &Path) -> Result<ForgeState> {
@@ -1792,12 +2202,15 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         msg if msg.contains("not a git repository") => "not_git_repo",
         msg if msg.contains("failed to run git") => "git_unavailable",
         msg if msg.contains("git pull --rebase") => "update_failed",
-        msg if msg.contains("failed to read config file") || msg.contains("failed to parse config file") => {
+        msg if msg.contains("failed to read config file")
+            || msg.contains("failed to parse config file") =>
+        {
             "config_error"
         }
         msg if msg.contains("skill") && msg.contains("not found") => "skill_not_found",
         msg if msg.contains("unmanaged") => "unmanaged_collision",
         msg if msg.contains("frontmatter") => "validation_error",
+        msg if msg.contains("codex asset not found") => "codex_asset_not_found",
         _ => "internal_error",
     };
 
@@ -1805,6 +2218,80 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         code: code.to_string(),
         message,
     }
+}
+
+fn release_codex_assets() -> &'static [EmbeddedCodexAsset] {
+    &[
+        embedded_codex_asset!("agents", "AGENTS.md"),
+        embedded_codex_asset!("rules", "rules/user-policy.rules"),
+    ]
+}
+
+fn load_release_codex_assets() -> Vec<CodexAssetDefinition> {
+    release_codex_assets()
+        .iter()
+        .map(|asset| CodexAssetDefinition {
+            name: asset.name.to_string(),
+            relative_path: asset.relative_path.to_string(),
+            source_path: None,
+            contents: asset.contents.as_bytes().to_vec(),
+        })
+        .collect()
+}
+
+fn load_repo_codex_assets(repo_path: &Path) -> Result<Vec<CodexAssetDefinition>> {
+    codex_asset_specs()
+        .iter()
+        .map(|spec| {
+            let path = repo_codex_user_dir(repo_path).join(spec.relative_path);
+            let contents =
+                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+            Ok(CodexAssetDefinition {
+                name: spec.name.to_string(),
+                relative_path: spec.relative_path.to_string(),
+                source_path: Some(path),
+                contents,
+            })
+        })
+        .collect()
+}
+
+fn load_codex_assets_for_source(
+    source_kind: &SkillSourceKind,
+    repo_path: Option<&Path>,
+) -> Result<Vec<CodexAssetDefinition>> {
+    match source_kind {
+        SkillSourceKind::RepoCheckout => {
+            let path =
+                repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
+            load_repo_codex_assets(path)
+        }
+        SkillSourceKind::Release => Ok(load_release_codex_assets()),
+    }
+}
+
+fn select_codex_assets(
+    defs: Vec<CodexAssetDefinition>,
+    assets: &[CodexAssetArg],
+) -> Result<Vec<CodexAssetDefinition>> {
+    if assets.is_empty() {
+        return Ok(defs);
+    }
+
+    let wanted = assets
+        .iter()
+        .map(codex_asset_name_from_arg)
+        .collect::<BTreeSet<_>>();
+    let selected = defs
+        .into_iter()
+        .filter(|asset| wanted.contains(asset.name.as_str()))
+        .collect::<Vec<_>>();
+
+    if selected.is_empty() {
+        bail!("codex asset not found");
+    }
+
+    Ok(selected)
 }
 
 fn release_skills() -> &'static [EmbeddedSkill] {
@@ -1866,17 +2353,25 @@ fn load_repo_skills(repo_path: &Path) -> Result<Vec<SkillDefinition>> {
     Ok(defs)
 }
 
-fn load_skills_for_source(source_kind: &SkillSourceKind, repo_path: Option<&Path>) -> Result<Vec<SkillDefinition>> {
+fn load_skills_for_source(
+    source_kind: &SkillSourceKind,
+    repo_path: Option<&Path>,
+) -> Result<Vec<SkillDefinition>> {
     match source_kind {
         SkillSourceKind::RepoCheckout => {
-            let path = repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
+            let path =
+                repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
             load_repo_skills(path)
         }
         SkillSourceKind::Release => Ok(load_release_skills()),
     }
 }
 
-fn load_skill_definition(source_kind: &SkillSourceKind, repo_path: Option<&Path>, name: &str) -> Result<SkillDefinition> {
+fn load_skill_definition(
+    source_kind: &SkillSourceKind,
+    repo_path: Option<&Path>,
+    name: &str,
+) -> Result<SkillDefinition> {
     load_skills_for_source(source_kind, repo_path)?
         .into_iter()
         .find(|def| def.name == name)
@@ -1894,8 +2389,8 @@ fn load_skill_files_from_dir(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
 }
 
 fn collect_files(root: &Path, current: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
-    for entry in fs::read_dir(current)
-        .with_context(|| format!("failed to read {}", current.display()))?
+    for entry in
+        fs::read_dir(current).with_context(|| format!("failed to read {}", current.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -1929,7 +2424,10 @@ fn write_skill_definition(target_path: &Path, def: &SkillDefinition) -> Result<(
     Ok(())
 }
 
-fn resolve_source_kind(source: Option<SkillSourceArg>, repo_path: Option<&Path>) -> Result<SkillSourceKind> {
+fn resolve_source_kind(
+    source: Option<SkillSourceArg>,
+    repo_path: Option<&Path>,
+) -> Result<SkillSourceKind> {
     Ok(match source {
         Some(kind) => map_cli_source(kind),
         None => auto_source_kind(repo_path),
@@ -1958,7 +2456,11 @@ fn map_target_role(role: SkillTargetRoleArg) -> SkillTargetRole {
     }
 }
 
-fn select_skill_defs(defs: Vec<SkillDefinition>, skill: Option<&str>, all: bool) -> Result<Vec<SkillDefinition>> {
+fn select_skill_defs(
+    defs: Vec<SkillDefinition>,
+    skill: Option<&str>,
+    all: bool,
+) -> Result<Vec<SkillDefinition>> {
     if all {
         return Ok(defs);
     }
@@ -1986,7 +2488,9 @@ fn resolve_target(
             root: user_skills_dir()?,
         }),
         Some("forge_repo") => {
-            let repo = repo_path.ok_or_else(|| anyhow!("forge_repo target requires a configured Forge repo path"))?;
+            let repo = repo_path.ok_or_else(|| {
+                anyhow!("forge_repo target requires a configured Forge repo path")
+            })?;
             let subpath = config
                 .forge_repo_install_subpath
                 .clone()
@@ -2017,8 +2521,37 @@ fn user_skills_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".agents").join("skills"))
 }
 
+fn user_codex_dir() -> Result<PathBuf> {
+    let home = env::var("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".codex"))
+}
+
 fn repo_skills_dir(repo_path: &Path) -> PathBuf {
     repo_path.join(REPO_SKILLS_SUBPATH)
+}
+
+fn repo_codex_user_dir(repo_path: &Path) -> PathBuf {
+    repo_path.join(REPO_CODEX_USER_SUBPATH)
+}
+
+fn resolve_codex_target(target: Option<&str>) -> Result<ResolvedCodexTarget> {
+    match target {
+        None | Some("user") => Ok(ResolvedCodexTarget {
+            kind: CodexTargetKind::User,
+            root: user_codex_dir()?,
+        }),
+        Some(raw) if raw.starts_with("path:") => {
+            let path = PathBuf::from(raw.trim_start_matches("path:"));
+            if !path.is_absolute() {
+                bail!("path target must be absolute: {}", path.display());
+            }
+            Ok(ResolvedCodexTarget {
+                kind: CodexTargetKind::Path,
+                root: path,
+            })
+        }
+        Some(other) => bail!("invalid target: {other}"),
+    }
 }
 
 fn parse_skill_frontmatter(body: &str) -> Result<SkillFrontmatter> {
@@ -2031,8 +2564,8 @@ fn parse_skill_frontmatter(body: &str) -> Result<SkillFrontmatter> {
         .or_else(|| rest.find("\r\n---"))
         .ok_or_else(|| anyhow!("missing closing frontmatter delimiter"))?;
     let frontmatter = &rest[..end];
-    let parsed: SkillFrontmatter = serde_yaml::from_str(frontmatter)
-        .context("failed to parse YAML frontmatter")?;
+    let parsed: SkillFrontmatter =
+        serde_yaml::from_str(frontmatter).context("failed to parse YAML frontmatter")?;
     Ok(parsed)
 }
 
@@ -2045,7 +2578,12 @@ struct SkillFrontmatter {
 fn hash_skill_files(files: &BTreeMap<String, Vec<u8>>) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for (path, bytes) in files {
-        for byte in path.as_bytes().iter().chain([0u8].iter()).chain(bytes.iter()) {
+        for byte in path
+            .as_bytes()
+            .iter()
+            .chain([0u8].iter())
+            .chain(bytes.iter())
+        {
             hash ^= u64::from(*byte);
             hash = hash.wrapping_mul(0x100000001b3);
         }
@@ -2053,11 +2591,15 @@ fn hash_skill_files(files: &BTreeMap<String, Vec<u8>>) -> String {
     format!("{hash:016x}")
 }
 
-fn build_diff_files(source: &BTreeMap<String, Vec<u8>>, target: &BTreeMap<String, Vec<u8>>) -> Vec<SkillDiffFile> {
+fn build_diff_files(
+    source: &BTreeMap<String, Vec<u8>>,
+    target: &BTreeMap<String, Vec<u8>>,
+) -> Vec<SkillDiffFile> {
     let mut names = BTreeSet::new();
     names.extend(source.keys().cloned());
     names.extend(target.keys().cloned());
-    names.into_iter()
+    names
+        .into_iter()
         .map(|path| {
             let source_hash = source.get(&path).map(hash_bytes);
             let target_hash = target.get(&path).map(hash_bytes);
@@ -2088,16 +2630,18 @@ fn hash_bytes(bytes: &Vec<u8>) -> String {
 }
 
 fn upsert_managed_install(state: &mut ForgeState, entry: ManagedSkillInstall) {
-    if let Some(existing) = state
-        .managed_skill_installs
-        .iter_mut()
-        .find(|current| current.skill_name == entry.skill_name && current.target_path == entry.target_path)
-    {
+    if let Some(existing) = state.managed_skill_installs.iter_mut().find(|current| {
+        current.skill_name == entry.skill_name && current.target_path == entry.target_path
+    }) {
         *existing = entry;
         return;
     }
     state.managed_skill_installs.push(entry);
-    state.managed_skill_installs.sort_by(|a, b| a.skill_name.cmp(&b.skill_name).then(a.target_path.cmp(&b.target_path)));
+    state.managed_skill_installs.sort_by(|a, b| {
+        a.skill_name
+            .cmp(&b.skill_name)
+            .then(a.target_path.cmp(&b.target_path))
+    });
 }
 
 fn matches_scope(role: &SkillTargetRole, scope: SkillsStatusScope) -> bool {
@@ -2129,7 +2673,14 @@ fn skills_status(args: SkillsStatusArgs) -> Result<SkillsStatusResult> {
         }
         None => None,
     };
-    skills_status_with_source(&config, &state, source_kind, repo_path, args.scope, target_filter)
+    skills_status_with_source(
+        &config,
+        &state,
+        source_kind,
+        repo_path,
+        args.scope,
+        target_filter,
+    )
 }
 
 fn skills_status_with_source(
@@ -2154,7 +2705,10 @@ fn skills_status_with_source(
         if let Some(filter) = target_filter.as_ref() {
             if install.target_root != filter.root.display().to_string()
                 || install.target_kind != filter.kind
-                || filter.role.as_ref().is_some_and(|role| &install.target_role != role)
+                || filter
+                    .role
+                    .as_ref()
+                    .is_some_and(|role| &install.target_role != role)
             {
                 continue;
             }
@@ -2201,7 +2755,10 @@ fn skills_status_with_source(
         if let Some(filter) = target_filter.as_ref() {
             if target.root != filter.root
                 || target.kind != filter.kind
-                || filter.role.as_ref().is_some_and(|role| &target.role != role)
+                || filter
+                    .role
+                    .as_ref()
+                    .is_some_and(|role| &target.role != role)
             {
                 continue;
             }
@@ -2258,9 +2815,11 @@ fn mainline_targets_for_reconcile(
             continue;
         }
         let root = PathBuf::from(&install.target_root);
-        let exists = targets
-            .iter()
-            .any(|target| target.kind == install.target_kind && target.root == root && target.role == install.target_role);
+        let exists = targets.iter().any(|target| {
+            target.kind == install.target_kind
+                && target.root == root
+                && target.role == install.target_role
+        });
         if exists {
             continue;
         }
@@ -2280,7 +2839,10 @@ fn mainline_targets_for_reconcile(
     Ok(targets)
 }
 
-fn managed_target_roots(config: &ForgeConfig, repo_path: Option<&Path>) -> Result<Vec<ResolvedTarget>> {
+fn managed_target_roots(
+    config: &ForgeConfig,
+    repo_path: Option<&Path>,
+) -> Result<Vec<ResolvedTarget>> {
     let mut targets = vec![ResolvedTarget {
         kind: SkillTargetKind::User,
         role: SkillTargetRole::Mainline,
@@ -2323,6 +2885,13 @@ fn target_role_name(role: &SkillTargetRole) -> &'static str {
     }
 }
 
+fn codex_target_kind_name(kind: &CodexTargetKind) -> &'static str {
+    match kind {
+        CodexTargetKind::User => "user",
+        CodexTargetKind::Path => "path",
+    }
+}
+
 fn status_scope_name(scope: SkillsStatusScope) -> &'static str {
     match scope {
         SkillsStatusScope::Mainline => "mainline",
@@ -2336,6 +2905,32 @@ fn target_to_flag(kind: &SkillTargetKind, role: &SkillTargetRole, root: &Path) -
         SkillTargetKind::User => format!("user@{}", target_role_name(role)),
         SkillTargetKind::ForgeRepo => format!("forge_repo@{}", target_role_name(role)),
         SkillTargetKind::Path => format!("path:{}@{}", root.display(), target_role_name(role)),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CodexAssetSpec {
+    name: &'static str,
+    relative_path: &'static str,
+}
+
+fn codex_asset_specs() -> &'static [CodexAssetSpec] {
+    &[
+        CodexAssetSpec {
+            name: "agents",
+            relative_path: CODEX_AGENTS_REL_PATH,
+        },
+        CodexAssetSpec {
+            name: "rules",
+            relative_path: CODEX_RULES_REL_PATH,
+        },
+    ]
+}
+
+fn codex_asset_name_from_arg(asset: &CodexAssetArg) -> &'static str {
+    match asset {
+        CodexAssetArg::Agents => "agents",
+        CodexAssetArg::Rules => "rules",
     }
 }
 
@@ -2430,7 +3025,10 @@ mod tests {
 
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].target_role, "mainline");
-        assert_eq!(result.entries[0].target_path, skill_root.display().to_string());
+        assert_eq!(
+            result.entries[0].target_path,
+            skill_root.display().to_string()
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -2463,12 +3061,131 @@ mod tests {
         assert_eq!(result.target_kind, "path");
         assert_eq!(result.target_role, "mainline");
         assert!(!result.installs.is_empty());
-        assert!(state
-            .managed_skill_installs
-            .iter()
-            .all(|entry| entry.target_role == SkillTargetRole::Mainline && entry.target_root == install_root.display().to_string()));
+        assert!(
+            state
+                .managed_skill_installs
+                .iter()
+                .all(|entry| entry.target_role == SkillTargetRole::Mainline
+                    && entry.target_root == install_root.display().to_string())
+        );
 
         let _ = fs::remove_dir_all(install_root);
+    }
+
+    #[test]
+    fn embedded_release_codex_assets_match_repo_sources() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crate dir parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let repo_assets = load_repo_codex_assets(&repo_root).expect("repo codex assets");
+        let release_assets = load_release_codex_assets();
+
+        let repo_map = repo_assets
+            .into_iter()
+            .map(|asset| (asset.name.clone(), asset))
+            .collect::<BTreeMap<_, _>>();
+        let release_map = release_assets
+            .into_iter()
+            .map(|asset| (asset.name.clone(), asset))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            repo_map.keys().collect::<Vec<_>>(),
+            release_map.keys().collect::<Vec<_>>()
+        );
+
+        for (name, repo_asset) in repo_map {
+            let release_asset = release_map.get(&name).expect("release codex asset exists");
+            assert_eq!(repo_asset.relative_path, release_asset.relative_path);
+            assert_eq!(
+                repo_asset.contents, release_asset.contents,
+                "embedded release payload drifted from repo codex asset for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn codex_install_updates_only_selected_assets() {
+        let target_root = temp_path("codex-install");
+        let nested_dir = target_root.join("rules");
+        fs::create_dir_all(&nested_dir).expect("create rules dir");
+        let unrelated = target_root.join("notes.txt");
+        fs::write(&unrelated, "keep me").expect("write unrelated file");
+
+        let agents_asset = load_release_codex_assets()
+            .into_iter()
+            .find(|asset| asset.name == "agents")
+            .expect("agents asset");
+        let stale_agents = target_root.join(&agents_asset.relative_path);
+        fs::write(&stale_agents, "stale").expect("write stale agents");
+
+        let result = codex_install(CodexInstallArgs {
+            asset: vec![CodexAssetArg::Agents],
+            target: Some(format!("path:{}", target_root.display())),
+            source: Some(SkillSourceArg::Release),
+            repo_path: None,
+        })
+        .expect("install codex agents");
+
+        assert_eq!(result.assets.len(), 1);
+        assert_eq!(result.assets[0].name, "agents");
+        assert_eq!(result.assets[0].status, "updated");
+        assert_eq!(
+            fs::read(&stale_agents).expect("read installed agents"),
+            agents_asset.contents
+        );
+        assert_eq!(
+            fs::read_to_string(&unrelated).expect("read unrelated file"),
+            "keep me"
+        );
+        assert!(!target_root.join(CODEX_RULES_REL_PATH).exists());
+
+        let _ = fs::remove_dir_all(target_root);
+    }
+
+    #[test]
+    fn codex_diff_reports_missing_and_changed_assets() {
+        let target_root = temp_path("codex-diff");
+        fs::create_dir_all(target_root.join("rules")).expect("create rules dir");
+
+        let release_assets = load_release_codex_assets();
+        let agents_asset = release_assets
+            .iter()
+            .find(|asset| asset.name == "agents")
+            .expect("agents asset");
+        let rules_asset = release_assets
+            .iter()
+            .find(|asset| asset.name == "rules")
+            .expect("rules asset");
+
+        fs::write(target_root.join(&agents_asset.relative_path), "stale")
+            .expect("write stale agents");
+
+        let result = codex_diff(CodexDiffArgs {
+            asset: vec![CodexAssetArg::Agents, CodexAssetArg::Rules],
+            target: Some(format!("path:{}", target_root.display())),
+            source: Some(SkillSourceArg::Release),
+            repo_path: None,
+        })
+        .expect("diff codex assets");
+
+        assert!(!result.identical);
+        let by_name = result
+            .assets
+            .into_iter()
+            .map(|entry| (entry.name.clone(), entry))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(by_name["agents"].status, "changed");
+        assert_eq!(by_name["rules"].status, "missing");
+        assert_eq!(
+            by_name["rules"].source_hash,
+            hash_bytes(&rules_asset.contents)
+        );
+
+        let _ = fs::remove_dir_all(target_root);
     }
 
     #[test]
@@ -2521,7 +3238,8 @@ mod tests {
                 id: "gh_auth".to_string(),
                 category: "auth".to_string(),
                 status: "warn".to_string(),
-                summary: "GitHub CLI auth could not be confirmed in this non-interactive context".to_string(),
+                summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                    .to_string(),
                 detail: None,
                 remediation: vec![
                     "Verify interactively in your terminal with `gh auth status`.".to_string(),
@@ -2552,7 +3270,10 @@ mod tests {
 
     #[test]
     fn doctor_windows_remediation_prefers_winget_for_gh_and_git() {
-        assert_eq!(platform_tool_remediation("windows", "git"), vec!["winget install --id Git.Git"]);
+        assert_eq!(
+            platform_tool_remediation("windows", "git"),
+            vec!["winget install --id Git.Git"]
+        );
         assert_eq!(
             platform_tool_remediation("windows", "gh"),
             vec!["winget install --id GitHub.cli"]
@@ -2561,7 +3282,10 @@ mod tests {
 
     #[test]
     fn doctor_windows_upgrades_prefer_winget_for_gh_and_git() {
-        assert_eq!(tool_upgrade_commands_for("windows", "git"), vec!["winget upgrade --id Git.Git"]);
+        assert_eq!(
+            tool_upgrade_commands_for("windows", "git"),
+            vec!["winget upgrade --id Git.Git"]
+        );
         assert_eq!(
             tool_upgrade_commands_for("windows", "gh"),
             vec!["winget upgrade --id GitHub.cli"]
@@ -2593,15 +3317,21 @@ mod tests {
 
         assert!(sources.iter().any(|item| item == "env:LINEAR_API_KEY"));
         assert!(sources.iter().any(|item| item == "config:inline_token"));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("config:token_file:{}", configured_token.display())));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("file:{}", root.join("config.toml").display())));
-        assert!(sources
-            .iter()
-            .any(|item| item == &format!("file:{}", root.join("token").display())));
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("config:token_file:{}", configured_token.display()))
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("file:{}", root.join("config.toml").display()))
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|item| item == &format!("file:{}", root.join("token").display()))
+        );
 
         let _ = fs::remove_dir_all(root);
     }

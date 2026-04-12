@@ -21,6 +21,8 @@ In both modes:
 
 If Forge is also the first-party source of truth for Codex configuration, then these managed skills are not just convenience installs. They are the deployable portable policy surface for Codex user-scope behavior.
 
+That skill lifecycle is separate from `forge codex render|diff|install`, which manages the narrow v1 set of user-scoped Codex files under `~/.codex/`.
+
 ## Managed Skills
 
 Initial Forge-managed skills:

@@ -291,8 +291,8 @@ Use this directory as source material, not as the live installed location.
 Deployment model:
 
 - install skills to `~/.agents/skills`
-- install or render `AGENTS.md` to `~/.codex/AGENTS.md` if Forge eventually manages it
-- install or render user rules to `~/.codex/rules/`
+- render, diff, and install `AGENTS.md` to `~/.codex/AGENTS.md` with `forge codex`
+- render, diff, and install user rules to `~/.codex/rules/` with `forge codex`
 - keep live machine-specific config local, with optional Forge-generated fragments
 
 Recommended interpretation:
@@ -343,7 +343,7 @@ This is likely better than overloading `AGENTS.md` with all routing nuance.
 
 ## Render And Install Model
 
-The recommended next product shape is explicit render/apply semantics rather than direct blind copying.
+Forge now implements the v1 explicit render/apply semantics rather than direct blind copying.
 
 Preferred workflow:
 
@@ -360,14 +360,37 @@ Design constraints:
 
 This supports speed and low prompt count without broadening destructive defaults.
 
+### Current V1 Boundary
+
+`forge codex` manages only:
+
+- `~/.codex/AGENTS.md`
+- `~/.codex/rules/user-policy.rules`
+
+It does not manage:
+
+- live `~/.codex/config.toml`
+- auth and installation files
+- session history, caches, or plugin state
+- profile or character switching
+
+Target model:
+
+- `user` means `~/.codex`
+- `path:<abs-path>` exists for deterministic testing and explicit non-default installs
+
+Source model:
+
+- repo checkout when Forge is running from a repo and `codex/user/` is available
+- embedded release payload otherwise
+
 ## Recommended Next Steps
 
-1. Add a Forge-managed source file for the user `AGENTS.md` baseline.
-2. Add a Forge-managed source file for `user-policy.rules`.
-3. Keep `principles.md` as an authoring input only, not as a separate runtime file.
-4. Add a documented portable config template, not a full managed replacement for live `config.toml`.
-5. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
-6. Define explicit `render`, `diff`, and `install` semantics before adding any automatic deployment behavior.
+1. Use the v1 render/diff/install workflow in practice and tighten the baseline only where real usage shows friction.
+2. Keep `principles.md` as an authoring input only, not as a separate runtime file.
+3. Keep the portable config template narrow unless a clearly stable merge contract emerges.
+4. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
+5. Revisit broader deployment behavior only after the explicit v1 workflow has proven stable.
 
 ## Acceptance Test For Putting Something In Forge
 

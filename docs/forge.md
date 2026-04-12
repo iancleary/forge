@@ -12,6 +12,8 @@ Forge also owns the lifecycle of Forge-managed consumer skills. The detailed ski
 
 When Forge is being used as the first-party source of truth for Codex behavior, the higher-level routing and ownership model lives in `docs/codex.md`.
 
+Forge also owns the explicit deployment path for the narrow set of user-scoped Codex files it manages in v1. Those commands are top-level `forge codex` subcommands rather than part of the skills lifecycle.
+
 ## Commands
 
 ### `forge doctor`
@@ -112,6 +114,57 @@ Default branch behavior:
 
 In release mode, Forge uses the installed release payload as the canonical source and updates `mainline` Forge-managed skills without requiring a local checkout.
 
+### `forge codex render`
+
+```sh
+forge codex render [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+```
+
+Renders the Forge-managed Codex user assets for the selected target root without writing them.
+
+V1 managed assets:
+
+- `AGENTS.md`
+- `rules/user-policy.rules`
+
+Behavior:
+
+- defaults to all managed assets
+- defaults to `user`, which maps to `~/.codex`
+- supports `path:<abs-path>` targets for testing and explicit non-default installs
+- uses repo source when running from a Forge checkout unless `--source release` is selected explicitly
+- emits deterministic JSON that includes rendered content and the resolved target paths
+
+### `forge codex diff`
+
+```sh
+forge codex diff [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+```
+
+Compares the rendered Forge-managed Codex user assets against the selected live target root.
+
+Behavior:
+
+- reports `same`, `changed`, or `missing` per managed asset
+- does not touch unrelated files under `~/.codex`
+- is intended to be the cheap preview step before install
+
+### `forge codex install`
+
+```sh
+forge codex install [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+```
+
+Writes the selected Forge-managed Codex user assets into the selected target root.
+
+Behavior:
+
+- writes only the selected managed files
+- creates parent directories when needed
+- leaves unrelated files in the target tree untouched
+- returns `installed`, `updated`, or `unchanged` per managed asset
+- keeps `~/.codex/config.toml`, auth state, session history, and plugin caches out of scope
+
 ## Config
 
 Preferred config file:
@@ -130,6 +183,8 @@ repo_path = "~/Development/forge"
 ```
 
 Skill lifecycle configuration is documented in `docs/forge-skills.md`.
+
+Codex user-config lifecycle and ownership boundaries are documented in `docs/codex.md`.
 
 Optional override:
 

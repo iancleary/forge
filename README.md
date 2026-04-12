@@ -91,6 +91,8 @@ From an installed Forge release or after pointing an agent at this repo:
 ```sh
 forge skills install --all --target user
 forge skills status
+forge codex diff
+forge codex install
 ```
 
 Useful commands:
@@ -101,9 +103,19 @@ forge skills validate --all
 forge skills diff design-algorithm --target user
 forge skills diff linear-cli --target user
 forge skills status --scope all
+forge codex render
+forge codex diff
+forge codex install
 forge self update-check
 forge self update
 ```
+
+Forge-managed Codex user config is intentionally narrower than the skills surface. In v1, `forge codex render`, `forge codex diff`, and `forge codex install` manage only:
+
+- `~/.codex/AGENTS.md`
+- `~/.codex/rules/user-policy.rules`
+
+They do not take ownership of live `~/.codex/config.toml`, session history, auth state, or plugin caches.
 
 The important mental model:
 
