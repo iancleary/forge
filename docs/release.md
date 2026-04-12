@@ -92,7 +92,7 @@ curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/instal
 That script:
 
 - resolves the latest published Forge release tag by default
-- installs `forge`, `codex-threads`, `linear`, and `slack-cli` from that tagged release source
+- installs the Forge binaries listed in `scripts/install-forge-release.sh` from that tagged release source
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
 
@@ -116,6 +116,16 @@ Later this can expand to:
 - `cargo test`
 - artifact builds
 - checksums
+
+## Maintaining The Installer Binary List
+
+Forge keeps a manual, deterministic list of binaries to install embedded in `scripts/install-forge-release.sh`.
+
+When adding/removing CLIs, update that list and run:
+
+```sh
+just install-list-check
+```
 
 ### 4. Push `main`
 

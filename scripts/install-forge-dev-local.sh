@@ -6,7 +6,7 @@ usage() {
 install-forge-dev-local.sh
 
 Dev-only installer for an already-present local checkout:
-  - installs the repo's known workspace binary crates via `cargo install`
+  - installs the binaries listed in scripts/install-forge-release.sh via `cargo install`
 
 Usage:
   scripts/install-forge-dev-local.sh [--path PATH] [--no-force]
@@ -65,24 +65,36 @@ if [[ ! -f "$repo_root/Cargo.toml" ]]; then
   exit 1
 fi
 
-# Keep this list explicit. As repo authors, we prefer deterministic behavior over dynamic discovery.
-crates=(
-  "crates/forge"
-  "crates/linear"
-  "crates/slack-cli"
-  "crates/codex-threads"
-)
+release_installer="$repo_root/scripts/install-forge-release.sh"
+if [[ ! -f "$release_installer" ]]; then
+  echo "error: missing release installer: $release_installer" >&2
+  exit 1
+fi
 
-echo "Installing ${#crates[@]} binaries from local checkout: $repo_root"
-for crate_rel in "${crates[@]}"; do
-  echo "  - ${crate_rel#crates/}"
-done
+echo "Installing Forge binaries from local checkout: $repo_root"
 
-for crate_rel in "${crates[@]}"; do
-  crate_dir="$repo_root/$crate_rel"
+extract_bins() {
+  # Single source of truth: binaries list embedded in scripts/install-forge-release.sh.
+  sed -n '/^  # BEGIN FORGE_BINARIES$/,/^  # END FORGE_BINARIES$/p' "$release_installer" \
+    | sed -e '1d' -e '$d' \
+    | sed -e "/^  cat <<'EOF'$/d" -e '/^EOF$/d' \
+    | sed -e 's/[[:space:]]*$//' -e '/^$/d' -e '/^#/d'
+}
+
+extract_bins | while IFS= read -r bin; do
+  case "$bin" in
+    ""|\#*)
+      continue
+      ;;
+  esac
+
+  echo "  - $bin"
+
+  crate_dir="$repo_root/crates/$bin"
   if [[ ! -f "$crate_dir/Cargo.toml" ]]; then
     echo "error: expected crate directory with Cargo.toml: $crate_dir" >&2
     exit 1
   fi
+
   cargo install --locked $force --path "$crate_dir"
 done
