@@ -26,6 +26,7 @@ If Forge is also the first-party source of truth for Codex configuration, then t
 Initial Forge-managed skills:
 
 - `design-algorithm`
+- `gh-body-file`
 - `forge-tools`
 - `linear-cli`
 - `slack-cli-research`
@@ -35,7 +36,7 @@ Initial Forge-managed skills:
 Repo source of truth during development:
 
 ```text
-.agents/skills/
+<forge-repo>/.agents/skills/
 ```
 
 Release source of truth for consumers:
@@ -174,7 +175,7 @@ The Codex user skill directory.
 This location should default to:
 
 ```text
-$HOME/.agents/skills
+~/.agents/skills
 ```
 
 Treat this as a deterministic Codex location, not a Forge-configurable alias. For testing or non-default installs, use `path:<abs-path>` instead of redefining `user`.

@@ -67,7 +67,7 @@ If the user or another skill names a skill directly, that is the strongest routi
 Portable user-scoped Forge skills belong in the Codex `USER` skill location:
 
 ```text
-$HOME/.agents/skills
+~/.agents/skills
 ```
 
 That location is deterministic. Forge should install managed user-scope skills there via `forge skills install --target user`.
@@ -136,7 +136,7 @@ OpenAI's Codex docs treat these as first-class configuration surfaces:
 - AGENTS.md
 - Skills
 
-The Skills docs define the deterministic `USER` skill location as `$HOME/.agents/skills`. The Rules docs define user rules under `~/.codex/rules/`, with `~/.codex/rules/default.rules` as the user-layer file Codex writes when approvals are accepted in the UI.
+The Skills docs define the deterministic `USER` skill location as `~/.agents/skills`. The Rules docs define user rules under `~/.codex/rules/`, with `~/.codex/rules/default.rules` as the user-layer file Codex writes when approvals are accepted in the UI.
 
 This implies the main portable user-config surfaces Forge should reason about are:
 
@@ -144,6 +144,33 @@ This implies the main portable user-config surfaces Forge should reason about ar
 - user `AGENTS.md`
 - user rules
 - selected config templates or fragments
+
+## GitHub Body File Pattern
+
+Forge should treat GitHub CLI body handling as part of the portable user workflow baseline.
+
+For GitHub work done through `gh`, the default for substantial issue bodies, pull request bodies, and markdown-heavy updates should be:
+
+- write the body to a local markdown file
+- pass that file with `--body-file` when the command supports it
+- keep inline `--body` usage for short low-risk text only
+
+Recommended patterns:
+
+```sh
+gh issue create --title "..." --body-file /tmp/issue.md
+gh issue edit 123 --body-file /tmp/issue.md
+gh pr create --title "..." --body-file /tmp/pr.md
+gh pr edit 456 --body-file /tmp/pr.md
+```
+
+Reason:
+
+- shell-interpolated multiline markdown is fragile
+- backticks, `$HOME`-style paths, angle brackets, and fenced code blocks can trigger quoting problems or accidental shell behavior
+- a local file is easier to review before submission and produces more deterministic Codex behavior
+
+This is a workflow rule, not just a shell preference. If Forge is the source of truth for portable Codex behavior, this guidance belongs in the managed user baseline and related Forge docs.
 
 ## Current Local Files: Keep, Move, Or Fold
 
@@ -162,7 +189,7 @@ These are durable enough to belong in repo as managed source material:
 
 - `~/.codex/agents.md`
 - `~/.codex/rules/user-policy.rules`
-- selected user-scoped skills already managed under `.agents/skills/`
+- selected user-scoped skills already managed under `<forge-repo>/.agents/skills/`
 
 Recommended repo shape:
 
@@ -241,7 +268,7 @@ Bad candidates:
 
 If Forge expands beyond skills, the next clean shape is:
 
-- keep skill sources in `.agents/skills/`
+- keep skill sources in `<forge-repo>/.agents/skills/`
 - add a dedicated repo area for first-party Codex user config sources
 
 Suggested shape:
@@ -263,7 +290,7 @@ Use this directory as source material, not as the live installed location.
 
 Deployment model:
 
-- install skills to `$HOME/.agents/skills`
+- install skills to `~/.agents/skills`
 - install or render `AGENTS.md` to `~/.codex/AGENTS.md` if Forge eventually manages it
 - install or render user rules to `~/.codex/rules/`
 - keep live machine-specific config local, with optional Forge-generated fragments

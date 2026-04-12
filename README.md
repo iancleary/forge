@@ -72,7 +72,7 @@ linear --json project list --limit 5
 
 ## Install For Codex
 
-If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `$HOME/.agents/skills`.
+If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `~/.agents/skills`.
 
 If Forge is your first-party Codex source of truth, treat the repo docs plus the Forge-managed skills as the canonical portable policy surface. Repo-local `AGENTS.md` guidance can reinforce that behavior, but it should not be the only place where cross-repo routing rules live.
 
@@ -139,6 +139,7 @@ These are recommended companions, not part of Forge's managed skill lifecycle. K
 - use Forge skills for Forge-authored CLIs and local Forge management
 - use `openai-docs` when the task is about OpenAI products rather than the Forge toolchain
 - prefer `gh`-driven GitHub workflows and GitHub plugin skills when the task is about repository hosting, PRs, issues, reviews, or CI
+- for substantial issue or PR bodies, prefer local markdown files with `gh ... --body-file` over inline multiline shell strings
 - avoid direct use of the native GitHub Codex app path when an equivalent `gh` or plugin-skill workflow exists, because it is less deterministic and more likely to trigger extra permission prompts
 
 ## Forge Command Policy

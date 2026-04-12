@@ -12,6 +12,21 @@ use serde::{Deserialize, Serialize};
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const DEFAULT_FORGE_REPO_INSTALL_SUBPATH: &str = ".agents/skills-installed";
+const REPO_SKILLS_SUBPATH: &str = ".agents/skills";
+
+macro_rules! embedded_skill {
+    ($name:literal) => {
+        EmbeddedSkill {
+            name: $name,
+            skill_md: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../.agents/skills/",
+                $name,
+                "/SKILL.md"
+            )),
+        }
+    };
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "forge")]
@@ -1664,7 +1679,7 @@ fn discover_repo_path(cli_repo_path: Option<PathBuf>, config: &ForgeConfig) -> O
         return Some(expand_path(path));
     }
     if let Ok(cwd) = env::current_dir() {
-        if cwd.join(".git").exists() && cwd.join(".agents").join("skills").exists() {
+        if cwd.join(".git").exists() && repo_skills_dir(&cwd).exists() {
             return Some(cwd);
         }
     }
@@ -1794,30 +1809,13 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
 
 fn release_skills() -> &'static [EmbeddedSkill] {
     &[
-        EmbeddedSkill {
-            name: "forge-tools",
-            skill_md: include_str!("../../../.agents/skills/forge-tools/SKILL.md"),
-        },
-        EmbeddedSkill {
-            name: "design-algorithm",
-            skill_md: include_str!("../../../.agents/skills/design-algorithm/SKILL.md"),
-        },
-        EmbeddedSkill {
-            name: "linear-cli",
-            skill_md: include_str!("../../../.agents/skills/linear-cli/SKILL.md"),
-        },
-        EmbeddedSkill {
-            name: "slack-cli-research",
-            skill_md: include_str!("../../../.agents/skills/slack-cli-research/SKILL.md"),
-        },
-        EmbeddedSkill {
-            name: "codex-threads-cli",
-            skill_md: include_str!("../../../.agents/skills/codex-threads-cli/SKILL.md"),
-        },
-        EmbeddedSkill {
-            name: "forge-cli-admin",
-            skill_md: include_str!("../../../.agents/skills/forge-cli-admin/SKILL.md"),
-        },
+        embedded_skill!("forge-tools"),
+        embedded_skill!("design-algorithm"),
+        embedded_skill!("gh-body-file"),
+        embedded_skill!("linear-cli"),
+        embedded_skill!("slack-cli-research"),
+        embedded_skill!("codex-threads-cli"),
+        embedded_skill!("forge-cli-admin"),
     ]
 }
 
@@ -1840,7 +1838,7 @@ fn load_release_skills() -> Vec<SkillDefinition> {
 }
 
 fn load_repo_skills(repo_path: &Path) -> Result<Vec<SkillDefinition>> {
-    let skills_root = repo_path.join(".agents").join("skills");
+    let skills_root = repo_skills_dir(repo_path);
     let mut defs = Vec::new();
     for entry in fs::read_dir(&skills_root)
         .with_context(|| format!("failed to read {}", skills_root.display()))?
@@ -2017,6 +2015,10 @@ fn resolve_target(
 fn user_skills_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME is not set")?;
     Ok(PathBuf::from(home).join(".agents").join("skills"))
+}
+
+fn repo_skills_dir(repo_path: &Path) -> PathBuf {
+    repo_path.join(REPO_SKILLS_SUBPATH)
 }
 
 fn parse_skill_frontmatter(body: &str) -> Result<SkillFrontmatter> {
