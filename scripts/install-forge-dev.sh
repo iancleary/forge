@@ -96,7 +96,7 @@ checkout_ref() {
 }
 
 bin_packages() {
-  cargo -C "$dir" metadata --no-deps --format-version 1 \
+  cargo metadata --no-deps --format-version 1 --manifest-path "$dir/Cargo.toml" \
     | python3 - <<'PY'
 import json, sys
 data = json.load(sys.stdin)
