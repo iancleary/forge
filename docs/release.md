@@ -127,6 +127,8 @@ When adding/removing CLIs, update that list and run:
 just install-list-check
 ```
 
+This check fails if a binary crate exists under `crates/*/src/main.rs` but is not listed in the installer.
+
 ### 4. Push `main`
 
 Push before creating the release:
