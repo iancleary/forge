@@ -1,6 +1,6 @@
 [package]
 name = "linear"
-version = "20260412.0.4"
+version = "20260412.0.5"
 edition = "2024"
 license = "MIT"
 
