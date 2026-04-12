@@ -1,6 +1,6 @@
 ---
 name: forge-cli
-description: Use the Forge `forge` CLI for local Forge management: doctor, permissions, self-update, managed skills, and Codex asset deployment. See `forge-tools` first if the right Forge CLI is not obvious.
+description: "Use the Forge `forge` CLI for local Forge management: doctor, permissions, self-update, managed skills, and Codex asset deployment. See `forge-tools` first if the right Forge CLI is not obvious."
 ---
 
 # Forge CLI

@@ -1,6 +1,6 @@
 ---
 name: slack-agent-cli
-description: Use the Forge `slack-agent` CLI for explicit assistant-oriented Slack reads and writes: thread reads, thread replies, reactions, file uploads, DM setup, and channel join. See `forge-tools` first if the correct Forge CLI is not obvious.
+description: "Use the Forge `slack-agent` CLI for explicit assistant-oriented Slack reads and writes: thread reads, thread replies, reactions, file uploads, DM setup, and channel join. See `forge-tools` first if the correct Forge CLI is not obvious."
 ---
 
 # Slack Agent CLI

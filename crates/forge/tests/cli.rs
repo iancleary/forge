@@ -82,9 +82,11 @@ fn cli_install_and_status_use_mainline_user_target() {
     let entries = status_json["data"]["entries"]
         .as_array()
         .expect("status entries array");
-    assert!(entries
-        .iter()
-        .any(|entry| { entry["target_kind"] == "user" && entry["target_role"] == "mainline" }));
+    assert!(
+        entries
+            .iter()
+            .any(|entry| { entry["target_kind"] == "user" && entry["target_role"] == "mainline" })
+    );
     assert!(!entries.iter().any(|entry| entry["target_kind"] == "path"));
 
     let _ = fs::remove_dir_all(root);
@@ -174,10 +176,12 @@ fn cli_parse_errors_honor_json_flag() {
         .expect("parse error json");
     assert_eq!(err["ok"], false);
     assert_eq!(err["error"]["code"], "invalid_usage");
-    assert!(err["error"]["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("unexpected argument '--source'"));
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unexpected argument '--source'")
+    );
 
     let _ = fs::remove_dir_all(root);
 }
@@ -200,10 +204,12 @@ fn cli_self_update_rejects_repo_mode_flags() {
         .expect("parse error json");
     assert_eq!(err["ok"], false);
     assert_eq!(err["error"]["code"], "invalid_usage");
-    assert!(err["error"]["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("unexpected argument '--repo-path'"));
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unexpected argument '--repo-path'")
+    );
 
     let _ = fs::remove_dir_all(root);
 }
