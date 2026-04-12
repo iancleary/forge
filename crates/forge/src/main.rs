@@ -5169,6 +5169,61 @@ mod tests {
     }
 
     #[test]
+    fn doctor_status_label_supports_colorless_and_colored_output() {
+        assert_eq!(doctor_status_label("pass", false), "PASS");
+        assert_eq!(doctor_status_label("warn", false), "WARN");
+        assert_eq!(doctor_status_label("fail", false), "FAIL");
+        assert_eq!(doctor_status_label("info", false), "INFO");
+        assert_eq!(doctor_status_label("pass", true), "\x1b[32mPASS\x1b[0m");
+        assert_eq!(doctor_status_label("warn", true), "\x1b[33mWARN\x1b[0m");
+        assert_eq!(doctor_status_label("fail", true), "\x1b[31mFAIL\x1b[0m");
+        assert_eq!(doctor_status_label("info", true), "\x1b[36mINFO\x1b[0m");
+    }
+
+    #[test]
+    fn doctor_human_output_without_terminal_does_not_include_color_codes() {
+        let result = DoctorResult {
+            summary: DoctorSummary {
+                status: "warn".to_string(),
+                ready: false,
+                passed: 1,
+                warnings: 1,
+                failures: 0,
+            },
+            checks: vec![
+                DoctorCheck {
+                    id: "cargo".to_string(),
+                    category: "tool".to_string(),
+                    status: "pass".to_string(),
+                    summary: "cargo is available".to_string(),
+                    detail: None,
+                    remediation: Vec::new(),
+                    upgrades: Vec::new(),
+                },
+                DoctorCheck {
+                    id: "gh_auth".to_string(),
+                    category: "auth".to_string(),
+                    status: "warn".to_string(),
+                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
+                        .to_string(),
+                    detail: None,
+                    remediation: vec![
+                        "Verify interactively in your terminal with `gh auth status`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                    ],
+                    upgrades: Vec::new(),
+                },
+            ],
+        };
+
+        let output = format_doctor_human(&result);
+
+        assert!(!output.contains("\x1b["));
+        assert!(output.contains("[PASS] cargo: cargo is available"));
+        assert!(output.contains("[WARN] gh_auth: GitHub CLI auth could not be confirmed in this non-interactive context"));
+    }
+
+    #[test]
     fn doctor_windows_remediation_prefers_winget_for_gh_and_git() {
         assert_eq!(
             platform_tool_remediation("windows", "git"),
