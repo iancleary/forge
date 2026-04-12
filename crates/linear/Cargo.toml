@@ -1,7 +1,8 @@
 [package]
 name = "linear"
-version = "20260412.0.2"
+version = "20260412.0.3"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
