@@ -17,7 +17,7 @@ use serde_json::Value;
 #[command(about = "Search and read local Codex thread archives")]
 #[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
 struct Cli {
-    #[arg(long, global = true, help = "Emit machine-readable JSON")]
+    #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
     #[arg(long, global = true, help = "Override the Codex home directory; defaults to ~/.codex or CODEX_HOME")]
     codex_home: Option<PathBuf>,

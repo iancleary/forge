@@ -20,7 +20,7 @@ const API_URL: &str = "https://api.linear.app/graphql";
 #[command(version)]
 #[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
 struct Cli {
-    #[arg(long, global = true, help = "Emit machine-readable JSON")]
+    #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
     #[command(subcommand)]
     command: Command,
