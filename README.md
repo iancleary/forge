@@ -74,6 +74,14 @@ linear --json project list --limit 5
 
 Prerequisite: install Rust and Cargo first with `rustup` from <https://rustup.rs>.
 
+Recommended user story:
+
+1. simplest bootstrap on a new machine
+2. deterministic bootstrap pinned to a specific release when needed
+3. steady-state updates through `forge self update-check` and `forge self update`
+
+### 1. Simplest Bootstrap
+
 Use `curl` as the bootstrap path on a new machine:
 
 ```sh
@@ -86,6 +94,8 @@ That installer:
 - installs the four Forge binaries from that tagged release source
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
+
+### 2. Deterministic Bootstrap
 
 If you want a deterministic install pinned to a specific release:
 
@@ -107,7 +117,7 @@ forge skills status
 forge codex diff
 ```
 
-## Update From A Release
+### 3. Steady-State Updates
 
 After bootstrap, prefer the Forge-managed update path:
 
