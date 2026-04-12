@@ -19,6 +19,8 @@ In both modes:
 - installed skill copies are deployed artifacts
 - Forge may overwrite managed installed copies during explicit install or update flows
 
+If Forge is also the first-party source of truth for Codex configuration, then these managed skills are not just convenience installs. They are the deployable portable policy surface for Codex user-scope behavior.
+
 ## Managed Skills
 
 Initial Forge-managed skills:
@@ -39,6 +41,8 @@ Repo source of truth during development:
 Release source of truth for consumers:
 
 - the skill payload bundled with the installed Forge release
+
+The trigger contract for those skills is documented in `docs/codex.md`.
 
 ## Ownership Model
 
@@ -100,6 +104,8 @@ Checks:
 - frontmatter includes `name` and `description`
 - skill name matches folder name policy where applicable
 - router references point to skills that exist in the current Forge source
+
+The intent is to keep the user-scope skill surface deterministic. Descriptions and router references are part of the maintained contract, not free-form text.
 
 ### `forge skills install`
 
@@ -172,6 +178,8 @@ $HOME/.agents/skills
 ```
 
 Treat this as a deterministic Codex location, not a Forge-configurable alias. For testing or non-default installs, use `path:<abs-path>` instead of redefining `user`.
+
+For a Forge-first Codex setup, this is the primary deploy target for portable skills that should be available across repos.
 
 ### `forge_repo`
 
@@ -383,6 +391,7 @@ After revert:
 - treating deployed skill copies as peer sources of truth
 - overwriting unmanaged skill collisions by default
 - making Forge a general-purpose skill package manager
+- treating skill descriptions and routing boundaries as incidental prose instead of a maintained trigger contract
 
 ## Review Notes
 
