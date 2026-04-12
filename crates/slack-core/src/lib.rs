@@ -8,6 +8,9 @@ use std::{
 use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
+
+pub const SLACK_API_BASE: &str = "https://slack.com/api";
 
 #[derive(Debug, Default, Deserialize)]
 struct ConfigFile {
@@ -324,6 +327,65 @@ where
 
     let payload = serde_json::from_str::<T>(&body).context("failed to decode Slack response body")?;
     Ok(payload)
+}
+
+pub async fn slack_get<T, Q>(client: &Client, method: &str, query: &Q) -> Result<T>
+where
+    T: DeserializeOwned,
+    Q: Serialize + ?Sized,
+{
+    let response = client
+        .get(format!("{SLACK_API_BASE}/{method}"))
+        .query(query)
+        .send()
+        .await
+        .with_context(|| format!("failed to call {method}"))?;
+    parse_slack_api_response(response, method).await
+}
+
+pub async fn slack_post_form<T, F>(client: &Client, method: &str, form: &F) -> Result<T>
+where
+    T: DeserializeOwned,
+    F: Serialize + ?Sized,
+{
+    let response = client
+        .post(format!("{SLACK_API_BASE}/{method}"))
+        .form(form)
+        .send()
+        .await
+        .with_context(|| format!("failed to call {method}"))?;
+    parse_slack_api_response(response, method).await
+}
+
+pub async fn slack_post_json<T, B>(client: &Client, method: &str, body: &B) -> Result<T>
+where
+    T: DeserializeOwned,
+    B: Serialize + ?Sized,
+{
+    let response = client
+        .post(format!("{SLACK_API_BASE}/{method}"))
+        .json(body)
+        .send()
+        .await
+        .with_context(|| format!("failed to call {method}"))?;
+    parse_slack_api_response(response, method).await
+}
+
+async fn parse_slack_api_response<T>(response: reqwest::Response, method: &str) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let value = parse_slack_json_response::<Value>(response).await?;
+    if value.get("ok").and_then(Value::as_bool) != Some(true) {
+        let message = value
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("slack_api_error")
+            .to_string();
+        bail!(message);
+    }
+
+    serde_json::from_value(value).with_context(|| format!("failed to decode {method} payload"))
 }
 
 pub fn classify_slack_error_code(message: &str) -> Option<&'static str> {
