@@ -1000,6 +1000,40 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
     let mut before_version = None;
     let mut after_version = None;
 
+    let mut state = load_state_or_default()?;
+    // Before attempting updates/installs, detect unmanaged collisions and provide a single actionable error.
+    // This keeps the default safety posture (no implicit takeover) while making remediation obvious.
+    let status = skills_status_with_source(
+        &config,
+        &state,
+        source_kind.clone(),
+        repo_path.clone(),
+        SkillsStatusScope::Mainline,
+        None,
+    )?;
+    let collisions = status
+        .entries
+        .iter()
+        .filter(|entry| entry.state == "unmanaged_collision")
+        .collect::<Vec<_>>();
+    if !collisions.is_empty() {
+        let source_flag = match source_kind {
+            SkillSourceKind::RepoCheckout => "repo",
+            SkillSourceKind::Release => "release",
+        };
+        let mut lines = Vec::new();
+        for entry in &collisions {
+            lines.push(format!("- {}: {}", entry.name, entry.target_path));
+        }
+        let list = lines.join("\n");
+        bail!(
+            "unmanaged collisions detected for {} skills:\n{}\n\nTo take ownership once:\nforge skills install --all --force-unmanaged --source {}\n\nThen:\nforge codex diff\nforge codex install\nforge self update-check\nforge self update",
+            collisions.len(),
+            list,
+            source_flag
+        );
+    }
+
     if let Some(path) = repo_path.as_ref() {
         ensure_git_repo(path)?;
         before_head = Some(git_stdout(path, &["rev-parse", "HEAD"])?);
@@ -1034,7 +1068,6 @@ fn update(args: UpdateArgs) -> Result<UpdateResult> {
         }
     }
 
-    let mut state = load_state_or_default()?;
     let targets = mainline_targets_for_reconcile(&config, &state, repo_path.as_deref())?;
     let mut installs = Vec::new();
     for target in targets {

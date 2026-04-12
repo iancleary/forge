@@ -119,3 +119,31 @@ fn cli_errors_have_stable_codes_for_common_mistakes() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn cli_self_update_reports_all_unmanaged_collisions_actionably() {
+    let root = temp_path("self-update-collisions");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let unmanaged_root = home_dir.join(".agents").join("skills");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&unmanaged_root).expect("create unmanaged root");
+
+    // Create an unmanaged skill dir that matches a repo-provided skill name.
+    // This should produce an unmanaged_collision during self update.
+    let skill_dir = unmanaged_root.join("forge-tools");
+    fs::create_dir_all(&skill_dir).expect("create unmanaged skill dir");
+    fs::write(skill_dir.join("SKILL.md"), "unmanaged").expect("write unmanaged skill file");
+
+    let update = run_forge(&["--json", "self", "update"], &config_dir, &home_dir);
+    assert!(!update.status.success());
+    let stderr = String::from_utf8(update.stderr).expect("stderr utf8");
+    let err_json: Value = serde_json::from_str(stderr.trim()).expect("error json");
+    assert_eq!(err_json["ok"], false);
+    assert_eq!(err_json["error"]["code"], "unmanaged_collision");
+    let msg = err_json["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.contains("forge-tools"));
+    assert!(msg.contains("forge skills install --all --force-unmanaged"));
+
+    let _ = fs::remove_dir_all(root);
+}
