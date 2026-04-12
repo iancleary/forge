@@ -97,3 +97,4 @@ Ask first:
 
 - Durable heuristics may be authored in Forge fragments, but they should not require separate runtime files.
 - The user baseline should optimize for truth, safety, speed, and deterministic behavior rather than personality.
+- When Forge manages this baseline, prefer `forge codex diff` before `forge codex install` so mutation stays explicit and reviewable.

@@ -291,8 +291,8 @@ Use this directory as source material, not as the live installed location.
 Deployment model:
 
 - install skills to `~/.agents/skills`
-- install or render `AGENTS.md` to `~/.codex/AGENTS.md` if Forge eventually manages it
-- install or render user rules to `~/.codex/rules/`
+- render, diff, and install `AGENTS.md` to `~/.codex/AGENTS.md` with `forge codex`
+- render, diff, and install user rules to `~/.codex/rules/` with `forge codex`
 - keep live machine-specific config local, with optional Forge-generated fragments
 
 Recommended interpretation:
@@ -343,7 +343,7 @@ This is likely better than overloading `AGENTS.md` with all routing nuance.
 
 ## Render And Install Model
 
-The recommended next product shape is explicit render/apply semantics rather than direct blind copying.
+Forge now implements the v1 explicit render/apply semantics rather than direct blind copying.
 
 Preferred workflow:
 
@@ -359,6 +359,30 @@ Design constraints:
 - machine-local config stays local unless the user chooses to merge a portable fragment
 
 This supports speed and low prompt count without broadening destructive defaults.
+
+### Current V1 Boundary
+
+`forge codex` manages only:
+
+- `~/.codex/AGENTS.md`
+- `~/.codex/rules/user-policy.rules`
+
+It does not manage:
+
+- live `~/.codex/config.toml`
+- auth and installation files
+- session history, caches, or plugin state
+- profile or character switching
+
+Target model:
+
+- `user` means `~/.codex`
+- `path:<abs-path>` exists for deterministic testing and explicit non-default installs
+
+Source model:
+
+- repo checkout when Forge is running from a repo and `codex/user/` is available
+- embedded release payload otherwise
 
 ## Recommended Next Steps
 
