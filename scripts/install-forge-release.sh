@@ -3,19 +3,41 @@
 set -eu
 
 REPO_URL="https://github.com/iancleary/forge"
+REPO_API_URL="https://api.github.com/repos/iancleary/forge"
 REF="${FORGE_TAG:-}"
 INSTALL_CODEX=1
 
 usage() {
   cat <<'EOF'
-Install Forge CLIs from a tagged release.
+Install Forge CLIs from the latest published release or a specific tagged release.
 
 Usage:
-  install-forge-release.sh --tag <release-tag> [--skip-codex]
+  install-forge-release.sh [--tag <release-tag>] [--skip-codex]
 
 Examples:
-  install-forge-release.sh --tag 2026.411.2
+  install-forge-release.sh
+  install-forge-release.sh --tag 20260411.2
 EOF
+}
+
+resolve_latest_tag() {
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required to resolve the latest Forge release tag automatically." >&2
+    exit 1
+  fi
+
+  tag=$(
+    curl -fsSL "${REPO_API_URL}/releases/latest" |
+      sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+      head -n 1
+  )
+
+  if [ -z "$tag" ]; then
+    echo "failed to resolve the latest Forge release tag" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$tag"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -45,9 +67,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$REF" ]; then
-  echo "--tag <release-tag> is required" >&2
-  usage >&2
-  exit 1
+  REF=$(resolve_latest_tag)
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then

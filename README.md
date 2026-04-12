@@ -77,19 +77,26 @@ Prerequisite: install Rust and Cargo first with `rustup` from <https://rustup.rs
 Use `curl` as the bootstrap path on a new machine:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh
 ```
 
 That installer:
 
-- installs the four Forge binaries from the tagged release source
+- resolves the latest published Forge release tag by default
+- installs the four Forge binaries from that tagged release source
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
+
+If you want a deterministic install pinned to a specific release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.2
+```
 
 If you want the binaries but not the Codex baseline:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2 --skip-codex
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --skip-codex
 ```
 
 After installation, a good first verification step is:

@@ -11,7 +11,7 @@ Recommended sequence:
 ```sh
 cargo check
 git push origin main
-gh release create 2026.411.2 --target main --title 2026.411.2 --generate-notes --latest
+gh release create 20260411.2 --target main --title 20260411.2 --generate-notes --latest
 ```
 
 Shell note:
@@ -85,14 +85,21 @@ The current user-facing release bootstrap path is a tagged source install driven
 New machine install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 2026.411.2
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh
 ```
 
 That script:
 
-- installs `forge`, `codex-threads`, `linear`, and `slack-cli` from the tagged release source
+- resolves the latest published Forge release tag by default
+- installs `forge`, `codex-threads`, `linear`, and `slack-cli` from that tagged release source
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
+
+Deterministic install:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.2
+```
 
 Update story:
 
