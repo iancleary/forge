@@ -65,6 +65,12 @@ This is the key rule:
 
 ## Commands
 
+Output contract for `forge skills ...`:
+
+- human-readable text by default
+- compact JSON envelope with `--json`
+- no pretty-printed JSON on the agent path
+
 ### `forge skills list`
 
 ```sh

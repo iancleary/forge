@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
+    fmt::Write as _,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     time::{SystemTime, UNIX_EPOCH},
@@ -50,7 +51,7 @@ macro_rules! embedded_codex_asset {
 #[derive(Parser, Debug)]
 #[command(name = "forge")]
 #[command(about = "Forge manager CLI")]
-#[command(after_help = "Output:\n  - Most commands print pretty JSON by default.\n  - Use --json for compact (token-efficient) JSON.\n  - `forge doctor` prints a human summary by default; use --json for JSON.")]
+#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact (token-efficient) machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
 struct Cli {
     #[arg(
         long,
@@ -60,6 +61,18 @@ struct Cli {
     json: bool,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    Human,
+    Json,
+}
+
+impl OutputMode {
+    fn from_json_flag(json: bool) -> Self {
+        if json { Self::Json } else { Self::Human }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -721,7 +734,39 @@ struct ResolvedCodexTarget {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let args = env::args_os().collect::<Vec<_>>();
+    let wants_json = args.iter().any(|arg| arg.to_str() == Some("--json"));
+    let cli = match Cli::try_parse_from(args) {
+        Ok(cli) => cli,
+        Err(err) => {
+            let exit_code = err.exit_code();
+            match err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    let _ = err.print();
+                }
+                _ if wants_json => {
+                    let error = ErrorEnvelope {
+                        ok: false,
+                        error: ErrorBody {
+                            code: "invalid_usage".to_string(),
+                            message: err.to_string(),
+                        },
+                    };
+                    eprintln!(
+                        "{}",
+                        serde_json::to_string(&error).unwrap_or_else(|_| {
+                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                        })
+                    );
+                }
+                _ => {
+                    let _ = err.print();
+                }
+            }
+            std::process::exit(exit_code);
+        }
+    };
+    let output = OutputMode::from_json_flag(cli.json);
     let result = run(cli);
 
     if let Err(err) = result {
@@ -729,129 +774,80 @@ fn main() {
             ok: false,
             error: classify_error(&err),
         };
-        eprintln!(
-            "{}",
-            serde_json::to_string(&error).unwrap_or_else(|_| {
-                "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-            })
-        );
+        match output {
+            OutputMode::Json => {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string(&error).unwrap_or_else(|_| {
+                        "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                    })
+                );
+            }
+            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+        }
         std::process::exit(1);
     }
 }
 
 fn run(cli: Cli) -> Result<()> {
+    let output = OutputMode::from_json_flag(cli.json);
+
     match cli.command {
         Command::Doctor => {
             let data = doctor()?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_doctor_human(&data);
-            }
+            emit_output(output, data, format_doctor_human)?;
         }
         Command::Self_(SelfCommand::UpdateCheck(args)) => {
             let data = update_check(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_update_check_human)?;
         }
         Command::Self_(SelfCommand::Update(args)) => {
             let data = update(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_update_human)?;
         }
         Command::Permissions(PermissionsCommand::Check) => {
             let data = inspect_permissions(false)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, |data| format_permissions_human("check", data))?;
         }
         Command::Permissions(PermissionsCommand::Fix) => {
             let data = inspect_permissions(true)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, |data| format_permissions_human("fix", data))?;
         }
         Command::Skills(SkillsCommand::List(args)) => {
             let data = skills_list(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_skills_list_human)?;
         }
         Command::Skills(SkillsCommand::Status(args)) => {
             let data = skills_status(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_skills_status_human)?;
         }
         Command::Skills(SkillsCommand::Validate(args)) => {
             let data = skills_validate(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_skills_validate_human)?;
         }
         Command::Skills(SkillsCommand::Install(args)) => {
             let data = skills_install(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, |data| format_skills_install_human("install", data))?;
         }
         Command::Skills(SkillsCommand::Diff(args)) => {
             let data = skills_diff(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_skills_diff_human)?;
         }
         Command::Skills(SkillsCommand::Revert(args)) => {
             let data = skills_revert(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, |data| format_skills_install_human("revert", data))?;
         }
         Command::Codex(CodexCommand::Render(args)) => {
             let data = codex_render(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_codex_render_human)?;
         }
         Command::Codex(CodexCommand::Diff(args)) => {
             let data = codex_diff(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_codex_diff_human)?;
         }
         Command::Codex(CodexCommand::Install(args)) => {
             let data = codex_install(args)?;
-            if cli.json {
-                print_json(&Envelope { ok: true, data })?;
-            } else {
-                print_json_pretty(&Envelope { ok: true, data })?;
-            }
+            emit_output(output, data, format_codex_install_human)?;
         }
     }
 
@@ -1915,7 +1911,8 @@ fn doctor_slack_auth_check() -> DoctorCheck {
     }
 }
 
-fn print_doctor_human(result: &DoctorResult) {
+fn format_doctor_human(result: &DoctorResult) -> String {
+    let mut out = String::new();
     let headline = if result.summary.failures > 0 {
         "not ready"
     } else if result.summary.warnings > 0 {
@@ -1923,13 +1920,15 @@ fn print_doctor_human(result: &DoctorResult) {
     } else {
         "ready"
     };
-    println!(
+    let _ = writeln!(
+        out,
         "forge doctor: {} ({} passed, {} warnings, {} failures)",
         headline, result.summary.passed, result.summary.warnings, result.summary.failures
     );
 
     for check in &result.checks {
-        println!(
+        let _ = writeln!(
+            out,
             "[{}] {}: {}",
             doctor_status_label(&check.status),
             check.id,
@@ -1938,16 +1937,18 @@ fn print_doctor_human(result: &DoctorResult) {
         if let Some(detail) = check.detail.as_ref() {
             let detail = detail.lines().next().unwrap_or(detail);
             if !detail.is_empty() {
-                println!("  {}", detail);
+                let _ = writeln!(out, "  {}", detail);
             }
         }
         for item in &check.remediation {
-            println!("  fix: {item}");
+            let _ = writeln!(out, "  fix: {item}");
         }
         for item in &check.upgrades {
-            println!("  upgrade: {item}");
+            let _ = writeln!(out, "  upgrade: {item}");
         }
     }
+
+    out.trim_end().to_string()
 }
 
 fn doctor_status_label(status: &str) -> &'static str {
@@ -1956,6 +1957,436 @@ fn doctor_status_label(status: &str) -> &'static str {
         "warn" => "WARN",
         "fail" => "FAIL",
         _ => "INFO",
+    }
+}
+
+fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
+where
+    T: Serialize,
+    F: FnOnce(&T) -> String,
+{
+    match mode {
+        OutputMode::Json => print_json(&Envelope { ok: true, data }),
+        OutputMode::Human => {
+            print_human_text(&human(&data));
+            Ok(())
+        }
+    }
+}
+
+fn print_human_text(text: &str) {
+    if text.ends_with('\n') {
+        print!("{text}");
+    } else {
+        println!("{text}");
+    }
+}
+
+fn format_error_human(error: &ErrorBody) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "forge error [{}]", error.code);
+    for line in error.message.lines() {
+        let _ = writeln!(out, "{line}");
+    }
+    out.trim_end().to_string()
+}
+
+fn format_update_check_human(result: &UpdateCheckResult) -> String {
+    let mut out = String::new();
+    let headline = if result.update_available || result.skills_out_of_date || result.codex_out_of_date
+    {
+        "updates available"
+    } else {
+        "up to date"
+    };
+    let _ = writeln!(out, "forge self update-check: {headline}");
+    let _ = writeln!(out, "source: {}", result.source_kind);
+    if let Some(path) = result.repo_path.as_ref() {
+        let _ = writeln!(out, "repo: {path}");
+    }
+    if let Some(version) = result.current_version.as_ref() {
+        let _ = writeln!(out, "current version: {version}");
+    }
+    if let Some(version) = result.latest_version.as_ref() {
+        let _ = writeln!(out, "latest version: {version}");
+    }
+    if let Some(branch) = result.remote_default_branch.as_ref() {
+        let _ = writeln!(out, "remote default branch: {branch}");
+    }
+    if let Some(head) = result.local_head.as_ref() {
+        let _ = writeln!(out, "local head: {}", shorten_hash(head));
+    }
+    if let Some(head) = result.remote_head.as_ref() {
+        let _ = writeln!(out, "remote head: {}", shorten_hash(head));
+    }
+    let _ = writeln!(out, "checked at unix: {}", result.checked_at_unix);
+    let _ = writeln!(
+        out,
+        "skills: {}",
+        summarize_counts(result.skills.iter().map(|entry| entry.state.as_str()))
+    );
+    let _ = writeln!(
+        out,
+        "codex: {}",
+        if result.codex_out_of_date {
+            "out_of_date"
+        } else {
+            "up_to_date"
+        }
+    );
+
+    let noteworthy = result
+        .skills
+        .iter()
+        .filter(|entry| entry.state != "up_to_date")
+        .collect::<Vec<_>>();
+    if !noteworthy.is_empty() {
+        out.push('\n');
+        let _ = writeln!(out, "skill details:");
+        append_skill_status_entries(&mut out, noteworthy.into_iter());
+    }
+
+    out.trim_end().to_string()
+}
+
+fn format_update_human(result: &UpdateResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge self update: {}",
+        if result.changed {
+            "applied changes"
+        } else {
+            "already up to date"
+        }
+    );
+    let _ = writeln!(out, "source: {}", result.source_kind);
+    if let Some(path) = result.repo_path.as_ref() {
+        let _ = writeln!(out, "repo: {path}");
+    }
+    if let Some(branch) = result.branch.as_ref() {
+        let _ = writeln!(out, "branch: {branch}");
+    }
+    if let Some(head) = result.before_head.as_ref() {
+        let _ = writeln!(out, "before head: {}", shorten_hash(head));
+    }
+    if let Some(head) = result.after_head.as_ref() {
+        let _ = writeln!(out, "after head: {}", shorten_hash(head));
+    }
+    if let Some(version) = result.before_version.as_ref() {
+        let _ = writeln!(out, "before version: {version}");
+    }
+    if let Some(version) = result.after_version.as_ref() {
+        let _ = writeln!(out, "after version: {version}");
+    }
+    let _ = writeln!(out, "skills reconciled: {}", result.skills_reconciled);
+    let _ = writeln!(out, "codex reconciled: {}", result.codex_reconciled);
+    out.trim_end().to_string()
+}
+
+fn format_permissions_human(command: &str, result: &PermissionsResult) -> String {
+    let mut out = String::new();
+    let ok = result.items.iter().filter(|item| item.ok).count();
+    let fixed = result.items.iter().filter(|item| item.changed).count();
+    let missing = result.items.iter().filter(|item| !item.exists).count();
+    let mismatched = result
+        .items
+        .iter()
+        .filter(|item| item.exists && !item.ok && !item.changed)
+        .count();
+    let _ = writeln!(
+        out,
+        "forge permissions {command}: {} ok, {} fixed, {} mismatched, {} missing",
+        ok, fixed, mismatched, missing
+    );
+    for item in &result.items {
+        let _ = writeln!(out, "{}", format_permission_item_human(item));
+    }
+    out.trim_end().to_string()
+}
+
+fn format_permission_item_human(item: &PermissionItem) -> String {
+    if !item.exists {
+        return format!(
+            "[MISSING] {} expected {} {}",
+            item.kind, item.expected_mode, item.path
+        );
+    }
+    if item.changed {
+        return format!("[FIXED] {} {} {}", item.kind, item.expected_mode, item.path);
+    }
+    if item.ok {
+        return format!(
+            "[OK] {} {} {}",
+            item.kind,
+            item.actual_mode.as_deref().unwrap_or(&item.expected_mode),
+            item.path
+        );
+    }
+    format!(
+        "[MISMATCH] {} expected {} actual {} {}",
+        item.kind,
+        item.expected_mode,
+        item.actual_mode.as_deref().unwrap_or("-"),
+        item.path
+    )
+}
+
+fn format_skills_list_human(result: &SkillsListResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge skills list: {} entries from {}",
+        result.skills.len(),
+        result.source
+    );
+    if result.skills.is_empty() {
+        let _ = writeln!(out, "no Forge-managed skills were found");
+        return out.trim_end().to_string();
+    }
+    for entry in &result.skills {
+        let _ = writeln!(out, "{} [{}]", entry.name, entry.source_kind);
+        if let Some(path) = entry.source_path.as_ref() {
+            let _ = writeln!(out, "  source: {path}");
+        }
+        if entry.installed_targets.is_empty() {
+            let _ = writeln!(out, "  installed: none");
+        } else {
+            for target in &entry.installed_targets {
+                let _ = writeln!(out, "  installed: {target}");
+            }
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_skills_validate_human(result: &SkillsValidateResult) -> String {
+    let mut out = String::new();
+    let invalid = result.skills.iter().filter(|entry| !entry.valid).count();
+    let _ = writeln!(
+        out,
+        "forge skills validate: {} ({} skills from {}, {} invalid)",
+        if result.valid { "valid" } else { "invalid" },
+        result.skills.len(),
+        result.source_kind,
+        invalid
+    );
+    for entry in &result.skills {
+        let _ = writeln!(
+            out,
+            "[{}] {}",
+            if entry.valid { "OK" } else { "INVALID" },
+            entry.name
+        );
+        if let Some(path) = entry.path.as_ref() {
+            let _ = writeln!(out, "  path: {path}");
+        }
+        for issue in &entry.issues {
+            let _ = writeln!(out, "  issue: {issue}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_skills_install_human(command: &str, result: &SkillsInstallResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge skills {command}: {} entries to {}@{} {} from {}",
+        result.installs.len(),
+        result.target_kind,
+        result.target_role,
+        result.target_root,
+        result.source_kind
+    );
+    let _ = writeln!(
+        out,
+        "summary: {}",
+        summarize_counts(result.installs.iter().map(|entry| entry.status.as_str()))
+    );
+    for entry in &result.installs {
+        let _ = writeln!(
+            out,
+            "[{}] {} -> {}",
+            status_label(&entry.status),
+            entry.name,
+            entry.target_path
+        );
+    }
+    out.trim_end().to_string()
+}
+
+fn format_skills_diff_human(result: &SkillsDiffResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge skills diff: {} ({})",
+        result.name,
+        if result.identical { "identical" } else { "different" }
+    );
+    let _ = writeln!(out, "source: {}", result.source_kind);
+    let _ = writeln!(out, "target: {} {}", result.target_kind, result.target_path);
+    let _ = writeln!(
+        out,
+        "summary: {}",
+        summarize_counts(result.files.iter().map(|entry| entry.status.as_str()))
+    );
+    for entry in &result.files {
+        let _ = writeln!(out, "[{}] {}", status_label(&entry.status), entry.path);
+    }
+    out.trim_end().to_string()
+}
+
+fn format_skills_status_human(result: &SkillsStatusResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge skills status: {} entries from {} (scope {})",
+        result.entries.len(),
+        result.source_kind,
+        result.scope
+    );
+    let _ = writeln!(
+        out,
+        "summary: {}",
+        summarize_counts(result.entries.iter().map(|entry| entry.state.as_str()))
+    );
+    append_skill_status_entries(&mut out, result.entries.iter());
+    out.trim_end().to_string()
+}
+
+fn append_skill_status_entries<'a, I>(out: &mut String, entries: I)
+where
+    I: IntoIterator<Item = &'a SkillStatusEntry>,
+{
+    for entry in entries {
+        let _ = writeln!(
+            out,
+            "[{}] {} {}@{} -> {}",
+            status_label(&entry.state),
+            entry.name,
+            entry.target_kind,
+            entry.target_role,
+            entry.target_path
+        );
+    }
+}
+
+fn format_codex_render_human(result: &CodexRenderResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge codex render: {} assets from {} for {} {}",
+        result.assets.len(),
+        result.source_kind,
+        result.target_kind,
+        result.target_root
+    );
+    for (index, asset) in result.assets.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        let _ = writeln!(
+            out,
+            "--- {} {} -> {} [{}]",
+            asset.name, asset.relative_path, asset.target_path, asset.source_hash
+        );
+        if let Some(path) = asset.source_path.as_ref() {
+            let _ = writeln!(out, "source: {path}");
+        }
+        out.push('\n');
+        out.push_str(&asset.contents);
+        if !asset.contents.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_codex_diff_human(result: &CodexDiffResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge codex diff: {} ({}) for {} {} from {}",
+        result.assets.len(),
+        if result.identical { "identical" } else { "different" },
+        result.target_kind,
+        result.target_root,
+        result.source_kind
+    );
+    let _ = writeln!(
+        out,
+        "summary: {}",
+        summarize_counts(result.assets.iter().map(|entry| entry.status.as_str()))
+    );
+    for entry in &result.assets {
+        let _ = writeln!(
+            out,
+            "[{}] {} -> {}",
+            status_label(&entry.status),
+            entry.relative_path,
+            entry.target_path
+        );
+    }
+    out.trim_end().to_string()
+}
+
+fn format_codex_install_human(result: &CodexInstallResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge codex install: {} assets to {} {} from {}",
+        result.assets.len(),
+        result.target_kind,
+        result.target_root,
+        result.source_kind
+    );
+    let _ = writeln!(
+        out,
+        "summary: {}",
+        summarize_counts(result.assets.iter().map(|entry| entry.status.as_str()))
+    );
+    for entry in &result.assets {
+        let _ = writeln!(
+            out,
+            "[{}] {} -> {}",
+            status_label(&entry.status),
+            entry.relative_path,
+            entry.target_path
+        );
+    }
+    out.trim_end().to_string()
+}
+
+fn summarize_counts<'a, I>(values: I) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut counts = BTreeMap::<String, usize>::new();
+    for value in values {
+        *counts.entry(value.to_string()).or_default() += 1;
+    }
+
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+
+    counts
+        .into_iter()
+        .map(|(status, count)| format!("{count} {status}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn status_label(status: &str) -> String {
+    status.to_ascii_uppercase()
+}
+
+fn shorten_hash(value: &str) -> String {
+    if value.len() > 12 {
+        value[..12].to_string()
+    } else {
+        value.to_string()
     }
 }
 
@@ -2210,17 +2641,6 @@ where
     println!(
         "{}",
         serde_json::to_string(value).context("failed to render JSON output")?
-    );
-    Ok(())
-}
-
-fn print_json_pretty<T>(value: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).context("failed to render pretty JSON output")?
     );
     Ok(())
 }
@@ -3670,5 +4090,160 @@ mod tests {
         assert_eq!(deduped.len(), 2);
         assert!(deduped.iter().any(|item| item == "env:LINEAR_API_KEY"));
         assert!(deduped.iter().any(|item| item == "file:/tmp/token"));
+    }
+
+    #[test]
+    fn top_level_help_documents_human_default_and_json_contract() {
+        use clap::CommandFactory;
+
+        let mut cmd = Cli::command();
+        let help = cmd.render_long_help().to_string();
+
+        assert!(help.contains("Default output is human-readable."));
+        assert!(help.contains("Use --json for compact"));
+    }
+
+    #[test]
+    fn human_error_output_is_not_json() {
+        let rendered = format_error_human(&ErrorBody {
+            code: "invalid_usage".to_string(),
+            message: "provide a skill name or --all".to_string(),
+        });
+
+        assert!(rendered.starts_with("forge error [invalid_usage]"));
+        assert!(rendered.contains("provide a skill name or --all"));
+        assert!(!rendered.contains("{\"ok\":false"));
+    }
+
+    #[test]
+    fn human_update_check_output_summarizes_drift() {
+        let rendered = format_update_check_human(&UpdateCheckResult {
+            source_kind: "repo".to_string(),
+            repo_path: Some("/tmp/forge".to_string()),
+            cached: false,
+            local_head: Some("0123456789abcdef".to_string()),
+            remote_head: Some("fedcba9876543210".to_string()),
+            remote_default_branch: Some("main".to_string()),
+            current_version: None,
+            latest_version: None,
+            update_available: true,
+            checked_at_unix: 123,
+            skills_out_of_date: true,
+            codex_out_of_date: false,
+            skills: vec![
+                SkillStatusEntry {
+                    name: "linear-cli".to_string(),
+                    target_kind: "user".to_string(),
+                    target_role: "mainline".to_string(),
+                    target_path: "/tmp/skills/linear-cli".to_string(),
+                    state: "out_of_date".to_string(),
+                    source_kind: "repo".to_string(),
+                    source_hash: Some("abc".to_string()),
+                    target_hash: Some("def".to_string()),
+                },
+                SkillStatusEntry {
+                    name: "forge-tools".to_string(),
+                    target_kind: "user".to_string(),
+                    target_role: "mainline".to_string(),
+                    target_path: "/tmp/skills/forge-tools".to_string(),
+                    state: "up_to_date".to_string(),
+                    source_kind: "repo".to_string(),
+                    source_hash: Some("abc".to_string()),
+                    target_hash: Some("abc".to_string()),
+                },
+            ],
+        });
+
+        assert!(rendered.contains("forge self update-check: updates available"));
+        assert!(rendered.contains("local head: 0123456789ab"));
+        assert!(rendered.contains("skill details:"));
+        assert!(rendered.contains("[OUT_OF_DATE] linear-cli user@mainline -> /tmp/skills/linear-cli"));
+    }
+
+    #[test]
+    fn human_permissions_output_marks_missing_and_mismatch() {
+        let rendered = format_permissions_human(
+            "check",
+            &PermissionsResult {
+                items: vec![
+                    PermissionItem {
+                        path: "/tmp/config".to_string(),
+                        kind: "file".to_string(),
+                        exists: false,
+                        expected_mode: "0600".to_string(),
+                        actual_mode: None,
+                        ok: false,
+                        changed: false,
+                    },
+                    PermissionItem {
+                        path: "/tmp/state".to_string(),
+                        kind: "file".to_string(),
+                        exists: true,
+                        expected_mode: "0600".to_string(),
+                        actual_mode: Some("0644".to_string()),
+                        ok: false,
+                        changed: false,
+                    },
+                ],
+            },
+        );
+
+        assert!(rendered.contains("forge permissions check: 0 ok, 0 fixed, 1 mismatched, 1 missing"));
+        assert!(rendered.contains("[MISSING] file expected 0600 /tmp/config"));
+        assert!(rendered.contains("[MISMATCH] file expected 0600 actual 0644 /tmp/state"));
+    }
+
+    #[test]
+    fn human_skills_install_output_summarizes_entries() {
+        let rendered = format_skills_install_human(
+            "install",
+            &SkillsInstallResult {
+                source_kind: "repo".to_string(),
+                target_kind: "user".to_string(),
+                target_role: "mainline".to_string(),
+                target_root: "/tmp/skills".to_string(),
+                installs: vec![
+                    SkillInstallEntry {
+                        name: "linear-cli".to_string(),
+                        source_hash: "abc".to_string(),
+                        target_path: "/tmp/skills/linear-cli".to_string(),
+                        status: "installed".to_string(),
+                    },
+                    SkillInstallEntry {
+                        name: "forge-tools".to_string(),
+                        source_hash: "def".to_string(),
+                        target_path: "/tmp/skills/forge-tools".to_string(),
+                        status: "unchanged".to_string(),
+                    },
+                ],
+            },
+        );
+
+        assert!(rendered.contains("forge skills install: 2 entries to user@mainline /tmp/skills from repo"));
+        assert!(rendered.contains("summary: 1 installed, 1 unchanged"));
+        assert!(rendered.contains("[INSTALLED] linear-cli -> /tmp/skills/linear-cli"));
+        assert!(rendered.contains("[UNCHANGED] forge-tools -> /tmp/skills/forge-tools"));
+    }
+
+    #[test]
+    fn human_codex_render_output_includes_rendered_contents() {
+        let rendered = format_codex_render_human(&CodexRenderResult {
+            source_kind: "repo".to_string(),
+            target_kind: "user".to_string(),
+            target_root: "/tmp/codex".to_string(),
+            assets: vec![CodexRenderEntry {
+                name: "agents".to_string(),
+                relative_path: "AGENTS.md".to_string(),
+                source_path: Some("/tmp/source/AGENTS.md".to_string()),
+                target_path: "/tmp/codex/AGENTS.md".to_string(),
+                source_hash: "abc123".to_string(),
+                contents: "# AGENTS\nbody\n".to_string(),
+            }],
+        });
+
+        assert!(rendered.contains("forge codex render: 1 assets from repo for user /tmp/codex"));
+        assert!(rendered.contains("--- agents AGENTS.md -> /tmp/codex/AGENTS.md [abc123]"));
+        assert!(rendered.contains("source: /tmp/source/AGENTS.md"));
+        assert!(rendered.contains("# AGENTS\nbody"));
     }
 }

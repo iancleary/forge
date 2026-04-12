@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    fmt::Write as _,
     io::{self, Write},
     path::PathBuf,
 };
@@ -17,11 +18,24 @@ const API_URL: &str = "https://api.linear.app/graphql";
 #[command(name = "linear")]
 #[command(about = "Linear GraphQL wrapper for agent-friendly issue workflows")]
 #[command(version)]
+#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
 struct Cli {
     #[arg(long, global = true, help = "Emit machine-readable JSON")]
     json: bool,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    Human,
+    Json,
+}
+
+impl OutputMode {
+    fn from_json_flag(json: bool) -> Self {
+        if json { Self::Json } else { Self::Human }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -339,37 +353,74 @@ struct ProjectMilestoneMutationResult {
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
+    let args = env::args_os().collect::<Vec<_>>();
+    let wants_json = args.iter().any(|arg| arg.to_str() == Some("--json"));
+    let cli = match Cli::try_parse_from(args) {
+        Ok(cli) => cli,
+        Err(err) => {
+            let exit_code = err.exit_code();
+            match err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    let _ = err.print();
+                }
+                _ if wants_json => {
+                    let error = ErrorEnvelope {
+                        ok: false,
+                        error: ErrorBody {
+                            code: "invalid_usage".to_string(),
+                            message: err.to_string(),
+                        },
+                    };
+                    eprintln!(
+                        "{}",
+                        serde_json::to_string(&error).unwrap_or_else(|_| {
+                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                        })
+                    );
+                }
+                _ => {
+                    let _ = err.print();
+                }
+            }
+            std::process::exit(exit_code);
+        }
+    };
+    let output = OutputMode::from_json_flag(cli.json);
     let result = run(cli).await;
     if let Err(err) = result {
         let error = ErrorEnvelope {
             ok: false,
             error: classify_error(&err),
         };
-        eprintln!(
-            "{}",
-            serde_json::to_string(&error).unwrap_or_else(|_| {
-                "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-            })
-        );
+        match output {
+            OutputMode::Json => eprintln!(
+                "{}",
+                serde_json::to_string(&error).unwrap_or_else(|_| {
+                    "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                })
+            ),
+            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+        }
         std::process::exit(1);
     }
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
         Command::Auth(AuthCommand::Login(args)) => {
             let data = login(args)?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_auth_login_human)?;
             return Ok(());
         }
         Command::Config(args) => {
             let data = write_config_template(args.force)?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_config_init_human)?;
             return Ok(());
         }
         Command::Completions(args) => {
-            print_completions(args.shell);
+            let data = render_completions(args.shell)?;
+            emit_output(output, data, format_completions_human)?;
             return Ok(());
         }
         _ => {}
@@ -382,37 +433,37 @@ async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Viewer => {
             let data = fetch_viewer(&client).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_viewer_human)?;
         }
         Command::Auth(_) | Command::Config(_) | Command::Completions(_) => {
             unreachable!("handled above")
         }
         Command::Team(TeamsCommand::List) => {
             let data = fetch_teams(&client).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_teams_human(data))?;
         }
         Command::Project(ProjectCommand::List(args)) => {
             let data = list_projects(&client, args.limit).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_projects_list_human)?;
         }
         Command::Project(ProjectCommand::View(args)) => {
             let data = read_project(&client, &args.project_id).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_project_human)?;
         }
         Command::Issue(IssuesCommand::List(args)) => {
             let team_id = resolve_team_id(args.team_id, &config)?;
             let data = list_issues(&client, &team_id, args.assigned_to_me, args.limit).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_issues_list_human)?;
         }
         Command::Issue(IssuesCommand::Read(args)) => {
             let data = read_issue(&client, &args.issue_id).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_issue_human("read", data))?;
         }
         Command::Issue(IssuesCommand::Create(args)) => {
             let team_id = resolve_team_id(args.team_id, &config)?;
             let description = resolve_description(args.description, args.description_file)?;
             let data = create_issue(&client, &team_id, &args.title, description.as_deref(), args.state_id.as_deref()).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_issue_mutation_human("create", data))?;
         }
         Command::Issue(IssuesCommand::Update(args)) => {
             let description = resolve_description(args.description, args.description_file)?;
@@ -424,15 +475,15 @@ async fn run(cli: Cli) -> Result<()> {
                 args.state_id.as_deref(),
             )
             .await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_issue_mutation_human("update", data))?;
         }
         Command::Milestone(MilestoneCommand::List(args)) => {
             let data = list_project_milestones(&client, &args.project, args.limit).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_milestones_list_human)?;
         }
         Command::Milestone(MilestoneCommand::View(args)) => {
             let data = read_project_milestone(&client, &args.milestone_id).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_milestone_human("view", data))?;
         }
         Command::Milestone(MilestoneCommand::Create(args)) => {
             let description = resolve_description(args.description, args.description_file)?;
@@ -444,7 +495,7 @@ async fn run(cli: Cli) -> Result<()> {
                 args.target_date.as_deref(),
             )
             .await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_milestone_mutation_human("create", data))?;
         }
         Command::Milestone(MilestoneCommand::Update(args)) => {
             let description = resolve_description(args.description, args.description_file)?;
@@ -456,11 +507,11 @@ async fn run(cli: Cli) -> Result<()> {
                 args.target_date.as_deref(),
             )
             .await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, |data| format_milestone_mutation_human("update", data))?;
         }
         Command::Milestone(MilestoneCommand::Delete(args)) => {
             let data = delete_project_milestone(&client, &args.milestone_id, args.force).await?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_milestone_delete_human)?;
         }
     }
 
@@ -478,9 +529,304 @@ where
     Ok(())
 }
 
-fn print_completions(shell: Shell) {
+fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
+where
+    T: Serialize,
+    F: FnOnce(&T) -> String,
+{
+    match mode {
+        OutputMode::Json => print_json(&Envelope { ok: true, data }),
+        OutputMode::Human => {
+            print_human_text(&human(&data));
+            Ok(())
+        }
+    }
+}
+
+fn print_human_text(text: &str) {
+    if text.ends_with('\n') {
+        print!("{text}");
+    } else {
+        println!("{text}");
+    }
+}
+
+fn render_completions(shell: Shell) -> Result<CompletionsResult> {
     let mut command = Cli::command();
-    generate(shell, &mut command, "linear", &mut std::io::stdout());
+    let mut buffer = Vec::new();
+    generate(shell, &mut command, "linear", &mut buffer);
+    let script = String::from_utf8(buffer).context("failed to render completions script")?;
+    Ok(CompletionsResult {
+        shell: shell.to_string(),
+        script,
+    })
+}
+
+fn format_error_human(error: &ErrorBody) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear error [{}]", error.code);
+    for line in error.message.lines() {
+        let _ = writeln!(out, "{line}");
+    }
+    out.trim_end().to_string()
+}
+
+fn format_auth_login_human(result: &AuthLoginResult) -> String {
+    format!(
+        "linear auth login: wrote token file\npath: {}",
+        result.token_file
+    )
+}
+
+fn format_config_init_human(result: &ConfigInitResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "linear config: {}",
+        if result.created {
+            "wrote config template"
+        } else {
+            "left existing config in place"
+        }
+    );
+    let _ = writeln!(out, "config dir: {}", result.config_dir);
+    let _ = writeln!(out, "config file: {}", result.config_file);
+    let _ = writeln!(out, "token file: {}", result.token_file);
+    out.trim_end().to_string()
+}
+
+fn format_completions_human(result: &CompletionsResult) -> String {
+    result.script.clone()
+}
+
+fn format_viewer_human(viewer: &Viewer) -> String {
+    format!(
+        "linear viewer: {} <{}>\nid: {}",
+        viewer.name, viewer.email, viewer.id
+    )
+}
+
+fn format_teams_human(teams: &[Team]) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear team list: {} teams", teams.len());
+    for (idx, team) in teams.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. {} {} [{}]",
+            idx + 1,
+            team.key.as_deref().unwrap_or("-"),
+            team.name,
+            team.id
+        );
+    }
+    out.trim_end().to_string()
+}
+
+fn format_projects_list_human(result: &ProjectsListResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear project list: {} projects", result.projects.len());
+    for (idx, project) in result.projects.iter().enumerate() {
+        let _ = writeln!(out, "{}. {} [{}]", idx + 1, project.name, project.id);
+        let _ = writeln!(
+            out,
+            "   start: {}  target: {}",
+            project.start_date.as_deref().unwrap_or("-"),
+            project.target_date.as_deref().unwrap_or("-")
+        );
+        if let Some(url) = project.url.as_deref() {
+            let _ = writeln!(out, "   url: {url}");
+        }
+        if let Some(description) = project.description.as_deref() {
+            let _ = writeln!(out, "   {}", preview_human(description, 160));
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_project_human(project: &Project) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear project view: {} [{}]", project.name, project.id);
+    let _ = writeln!(
+        out,
+        "start: {}  target: {}",
+        project.start_date.as_deref().unwrap_or("-"),
+        project.target_date.as_deref().unwrap_or("-")
+    );
+    if let Some(url) = project.url.as_deref() {
+        let _ = writeln!(out, "url: {url}");
+    }
+    if let Some(description) = project.description.as_deref() {
+        out.push('\n');
+        for line in description.lines() {
+            let _ = writeln!(out, "{line}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_issues_list_human(result: &IssuesListResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "linear issue list: {} issues for team {}{}",
+        result.issues.len(),
+        result.team_id,
+        if result.assigned_to_me {
+            " (assigned to me)"
+        } else {
+            ""
+        }
+    );
+    for (idx, issue) in result.issues.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. {} {} [{}] {}",
+            idx + 1,
+            issue.identifier,
+            issue.title,
+            issue.state.as_ref().map(|state| state.name.as_str()).unwrap_or("-"),
+            issue
+                .assignee
+                .as_ref()
+                .map(|assignee| assignee.name.as_str())
+                .unwrap_or("-")
+        );
+        if let Some(url) = issue.url.as_deref() {
+            let _ = writeln!(out, "   url: {url}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_issue_human(command: &str, issue: &Issue) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear issue {command}: {} {}", issue.identifier, issue.title);
+    let _ = writeln!(out, "id: {}", issue.id);
+    let _ = writeln!(
+        out,
+        "state: {}",
+        issue.state.as_ref().map(|state| state.name.as_str()).unwrap_or("-")
+    );
+    let _ = writeln!(
+        out,
+        "assignee: {}",
+        issue
+            .assignee
+            .as_ref()
+            .map(|assignee| assignee.name.as_str())
+            .unwrap_or("-")
+    );
+    if let Some(url) = issue.url.as_deref() {
+        let _ = writeln!(out, "url: {url}");
+    }
+    if let Some(description) = issue.description.as_deref() {
+        out.push('\n');
+        for line in description.lines() {
+            let _ = writeln!(out, "{line}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_issue_mutation_human(command: &str, result: &MutationResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "linear issue {command}: {}",
+        if result.success { "success" } else { "failed" }
+    );
+    if let Some(issue) = result.issue.as_ref() {
+        out.push('\n');
+        out.push_str(&format_issue_human(command, issue));
+    }
+    out.trim_end().to_string()
+}
+
+fn format_milestones_list_human(result: &ProjectMilestonesListResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "linear milestone list: {} milestones for project {}",
+        result.milestones.len(),
+        result.project_id
+    );
+    for (idx, milestone) in result.milestones.iter().enumerate() {
+        let _ = writeln!(out, "{}. {} [{}]", idx + 1, milestone.name, milestone.id);
+        let _ = writeln!(
+            out,
+            "   target: {}  sort: {}",
+            milestone.target_date.as_deref().unwrap_or("-"),
+            milestone
+                .sort_order
+                .map(|value| value.to_string())
+                .as_deref()
+                .unwrap_or("-")
+        );
+        if let Some(project) = milestone.project.as_ref() {
+            let _ = writeln!(out, "   project: {} [{}]", project.name, project.id);
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_milestone_human(command: &str, milestone: &ProjectMilestone) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "linear milestone {command}: {} [{}]", milestone.name, milestone.id);
+    let _ = writeln!(
+        out,
+        "target: {}  sort: {}",
+        milestone.target_date.as_deref().unwrap_or("-"),
+        milestone
+            .sort_order
+            .map(|value| value.to_string())
+            .as_deref()
+            .unwrap_or("-")
+    );
+    if let Some(project) = milestone.project.as_ref() {
+        let _ = writeln!(out, "project: {} [{}]", project.name, project.id);
+    }
+    if let Some(description) = milestone.description.as_deref() {
+        out.push('\n');
+        for line in description.lines() {
+            let _ = writeln!(out, "{line}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_milestone_mutation_human(
+    command: &str,
+    result: &ProjectMilestoneMutationResult,
+) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "linear milestone {command}: {}",
+        if result.success { "success" } else { "failed" }
+    );
+    if let Some(milestone) = result.project_milestone.as_ref() {
+        out.push('\n');
+        out.push_str(&format_milestone_human(command, milestone));
+    }
+    out.trim_end().to_string()
+}
+
+fn format_milestone_delete_human(result: &MilestoneDeleteResult) -> String {
+    format!(
+        "linear milestone delete: {} [{}]",
+        if result.success { "deleted" } else { "failed" },
+        result.milestone_id
+    )
+}
+
+fn preview_human(text: &str, max_chars: usize) -> String {
+    let single_line = text.replace('\n', " ").trim().to_string();
+    if single_line.chars().count() <= max_chars {
+        single_line
+    } else {
+        let preview = single_line.chars().take(max_chars).collect::<String>();
+        format!("{preview}...")
+    }
 }
 
 fn load_config() -> Result<ConfigFile> {
@@ -505,6 +851,18 @@ struct ConfigInitResult {
 struct AuthLoginResult {
     token_file: String,
     created: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CompletionsResult {
+    shell: String,
+    script: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MilestoneDeleteResult {
+    milestone_id: String,
+    success: bool,
 }
 
 fn write_config_template(force: bool) -> Result<ConfigInitResult> {
@@ -994,7 +1352,7 @@ async fn delete_project_milestone(
     client: &Client,
     milestone_id: &str,
     force: bool,
-) -> Result<Value> {
+) -> Result<MilestoneDeleteResult> {
     if !force {
         bail!("milestone delete requires --force");
     }
@@ -1006,7 +1364,12 @@ async fn delete_project_milestone(
         }
     "#;
     let data = graphql(client, query, Some(json!({ "id": milestone_id }))).await?;
-    Ok(data["projectMilestoneDelete"].clone())
+    Ok(MilestoneDeleteResult {
+        milestone_id: milestone_id.to_string(),
+        success: data["projectMilestoneDelete"]["success"]
+            .as_bool()
+            .unwrap_or(false),
+    })
 }
 
 async fn graphql(client: &Client, query: &str, variables: Option<Value>) -> Result<Value> {
@@ -1107,5 +1470,80 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     ErrorBody {
         code: code.to_string(),
         message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_level_help_documents_output_contract() {
+        let mut cmd = Cli::command();
+        let help = cmd.render_long_help().to_string();
+
+        assert!(help.contains("Default output is human-readable."));
+        assert!(help.contains("Use --json for compact machine-readable JSON."));
+    }
+
+    #[test]
+    fn viewer_human_output_is_readable() {
+        let rendered = format_viewer_human(&Viewer {
+            id: "usr_123".to_string(),
+            name: "Ian Cleary".to_string(),
+            email: "ian@example.com".to_string(),
+        });
+
+        assert!(rendered.contains("linear viewer: Ian Cleary <ian@example.com>"));
+        assert!(rendered.contains("id: usr_123"));
+    }
+
+    #[test]
+    fn issues_list_human_output_lists_issues() {
+        let rendered = format_issues_list_human(&IssuesListResult {
+            team_id: "team_123".to_string(),
+            assigned_to_me: true,
+            issues: vec![Issue {
+                id: "iss_123".to_string(),
+                identifier: "ENG-123".to_string(),
+                title: "Ship output contract".to_string(),
+                description: None,
+                url: Some("https://linear.app/issue/ENG-123".to_string()),
+                state: Some(IssueState {
+                    id: "state_1".to_string(),
+                    name: "In Progress".to_string(),
+                }),
+                assignee: Some(IssueAssignee {
+                    id: "usr_123".to_string(),
+                    name: "Ian".to_string(),
+                }),
+            }],
+        });
+
+        assert!(rendered.contains("linear issue list: 1 issues for team team_123 (assigned to me)"));
+        assert!(rendered.contains("1. ENG-123 Ship output contract [In Progress] Ian"));
+        assert!(rendered.contains("url: https://linear.app/issue/ENG-123"));
+    }
+
+    #[test]
+    fn milestone_delete_human_output_is_readable() {
+        let rendered = format_milestone_delete_human(&MilestoneDeleteResult {
+            milestone_id: "mil_123".to_string(),
+            success: true,
+        });
+
+        assert_eq!(rendered, "linear milestone delete: deleted [mil_123]");
+    }
+
+    #[test]
+    fn human_error_output_is_not_json() {
+        let rendered = format_error_human(&ErrorBody {
+            code: "validation_error".to_string(),
+            message: "missing team_id".to_string(),
+        });
+
+        assert!(rendered.starts_with("linear error [validation_error]"));
+        assert!(rendered.contains("missing team_id"));
+        assert!(!rendered.contains("{\"ok\":false"));
     }
 }

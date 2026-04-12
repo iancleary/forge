@@ -4,7 +4,13 @@ This document defines the Forge-style `linear`.
 
 ## Goal
 
-Provide a narrow, JSON-first Linear wrapper in Rust that gives Codex stable access to the Linear GraphQL API for common issue, project, and milestone workflows.
+Provide a narrow Linear wrapper in Rust that gives Codex stable access to the Linear GraphQL API for common issue, project, and milestone workflows.
+
+Output contract:
+
+- human-readable text by default
+- compact JSON envelope with `--json`
+- no pretty-printed JSON on the agent path
 
 This is not a full port of `schpet/linear-cli`. It borrows the useful command shape from the upstream CLI, but trims the scope down to explicit agent-friendly primitives.
 
@@ -20,11 +26,11 @@ The upstream `linear` CLI includes VCS-aware issue workflows, interactive prompt
 
 Forge's `linear` intentionally keeps a smaller contract:
 
-- JSON-first output
+- human-readable default output with compact `--json` when agents need structured data
 - explicit read and write verbs
 - no hidden Git or `gh` side effects
 - no browser/app launching
-- no interactive prompts in v1
+- interactive prompts only for local auth bootstrap when `auth login` is run without `--api-key`
 
 That means some upstream commands are mirrored directly, some are adapted, and some remain out of scope.
 

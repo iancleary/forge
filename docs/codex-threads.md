@@ -8,14 +8,20 @@ Provide a fast, low-noise way to search and read old Codex sessions without hand
 
 The source data lives in `~/.codex/sessions` and `~/.codex/session_index.jsonl`. This CLI builds a compact local index and exposes agent-friendly commands on top of it.
 
+Output contract:
+
+- human-readable text by default
+- compact JSON envelope with `--json`
+- no pretty-printed JSON on the agent path
+
 ## Command Surface
 
 ```sh
-codex-threads --json sync
-codex-threads --json messages search "build a CLI" --limit 20
-codex-threads --json threads resolve "tweet idea"
-codex-threads --json threads read <session-id>
-codex-threads --json events read <session-id> --limit 50
+codex-threads sync
+codex-threads messages search "build a CLI" --limit 20
+codex-threads threads resolve "tweet idea"
+codex-threads threads read <session-id>
+codex-threads events read <session-id> --limit 50
 ```
 
 ## Scope

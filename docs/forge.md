@@ -16,6 +16,12 @@ Forge also owns the explicit deployment path for the narrow set of user-scoped C
 
 ## Commands
 
+Default output contract for every `forge` command:
+
+- human-readable text by default
+- compact JSON envelope with `--json`
+- no pretty-printed JSON on the agent path
+
 ### `forge doctor`
 
 ```sh
@@ -37,6 +43,7 @@ Behavior:
 - default output is optimized for fast, effective visual scanning by a human reader
 - `--json` emits deterministic machine-readable output with minimal tokens for agent handoff and chaining
 - `--json` should stay compact rather than pretty-printed because token efficiency matters more than readability on the agent path
+- errors follow the same contract: human-readable by default, compact JSON with `--json`
 - agent skills should prefer `--json` when chaining Forge output into later reasoning or commands
 - remediation is included for failing or warning checks
 - upgrade commands may also be included for installed tools
@@ -140,7 +147,8 @@ Behavior:
 - defaults to `user`, which maps to `~/.codex`
 - supports `path:<abs-path>` targets for testing and explicit non-default installs
 - uses repo source when running from a Forge checkout unless `--source release` is selected explicitly
-- emits deterministic JSON that includes rendered content and the resolved target paths
+- default output renders human-readable file sections
+- `--json` emits deterministic compact JSON that includes rendered content and the resolved target paths
 
 ### `forge codex diff`
 
