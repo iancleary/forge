@@ -43,9 +43,20 @@ fn cli_install_and_status_use_mainline_user_target() {
     let install_root = home_dir.join(".agents").join("skills");
     fs::create_dir_all(&config_dir).expect("create config dir");
     fs::create_dir_all(&install_root).expect("create install root");
+    let repo_root = repo_root();
+    let repo_root_str = repo_root.to_string_lossy().into_owned();
 
     let install = run_forge(
-        &["--json", "skills", "install", "--all", "--source", "repo"],
+        &[
+            "--json",
+            "skills",
+            "install",
+            "--all",
+            "--source",
+            "repo",
+            "--repo-path",
+            repo_root_str.as_str(),
+        ],
         &config_dir,
         &home_dir,
     );
@@ -71,11 +82,9 @@ fn cli_install_and_status_use_mainline_user_target() {
     let entries = status_json["data"]["entries"]
         .as_array()
         .expect("status entries array");
-    assert!(
-        entries
-            .iter()
-            .any(|entry| { entry["target_kind"] == "user" && entry["target_role"] == "mainline" })
-    );
+    assert!(entries
+        .iter()
+        .any(|entry| { entry["target_kind"] == "user" && entry["target_role"] == "mainline" }));
     assert!(!entries.iter().any(|entry| entry["target_kind"] == "path"));
 
     let _ = fs::remove_dir_all(root);
@@ -91,22 +100,14 @@ fn cli_errors_have_stable_codes_for_common_mistakes() {
 
     let invalid_target = run_forge(
         &[
-            "--json",
-            "skills",
-            "install",
-            "--all",
-            "--source",
-            "release",
-            "--target",
-            "path:rel",
+            "--json", "skills", "install", "--all", "--source", "release", "--target", "path:rel",
         ],
         &config_dir,
         &home_dir,
     );
     assert!(!invalid_target.status.success());
-    let err: Value =
-        serde_json::from_str(String::from_utf8(invalid_target.stderr).unwrap().trim())
-            .expect("error json");
+    let err: Value = serde_json::from_str(String::from_utf8(invalid_target.stderr).unwrap().trim())
+        .expect("error json");
     assert_eq!(err["ok"], false);
     assert_eq!(err["error"]["code"], "invalid_target");
 
@@ -173,12 +174,36 @@ fn cli_parse_errors_honor_json_flag() {
         .expect("parse error json");
     assert_eq!(err["ok"], false);
     assert_eq!(err["error"]["code"], "invalid_usage");
-    assert!(
-        err["error"]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("unexpected argument '--source'")
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("unexpected argument '--source'"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cli_self_update_rejects_repo_mode_flags() {
+    let root = temp_path("self-update-release-only");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let output = run_forge(
+        &["--json", "self", "update", "--repo-path", "/tmp/forge"],
+        &config_dir,
+        &home_dir,
     );
+    assert!(!output.status.success());
+    let err: Value = serde_json::from_str(String::from_utf8(output.stderr).unwrap().trim())
+        .expect("parse error json");
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["error"]["code"], "invalid_usage");
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("unexpected argument '--repo-path'"));
 
     let _ = fs::remove_dir_all(root);
 }

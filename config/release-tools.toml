@@ -1,0 +1,28 @@
+version = 1
+managed_root_files = ["state.toml"]
+obsolete_root_files = ["config.toml"]
+
+[[tools]]
+id = "forge"
+binary = "forge"
+
+[[tools]]
+id = "codex_threads"
+binary = "codex-threads"
+
+[[tools]]
+id = "linear"
+binary = "linear"
+config_dir = "linear"
+
+[[tools]]
+id = "slack_agent"
+binary = "slack-agent"
+config_dir = "slack-agent"
+
+[[tools]]
+id = "slack_query"
+binary = "slack-query"
+config_dir = "slack-query"
+legacy_binaries = ["slack-cli"]
+legacy_config_dirs = ["slack-cli"]
