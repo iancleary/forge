@@ -82,7 +82,7 @@ fn cli_install_and_status_use_mainline_user_target() {
 }
 
 #[test]
-fn cli_errors_use_specific_codes_for_common_mistakes() {
+fn cli_errors_have_stable_codes_for_common_mistakes() {
     let root = temp_path("error-codes");
     let config_dir = root.join("config");
     let home_dir = root.join("home");
@@ -104,21 +104,18 @@ fn cli_errors_use_specific_codes_for_common_mistakes() {
         &home_dir,
     );
     assert!(!invalid_target.status.success());
-    let stderr = String::from_utf8(invalid_target.stderr).expect("stderr utf8");
-    let err_json: Value = serde_json::from_str(stderr.trim()).expect("error json");
-    assert_eq!(err_json["ok"], false);
-    assert_eq!(err_json["error"]["code"], "invalid_target");
+    let err: Value =
+        serde_json::from_str(String::from_utf8(invalid_target.stderr).unwrap().trim())
+            .expect("error json");
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["error"]["code"], "invalid_target");
 
-    let invalid_usage = run_forge(
-        &["--json", "skills", "validate"],
-        &config_dir,
-        &home_dir,
-    );
+    let invalid_usage = run_forge(&["--json", "skills", "validate"], &config_dir, &home_dir);
     assert!(!invalid_usage.status.success());
-    let stderr = String::from_utf8(invalid_usage.stderr).expect("stderr utf8");
-    let err_json: Value = serde_json::from_str(stderr.trim()).expect("error json");
-    assert_eq!(err_json["ok"], false);
-    assert_eq!(err_json["error"]["code"], "invalid_usage");
+    let err: Value = serde_json::from_str(String::from_utf8(invalid_usage.stderr).unwrap().trim())
+        .expect("error json");
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["error"]["code"], "invalid_usage");
 
     let _ = fs::remove_dir_all(root);
 }

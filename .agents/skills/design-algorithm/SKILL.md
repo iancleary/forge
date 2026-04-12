@@ -78,3 +78,15 @@ Before finalizing a design, answer:
 - What became simpler?
 - What loop became faster?
 - Why is automation justified now instead of earlier?
+
+## Inputs
+
+- job-to-be-done + candidate surface
+
+## Output
+
+- smallest surviving contract (or explicit “do nothing”) + justification
+
+## Checks
+
+- refuse scope growth justified only by analogy or hypothetical future needs

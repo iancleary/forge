@@ -61,3 +61,15 @@ When using this skill, the resulting GitHub body workflow should be:
 - file-backed for substantial markdown
 - easy to inspect before submission
 - resistant to shell quoting and interpolation errors
+
+## Inputs
+
+- issue/PR target + markdown body (or outline)
+
+## Output
+
+- `/tmp/...md` body file + `gh ... --body-file /tmp/...md`
+
+## Checks
+
+- verify the file content before running `gh`

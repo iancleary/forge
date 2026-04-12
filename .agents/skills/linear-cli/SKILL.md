@@ -36,3 +36,15 @@ Common flow:
 2. Discover IDs with `team list`, `project list`, or `issue read`.
 3. Perform the narrow read or explicit mutation the user requested.
 4. Return the key fields from JSON rather than dumping full payloads.
+
+## Inputs
+
+- IDs (issue/project/team) or a query + read vs mutate intent
+
+## Output
+
+- narrow `linear --json ...` commands + key fields summary
+
+## Checks
+
+- start with a small `--limit`; expand only if needed
