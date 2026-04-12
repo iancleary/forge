@@ -64,14 +64,12 @@ When using this skill, the resulting GitHub body workflow should be:
 
 ## Inputs
 
-- issue/PR number or target repo + title
-- the markdown body content (or an outline to fill in)
+- issue/PR target + markdown body (or outline)
 
 ## Output
 
-- a `/tmp/...md` body file written via `apply_patch`
-- a `gh ... --body-file /tmp/...md` command that applies it
+- `/tmp/...md` body file + `gh ... --body-file /tmp/...md`
 
 ## Checks
 
-- confirm the body file exists and is readable before running `gh`
+- verify the file content before running `gh`

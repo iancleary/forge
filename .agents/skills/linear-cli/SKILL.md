@@ -39,14 +39,12 @@ Common flow:
 
 ## Inputs
 
-- Linear IDs (issue/project/team) or a search query
-- whether the user wants a read vs a mutation
+- IDs (issue/project/team) or a query + read vs mutate intent
 
 ## Output
 
-- the narrowest `linear --json ...` command(s) needed
-- a short summary of the key fields from JSON (not a full dump)
+- narrow `linear --json ...` commands + key fields summary
 
 ## Checks
 
-- start with a small `--limit`; only expand if the first result set is insufficient
+- start with a small `--limit`; expand only if needed

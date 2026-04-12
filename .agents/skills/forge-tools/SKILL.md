@@ -37,14 +37,12 @@ If the user names a specific Forge binary, switch to that crate skill immediatel
 
 ## Inputs
 
-- the user’s job-to-be-done and any known system (Linear/Slack/Codex sessions/Forge admin)
-- any concrete IDs or URLs already provided
+- job-to-be-done + any known system/IDs/URLs
 
 ## Output
 
-- the single best matching Forge skill to use next
-- the first narrow CLI command to run (with `--json` and small limits)
+- next skill to use + first narrow `--json` command
 
 ## Checks
 
-- prefer a minimal read first; expand limits only if needed
+- start with a minimal read; expand only if needed

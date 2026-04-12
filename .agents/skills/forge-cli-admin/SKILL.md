@@ -39,14 +39,12 @@ Safety:
 
 ## Inputs
 
-- whether the user wants status/inspection vs a mutation
-- any explicit `--repo-path` override if needed
+- status vs mutate intent (+ any `--repo-path` override)
 
 ## Output
 
-- the narrowest `forge ... --json` command(s) that match the request
-- a short summary of the key JSON fields (not a full dump)
+- narrow `forge ... --json` commands + key fields summary
 
 ## Checks
 
-- prefer `doctor`/`permissions check`/`self update-check` before running their mutating counterparts
+- prefer check/diff before apply (doctor/permissions check/update-check)

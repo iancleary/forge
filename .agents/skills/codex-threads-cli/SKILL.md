@@ -40,14 +40,12 @@ Common flow:
 
 ## Inputs
 
-- a query phrase, session id, or timeframe hint
-- whether normalized thread output is sufficient vs raw events needed
+- query/session id + whether threads vs events are needed
 
 ## Output
 
-- the narrowest `codex-threads --json ...` command(s) needed
-- a short extraction of the specific messages/events relevant to the user’s question
+- narrow `codex-threads --json ...` commands + extracted relevant messages/events
 
 ## Checks
 
-- keep `--limit` small first, especially for `events read`
+- keep `--limit` small first (especially `events read`)

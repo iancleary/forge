@@ -81,13 +81,12 @@ Before finalizing a design, answer:
 
 ## Inputs
 
-- the proposed job-to-be-done and any candidate command surface
+- job-to-be-done + candidate surface
 
 ## Output
 
-- the smallest surviving contract (or an explicit “do nothing”)
-- the deletion/simplification decisions that justify it
+- smallest surviving contract (or explicit “do nothing”) + justification
 
 ## Checks
 
-- refuse scope growth that is justified only by analogy or hypothetical future needs
+- refuse scope growth justified only by analogy or hypothetical future needs

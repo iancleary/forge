@@ -39,14 +39,12 @@ Common flow:
 
 ## Inputs
 
-- Slack permalink URL or a query + channel hint
-- desired context window (limits / before / after)
+- permalink or query + desired context window
 
 ## Output
 
-- the narrowest `slack-cli ... --json` command(s) to retrieve evidence
-- a short evidence summary with permalinks/IDs for traceability
+- narrow `slack-cli ... --json` commands + evidence summary
 
 ## Checks
 
-- keep `--limit` small first; expand only if the evidence is incomplete
+- keep `--limit` small first; expand only if needed
