@@ -31,13 +31,13 @@ Installed Forge skills also carry this sequence through the `design-algorithm` m
 
 Forge uses semver-compatible calendar versioning:
 
-- format: `YYYY.MMDD.N`
-- example: `2026.410.0`
+- format: `YYYYMMDD.N`
+- example: `20260410.0`
 - `YYYY` is the calendar year
-- `MMDD` is month and day without separators
+- `MMDD` is month and day with two digits each
 - `N` is the release counter for that day
 
-This sorts better for Cargo than build metadata forms such as `2026.4.10+0`.
+This keeps the date fixed-width while staying Cargo- and semver-safe.
 
 ## Install And Run
 
