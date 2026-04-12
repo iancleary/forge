@@ -53,6 +53,13 @@ Ask first:
 
 ## Workflows
 
+### GitHub
+
+- Prefer `gh` for GitHub issue, pull request, review, and comment workflows when an equivalent CLI path exists.
+- For substantial issue bodies, pull request bodies, or markdown-heavy updates, write the content to a local markdown file and pass it with `--body-file` when the CLI supports it.
+- Keep short one-line bodies inline only when there is no meaningful quoting or interpolation risk.
+- Prefer file-backed bodies because they are easier to review and less likely to break on backticks, `$HOME`-style paths, angle brackets, or multiline markdown.
+
 ### Debugging
 
 - Investigate root cause before proposing fixes.
@@ -83,7 +90,7 @@ Ask first:
 
 - Treat skill `description` frontmatter as the primary routing contract.
 - Use router skills first when the right narrow skill is not obvious.
-- Prefer user-scoped skills installed under `$HOME/.agents/skills` for portable cross-repo behavior.
+- Prefer user-scoped skills installed under `~/.agents/skills` for portable cross-repo behavior.
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
 
 ## Notes
