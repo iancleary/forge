@@ -64,6 +64,14 @@ Before committing:
 - if the CLI talks to a real external API, verify at least the core read path live when practical
 - prefer doing heavy lifting inside the CLI rather than leaving filtering or normalization to the LLM
 
+## Adding A New CLI
+
+When you add, remove, or rename a binary CLI crate under `crates/`:
+
+- update the embedded `FORGE_BINARIES` list in `scripts/install-forge-release.sh`
+- ensure the crate directory name matches the binary name (`crates/<bin>/src/main.rs`)
+- run `just install-list-check` (fails if a binary crate exists but is not listed)
+
 ## Versioning And Releases
 
 - use semver-compatible CalVer: `YYYY.MMDD.N`

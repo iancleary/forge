@@ -6,8 +6,7 @@ usage() {
 install-forge-dev-local.sh
 
 Dev-only installer for an already-present local checkout:
-  - discovers all workspace binary crates via `cargo metadata`
-  - installs each with `cargo install`
+  - installs the binaries listed in scripts/install-forge-release.sh via `cargo install`
 
 Usage:
   scripts/install-forge-dev-local.sh [--path PATH] [--no-force]
@@ -52,7 +51,6 @@ need_cmd() {
 }
 
 need_cmd cargo
-need_cmd python3
 
 if [[ -z "$repo_root" ]]; then
   if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -67,31 +65,36 @@ if [[ ! -f "$repo_root/Cargo.toml" ]]; then
   exit 1
 fi
 
-bin_packages() {
-  cargo metadata --no-deps --format-version 1 --manifest-path "$repo_root/Cargo.toml" \
-    | python3 - <<'PY'
-import json, sys
-data = json.load(sys.stdin)
-pkgs = []
-for p in data.get("packages", []):
-    if any("bin" in t.get("kind", []) for t in p.get("targets", [])):
-        pkgs.append(p["name"])
-for name in pkgs:
-    print(name)
-PY
-}
-
-mapfile -t pkgs < <(bin_packages)
-if [[ ${#pkgs[@]} -eq 0 ]]; then
-  echo "error: no binary packages found in workspace at $repo_root" >&2
+release_installer="$repo_root/scripts/install-forge-release.sh"
+if [[ ! -f "$release_installer" ]]; then
+  echo "error: missing release installer: $release_installer" >&2
   exit 1
 fi
 
-echo "Installing ${#pkgs[@]} binaries from local checkout: $repo_root"
-printf '  - %s\n' "${pkgs[@]}"
+echo "Installing Forge binaries from local checkout: $repo_root"
 
-for pkg in "${pkgs[@]}"; do
-  # --path is the workspace root; -p selects the package (binary crate).
-  cargo install --locked $force --path "$repo_root" -p "$pkg"
+extract_bins() {
+  # Single source of truth: binaries list embedded in scripts/install-forge-release.sh.
+  sed -n '/^  # BEGIN FORGE_BINARIES$/,/^  # END FORGE_BINARIES$/p' "$release_installer" \
+    | sed -e '1d' -e '$d' \
+    | sed -e "/^  cat <<'EOF'$/d" -e '/^EOF$/d' \
+    | sed -e 's/[[:space:]]*$//' -e '/^$/d' -e '/^#/d'
+}
+
+extract_bins | while IFS= read -r bin; do
+  case "$bin" in
+    ""|\#*)
+      continue
+      ;;
+  esac
+
+  echo "  - $bin"
+
+  crate_dir="$repo_root/crates/$bin"
+  if [[ ! -f "$crate_dir/Cargo.toml" ]]; then
+    echo "error: expected crate directory with Cargo.toml: $crate_dir" >&2
+    exit 1
+  fi
+
+  cargo install --locked $force --path "$crate_dir"
 done
-

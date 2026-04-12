@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/instal
 That installer:
 
 - resolves the latest published Forge release tag by default
-- installs the four Forge binaries from that tagged release source
+- installs the Forge binaries listed in `scripts/install-forge-release.sh` from that tagged release source
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
@@ -97,11 +97,14 @@ If Forge is your first-party Codex source of truth, treat the repo docs plus the
 From a local checkout:
 
 ```sh
-cargo install --path crates/forge
-cargo install --path crates/slack-cli
-cargo install --path crates/codex-threads
-cargo install --path crates/linear
+just install-dev-local
 forge skills install --all --source repo --target user
+```
+
+When adding or removing CLIs, update the embedded list in `scripts/install-forge-release.sh` and ensure the repo check passes:
+
+```sh
+just install-list-check
 ```
 
 From an installed Forge release or after pointing an agent at this repo:

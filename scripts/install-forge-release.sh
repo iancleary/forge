@@ -40,6 +40,18 @@ resolve_latest_tag() {
   printf '%s\n' "$tag"
 }
 
+default_binaries() {
+  # Single source of truth for which binaries the installer manages.
+  # BEGIN FORGE_BINARIES
+  cat <<'EOF'
+forge
+codex-threads
+linear
+slack-cli
+EOF
+  # END FORGE_BINARIES
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --tag)
@@ -77,10 +89,10 @@ fi
 
 echo "Installing Forge CLIs from ${REPO_URL} @ ${REF}"
 
-cargo install --git "$REPO_URL" --tag "$REF" --locked --force forge
-cargo install --git "$REPO_URL" --tag "$REF" --locked --force codex-threads
-cargo install --git "$REPO_URL" --tag "$REF" --locked --force linear
-cargo install --git "$REPO_URL" --tag "$REF" --locked --force slack-cli
+default_binaries | while IFS= read -r bin; do
+  [ -n "$bin" ] || continue
+  cargo install --git "$REPO_URL" --tag "$REF" --locked --force "$bin"
+done
 
 export PATH="$HOME/.cargo/bin:$PATH"
 

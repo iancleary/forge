@@ -21,7 +21,10 @@ clippy:
 test:
   cargo test
 
-ci: fmt-check clippy test
+install-list-check:
+  sh "{{root}}/scripts/check-forge-binaries.sh"
+
+ci: fmt-check clippy test install-list-check
 
 doc:
   cargo doc --no-deps
@@ -44,4 +47,3 @@ install-dev-local:
 
 install-dev-repo:
   "{{root}}/scripts/install-forge-dev.sh" repo
-
