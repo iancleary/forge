@@ -1,9 +1,9 @@
 ---
-name: forge-cli-admin
-description: Use the Forge `forge` CLI for local Forge permissions, config, and self-update management. See `forge-tools` first if the right Forge CLI is not obvious.
+name: forge-cli
+description: Use the Forge `forge` CLI for local Forge management: doctor, permissions, self-update, managed skills, and Codex asset deployment. See `forge-tools` first if the right Forge CLI is not obvious.
 ---
 
-# Forge CLI Admin
+# Forge CLI
 
 This skill covers the top-level `forge` binary. If the task may belong to another Forge CLI, check `forge-tools` first and then use this skill when the request is clearly about local Forge management.
 
@@ -17,6 +17,7 @@ Use these commands first:
 - `forge self update-check --json`
 - `forge self update --json`
 - `forge skills status --json`
+- `forge codex diff --json`
 
 Working rules:
 
@@ -34,7 +35,8 @@ Working rules:
 Safety:
 
 - `permissions fix` changes local file modes.
-- `self update` changes the local Forge checkout.
+- `self update` changes the local Forge install.
+- `forge codex install` writes user-scoped Codex assets.
 - Do not run modifying commands unless the user asked for them or clearly approved the local mutation.
 
 ## Inputs
@@ -47,4 +49,4 @@ Safety:
 
 ## Checks
 
-- prefer check/diff before apply (doctor/permissions check/update-check)
+- prefer check/diff before apply (doctor/permissions check/update-check/codex diff)

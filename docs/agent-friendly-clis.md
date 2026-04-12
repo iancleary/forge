@@ -242,9 +242,10 @@ When a repo ships multiple agent-friendly CLIs, prefer:
 For this repo, that means:
 
 - `linear-cli`
-- `slack-query-research`
+- `slack-query-cli`
+- `slack-agent-cli`
 - `codex-threads-cli`
-- `forge-cli-admin`
+- `forge-cli`
 - `forge-tools` as a short entry point that routes Codex to the correct crate skill
 
 Keep the router skill short. It should help Codex choose the right CLI, not duplicate every command rule from every crate skill.

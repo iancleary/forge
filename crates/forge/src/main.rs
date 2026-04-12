@@ -1300,9 +1300,10 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             for required in [
                 "design-algorithm",
                 "linear-cli",
-                "slack-query-research",
+                "slack-query-cli",
+                "slack-agent-cli",
                 "codex-threads-cli",
-                "forge-cli-admin",
+                "forge-cli",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -3935,9 +3936,10 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("design-algorithm"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
-        embedded_skill!("slack-query-research"),
+        embedded_skill!("slack-query-cli"),
+        embedded_skill!("slack-agent-cli"),
         embedded_skill!("codex-threads-cli"),
-        embedded_skill!("forge-cli-admin"),
+        embedded_skill!("forge-cli"),
     ]
 }
 
@@ -5030,7 +5032,11 @@ EOF
         assert!(contract
             .skills
             .iter()
-            .any(|skill| skill.name == "slack-query-research"));
+            .any(|skill| skill.name == "slack-query-cli"));
+        assert!(contract
+            .skills
+            .iter()
+            .any(|skill| skill.name == "slack-agent-cli"));
     }
 
     #[test]
@@ -5107,8 +5113,8 @@ EOF
 
         let legacy_skill = load_release_skills()
             .into_iter()
-            .find(|skill| skill.name == "slack-query-research")
-            .expect("slack-query-research release skill");
+            .find(|skill| skill.name == "slack-query-cli")
+            .expect("slack-query-cli release skill");
         let legacy_root = skills_root.join("slack-cli-research");
         write_skill_definition(&legacy_root, &legacy_skill).expect("write legacy skill dir");
 
@@ -5139,15 +5145,12 @@ EOF
 
         assert_eq!(migrated, 1);
         assert!(!legacy_root.exists());
-        assert!(skills_root.join("slack-query-research").exists());
-        assert_eq!(
-            state.managed_skill_installs[0].skill_name,
-            "slack-query-research"
-        );
+        assert!(skills_root.join("slack-query-cli").exists());
+        assert_eq!(state.managed_skill_installs[0].skill_name, "slack-query-cli");
         assert_eq!(
             state.managed_skill_installs[0].target_path,
             skills_root
-                .join("slack-query-research")
+                .join("slack-query-cli")
                 .display()
                 .to_string()
         );

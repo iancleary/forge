@@ -31,9 +31,10 @@ Initial Forge-managed skills:
 - `gh-body-file`
 - `forge-tools`
 - `linear-cli`
-- `slack-query-research`
+- `slack-query-cli`
+- `slack-agent-cli`
 - `codex-threads-cli`
-- `forge-cli-admin`
+- `forge-cli`
 
 Repo source of truth during development:
 

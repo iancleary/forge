@@ -13,11 +13,15 @@ name = "gh-body-file"
 name = "linear-cli"
 
 [[skills]]
-name = "slack-query-research"
-legacy_names = ["slack-cli-research"]
+name = "slack-query-cli"
+legacy_names = ["slack-query-research", "slack-cli-research"]
+
+[[skills]]
+name = "slack-agent-cli"
 
 [[skills]]
 name = "codex-threads-cli"
 
 [[skills]]
-name = "forge-cli-admin"
+name = "forge-cli"
+legacy_names = ["forge-cli-admin"]

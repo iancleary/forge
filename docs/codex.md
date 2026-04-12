@@ -91,7 +91,7 @@ Forge should use router skills to keep routing explicit and compact.
 Current pattern:
 
 - `forge-tools` is the entry router for Forge-authored tools
-- crate-specific skills such as `linear-cli` and `slack-query-research` handle domain execution
+- crate-specific skills such as `linear-cli`, `slack-query-cli`, and `slack-agent-cli` handle domain execution
 - shared operating skills such as `design-algorithm` handle shaping and reduction work that crosses domains
 
 Router skills should:
