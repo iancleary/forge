@@ -36,3 +36,17 @@ Safety:
 - `permissions fix` changes local file modes.
 - `self update` changes the local Forge checkout.
 - Do not run modifying commands unless the user asked for them or clearly approved the local mutation.
+
+## Inputs
+
+- whether the user wants status/inspection vs a mutation
+- any explicit `--repo-path` override if needed
+
+## Output
+
+- the narrowest `forge ... --json` command(s) that match the request
+- a short summary of the key JSON fields (not a full dump)
+
+## Checks
+
+- prefer `doctor`/`permissions check`/`self update-check` before running their mutating counterparts

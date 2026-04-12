@@ -34,3 +34,17 @@ Adjacent capabilities:
 - Avoid direct native GitHub Codex app flows when an equivalent plugin-skill or `gh` workflow exists, because they are less deterministic and more likely to trigger extra permission prompts.
 
 If the user names a specific Forge binary, switch to that crate skill immediately.
+
+## Inputs
+
+- the user’s job-to-be-done and any known system (Linear/Slack/Codex sessions/Forge admin)
+- any concrete IDs or URLs already provided
+
+## Output
+
+- the single best matching Forge skill to use next
+- the first narrow CLI command to run (with `--json` and small limits)
+
+## Checks
+
+- prefer a minimal read first; expand limits only if needed

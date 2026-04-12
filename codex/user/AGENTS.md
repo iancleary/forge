@@ -42,6 +42,8 @@ Ask first:
 - In Rust repos, prefer `just` tasks over raw cargo when a `justfile` exists.
 - Use the repo's documented toolchain instead of forcing a preferred stack.
 - Prefer deterministic, low-noise product surfaces over ad hoc shell reconstruction when the tool already exists.
+- Prefer compact machine output and narrow reads: use `--json` modes, limits, and targeted queries.
+- Avoid pasting full payloads; extract only the few fields needed to proceed.
 
 ## Safety
 

@@ -37,3 +37,17 @@ Common flow:
 2. Search or resolve the target thread.
 3. Read the normalized thread.
 4. Fall back to `events read` only for debugging or deeper inspection.
+
+## Inputs
+
+- a query phrase, session id, or timeframe hint
+- whether normalized thread output is sufficient vs raw events needed
+
+## Output
+
+- the narrowest `codex-threads --json ...` command(s) needed
+- a short extraction of the specific messages/events relevant to the user’s question
+
+## Checks
+
+- keep `--limit` small first, especially for `events read`

@@ -36,3 +36,17 @@ Common flow:
 2. Reuse returned `channel_id`, `message_ts`, and `thread_ts`.
 3. Pull the smallest useful context.
 4. Summarize the relevant Slack evidence.
+
+## Inputs
+
+- Slack permalink URL or a query + channel hint
+- desired context window (limits / before / after)
+
+## Output
+
+- the narrowest `slack-cli ... --json` command(s) to retrieve evidence
+- a short evidence summary with permalinks/IDs for traceability
+
+## Checks
+
+- keep `--limit` small first; expand only if the evidence is incomplete

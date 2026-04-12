@@ -196,7 +196,10 @@ struct SkillsListArgs {
 struct SkillsStatusArgs {
     #[arg(long, value_enum, default_value = "mainline")]
     scope: SkillsStatusScope,
-    #[arg(long, help = "Filter to one target: user, forge_repo, or path:/absolute/path")]
+    #[arg(
+        long,
+        help = "Filter to one target: user, forge_repo, or path:/absolute/path"
+    )]
     target: Option<String>,
     #[arg(
         long,
@@ -2429,15 +2432,25 @@ fn install_release_packages(version: &str) -> Result<()> {
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
     let message = error.to_string();
     let code = match message.as_str() {
+        // User mistakes (stable codes for agent branching).
         msg if msg.contains("provide a skill name or --all") => "invalid_usage",
+        msg if msg.contains("--branch is only supported in repo-checkout mode") => "invalid_usage",
         msg if msg.contains("invalid target:") || msg.contains("path target must be absolute:") => {
             "invalid_target"
         }
-        msg if msg.contains("repo source requires a Forge repo checkout") => "repo_required",
-        msg if msg.contains("forge_repo target requires a configured Forge repo path") => {
+        msg if msg.contains("repo source requires a Forge repo checkout")
+            || msg.contains("forge_repo target requires a configured Forge repo path") =>
+        {
             "repo_required"
         }
         msg if msg.contains("HOME is not set") => "env_error",
+        msg if msg.contains("Operation not permitted")
+            || msg.contains("Permission denied")
+            || msg.contains("failed to write")
+            || msg.contains("failed to create") =>
+        {
+            "permission_error"
+        }
         msg if msg.contains("not a git repository") => "not_git_repo",
         msg if msg.contains("failed to run git") => "git_unavailable",
         msg if msg.contains("git pull --rebase") => "update_failed",
@@ -2446,6 +2459,7 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         {
             "config_error"
         }
+        msg if msg.contains("skill not found:") => "skill_not_found",
         msg if msg.contains("skill") && msg.contains("not found") => "skill_not_found",
         msg if msg.contains("unmanaged") => "unmanaged_collision",
         msg if msg.contains("frontmatter") => "validation_error",
