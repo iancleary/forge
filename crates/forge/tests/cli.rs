@@ -147,3 +147,38 @@ fn cli_self_update_reports_all_unmanaged_collisions_actionably() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn cli_parse_errors_honor_json_flag() {
+    let root = temp_path("parse-error-json");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let output = run_forge(
+        &[
+            "--json",
+            "skills",
+            "revert",
+            "linear-cli",
+            "--source",
+            "release",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(!output.status.success());
+    let err: Value = serde_json::from_str(String::from_utf8(output.stderr).unwrap().trim())
+        .expect("parse error json");
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["error"]["code"], "invalid_usage");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unexpected argument '--source'")
+    );
+
+    let _ = fs::remove_dir_all(root);
+}

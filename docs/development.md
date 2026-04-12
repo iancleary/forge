@@ -48,4 +48,4 @@ forge skills status --target path:/opt/forge-skills
 ## Development Notes
 
 - Prefer `docs/*.md` as the command/spec source of truth; keep implementations aligned with the docs.
-- Prefer JSON-first output for agent consumption.
+- Prefer human-readable default output with compact `--json` for agent consumption.

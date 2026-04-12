@@ -8,6 +8,12 @@ Provide a stable Slack CLI that Codex can use across sessions for deterministic 
 
 The initial implementation is read-heavy and optimized for workspace research. It is not the conversational assistant layer.
 
+Output contract:
+
+- human-readable text by default
+- compact JSON envelope with `--json`
+- no pretty-printed JSON on the agent path
+
 ## Scope
 
 Use the official Slack `slack` CLI for:

@@ -2,6 +2,7 @@ use std::{
     cmp::Reverse,
     collections::HashMap,
     env, fs,
+    fmt::Write as _,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
@@ -14,8 +15,9 @@ use serde_json::Value;
 #[derive(Parser, Debug)]
 #[command(name = "codex-threads")]
 #[command(about = "Search and read local Codex thread archives")]
+#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
 struct Cli {
-    #[arg(long, global = true, help = "Emit machine-readable JSON")]
+    #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
     #[arg(long, global = true, help = "Override the Codex home directory; defaults to ~/.codex or CODEX_HOME")]
     codex_home: Option<PathBuf>,
@@ -23,6 +25,18 @@ struct Cli {
     index_path: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    Human,
+    Json,
+}
+
+impl OutputMode {
+    fn from_json_flag(json: bool) -> Self {
+        if json { Self::Json } else { Self::Human }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -211,48 +225,84 @@ struct SessionBuild {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let args = env::args_os().collect::<Vec<_>>();
+    let wants_json = args.iter().any(|arg| arg.to_str() == Some("--json"));
+    let cli = match Cli::try_parse_from(args) {
+        Ok(cli) => cli,
+        Err(err) => {
+            let exit_code = err.exit_code();
+            match err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    let _ = err.print();
+                }
+                _ if wants_json => {
+                    let error = ErrorEnvelope {
+                        ok: false,
+                        error: ErrorBody {
+                            code: "invalid_usage".to_string(),
+                            message: err.to_string(),
+                        },
+                    };
+                    eprintln!(
+                        "{}",
+                        serde_json::to_string(&error).unwrap_or_else(|_| {
+                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                        })
+                    );
+                }
+                _ => {
+                    let _ = err.print();
+                }
+            }
+            std::process::exit(exit_code);
+        }
+    };
+    let output = OutputMode::from_json_flag(cli.json);
     let result = run(cli);
     if let Err(err) = result {
         let error = ErrorEnvelope {
             ok: false,
             error: classify_error(&err),
         };
-        eprintln!(
-            "{}",
-            serde_json::to_string(&error).unwrap_or_else(|_| {
-                "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-            })
-        );
+        match output {
+            OutputMode::Json => eprintln!(
+                "{}",
+                serde_json::to_string(&error).unwrap_or_else(|_| {
+                    "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
+                })
+            ),
+            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+        }
         std::process::exit(1);
     }
 }
 
 fn run(cli: Cli) -> Result<()> {
     let paths = Paths::from_cli(&cli)?;
+    let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
         Command::Sync => {
             let data = sync_index(&paths)?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_sync_human)?;
         }
         Command::Messages(MessagesCommand::Search(args)) => {
             let index = load_index(&paths)?;
             let data = search_messages(&index, &args.query, args.limit);
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_message_search_human)?;
         }
         Command::Threads(ThreadsCommand::Resolve(args)) => {
             let index = load_index(&paths)?;
             let data = resolve_threads(&index, &args.query, args.limit);
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_threads_resolve_human)?;
         }
         Command::Threads(ThreadsCommand::Read(args)) => {
             let index = load_index(&paths)?;
             let data = read_thread(&index, &args.session_id)?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_thread_read_human)?;
         }
         Command::Events(EventsCommand::Read(args)) => {
             let data = read_events(&paths, &args.session_id, args.limit)?;
-            print_json(&Envelope { ok: true, data })?;
+            emit_output(output, data, format_events_read_human)?;
         }
     }
     Ok(())
@@ -267,6 +317,164 @@ where
         serde_json::to_string(value).context("failed to render JSON output")?
     );
     Ok(())
+}
+
+fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
+where
+    T: Serialize,
+    F: FnOnce(&T) -> String,
+{
+    match mode {
+        OutputMode::Json => print_json(&Envelope { ok: true, data }),
+        OutputMode::Human => {
+            print_human_text(&human(&data));
+            Ok(())
+        }
+    }
+}
+
+fn print_human_text(text: &str) {
+    if text.ends_with('\n') {
+        print!("{text}");
+    } else {
+        println!("{text}");
+    }
+}
+
+fn format_error_human(error: &ErrorBody) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "codex-threads error [{}]", error.code);
+    for line in error.message.lines() {
+        let _ = writeln!(out, "{line}");
+    }
+    out.trim_end().to_string()
+}
+
+fn format_sync_human(result: &SyncResult) -> String {
+    format!(
+        "codex-threads sync: indexed {} sessions and {} messages\nindex: {}",
+        result.session_count, result.message_count, result.index_path
+    )
+}
+
+fn format_message_search_human(result: &MessageSearchResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "codex-threads messages search: {} matches for {:?}",
+        result.matches.len(),
+        result.query
+    );
+    for (idx, message) in result.matches.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. {} [{}] {} {}",
+            idx + 1,
+            message.thread_name,
+            message.session_id,
+            message.timestamp.as_deref().unwrap_or("-"),
+            message.role
+        );
+        let _ = writeln!(out, "   {}", message.preview);
+    }
+    out.trim_end().to_string()
+}
+
+fn format_threads_resolve_human(result: &ThreadsResolveResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "codex-threads threads resolve: {} matches for {:?}",
+        result.matches.len(),
+        result.query
+    );
+    for (idx, thread) in result.matches.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. {} [{}]",
+            idx + 1,
+            thread.thread_name,
+            thread.id
+        );
+        let _ = writeln!(
+            out,
+            "   updated: {}  model: {}  messages: {}",
+            thread.updated_at.as_deref().unwrap_or("-"),
+            thread.model.as_deref().unwrap_or("-"),
+            thread.message_count
+        );
+        if let Some(cwd) = thread.cwd.as_deref() {
+            let _ = writeln!(out, "   cwd: {cwd}");
+        }
+        if let Some(preview) = thread.matched_preview.as_deref() {
+            let _ = writeln!(out, "   match: {preview}");
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn format_thread_read_human(result: &ThreadReadResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "codex-threads threads read: {} [{}]",
+        result.thread.thread_name,
+        result.thread.id
+    );
+    let _ = writeln!(
+        out,
+        "updated: {}  model: {}  messages: {}",
+        result.thread.updated_at.as_deref().unwrap_or("-"),
+        result.thread.model.as_deref().unwrap_or("-"),
+        result.thread.message_count
+    );
+    if let Some(cwd) = result.thread.cwd.as_deref() {
+        let _ = writeln!(out, "cwd: {cwd}");
+    }
+    if let Some(path) = Some(result.thread.session_path.as_str()) {
+        let _ = writeln!(out, "session: {path}");
+    }
+    out.push('\n');
+    for message in &result.messages {
+        let _ = writeln!(
+            out,
+            "[{}] {} {}",
+            message.timestamp.as_deref().unwrap_or("-"),
+            message.role,
+            message.source_type
+        );
+        for line in message.text.lines() {
+            let _ = writeln!(out, "  {line}");
+        }
+        out.push('\n');
+    }
+    out.trim_end().to_string()
+}
+
+fn format_events_read_human(result: &EventsReadResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "codex-threads events read: {} events for [{}]",
+        result.events.len(),
+        result.session_id
+    );
+    for event in &result.events {
+        let _ = writeln!(
+            out,
+            "[{}] {} raw={} role={}",
+            event.timestamp.as_deref().unwrap_or("-"),
+            event.event_type,
+            event.raw_type,
+            event.role.as_deref().unwrap_or("-")
+        );
+        if let Some(text) = event.text.as_deref() {
+            for line in text.lines() {
+                let _ = writeln!(out, "  {line}");
+            }
+        }
+    }
+    out.trim_end().to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -897,6 +1105,7 @@ fn now_rfc3339_fallback() -> String {
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
     let message = error.to_string();
     let code = match message.as_str() {
+        msg if msg.starts_with("error: ") => "invalid_usage",
         msg if msg.contains("session not found") => "not_found",
         msg if msg.contains("failed to read") || msg.contains("failed to open") => "io_error",
         msg if msg.contains("failed to parse") => "parse_error",
@@ -905,5 +1114,93 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     ErrorBody {
         code: code.to_string(),
         message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn top_level_help_documents_output_contract() {
+        let mut cmd = Cli::command();
+        let help = cmd.render_long_help().to_string();
+
+        assert!(help.contains("Default output is human-readable."));
+        assert!(help.contains("Use --json for compact machine-readable JSON."));
+    }
+
+    #[test]
+    fn sync_human_output_is_readable() {
+        let rendered = format_sync_human(&SyncResult {
+            session_count: 3,
+            message_count: 42,
+            index_path: "/tmp/index.json".to_string(),
+        });
+
+        assert!(rendered.contains("indexed 3 sessions and 42 messages"));
+        assert!(rendered.contains("index: /tmp/index.json"));
+    }
+
+    #[test]
+    fn message_search_human_output_lists_matches() {
+        let rendered = format_message_search_human(&MessageSearchResult {
+            query: "forge".to_string(),
+            matches: vec![MessageMatch {
+                session_id: "abc123".to_string(),
+                thread_name: "Build Forge CLI".to_string(),
+                timestamp: Some("2026-04-11T10:00:00Z".to_string()),
+                role: "user".to_string(),
+                preview: "Implement the forge output contract".to_string(),
+                text: "Implement the forge output contract".to_string(),
+            }],
+        });
+
+        assert!(rendered.contains("codex-threads messages search: 1 matches for \"forge\""));
+        assert!(rendered.contains("1. Build Forge CLI [abc123] 2026-04-11T10:00:00Z user"));
+        assert!(rendered.contains("Implement the forge output contract"));
+    }
+
+    #[test]
+    fn thread_read_human_output_renders_message_blocks() {
+        let rendered = format_thread_read_human(&ThreadReadResult {
+            thread: IndexedThread {
+                id: "abc123".to_string(),
+                thread_name: "Investigate output".to_string(),
+                updated_at: Some("2026-04-11T11:00:00Z".to_string()),
+                session_path: "/tmp/session.jsonl".to_string(),
+                cwd: Some("/work".to_string()),
+                model: Some("gpt-5.4".to_string()),
+                cli_version: None,
+                message_count: 2,
+            },
+            messages: vec![IndexedMessage {
+                session_id: "abc123".to_string(),
+                thread_name: "Investigate output".to_string(),
+                timestamp: Some("2026-04-11T11:00:00Z".to_string()),
+                role: "user".to_string(),
+                text: "Find the bug".to_string(),
+                preview: "Find the bug".to_string(),
+                source_type: "event_msg".to_string(),
+            }],
+        });
+
+        assert!(rendered.contains("codex-threads threads read: Investigate output [abc123]"));
+        assert!(rendered.contains("session: /tmp/session.jsonl"));
+        assert!(rendered.contains("[2026-04-11T11:00:00Z] user event_msg"));
+        assert!(rendered.contains("  Find the bug"));
+    }
+
+    #[test]
+    fn human_error_output_is_not_json() {
+        let rendered = format_error_human(&ErrorBody {
+            code: "not_found".to_string(),
+            message: "session not found".to_string(),
+        });
+
+        assert!(rendered.starts_with("codex-threads error [not_found]"));
+        assert!(rendered.contains("session not found"));
+        assert!(!rendered.contains("{\"ok\":false"));
     }
 }
