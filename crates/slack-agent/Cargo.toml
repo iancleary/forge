@@ -1,6 +1,6 @@
 [package]
 name = "slack-agent"
-version = "20260412.0.6"
+version = "20260412.0.7"
 edition = "2024"
 license = "MIT"
 

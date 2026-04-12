@@ -11,7 +11,7 @@ Recommended sequence:
 ```sh
 cargo check
 git push origin main
-gh release create 20260412.0.4 --target main --title 20260412.0.4 --generate-notes --latest
+gh release create 20260412.0.7 --target main --title 20260412.0.7 --generate-notes --latest
 ```
 
 Shell note:
@@ -100,7 +100,7 @@ That script:
 Deterministic install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.4
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
 ```
 
 Update story:

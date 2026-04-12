@@ -34,7 +34,7 @@ That installer:
 If you want a deterministic install pinned to a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.4
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
 ```
 
 If you want the binaries but not the Codex baseline:
