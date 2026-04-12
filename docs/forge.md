@@ -194,7 +194,7 @@ Example:
 auto_check_updates = true
 auto_update = false
 update_check_ttl_minutes = 1440
-repo_path = "~/Development/forge"
+repo_path = "~/src/forge"
 ```
 
 Skill lifecycle configuration is documented in `docs/forge-skills.md`.

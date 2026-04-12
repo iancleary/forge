@@ -241,8 +241,8 @@ Example:
 
 ```toml
 source_kind = "repo_checkout"
-source_repo_slug = "iancleary/forge"
-source_repo_path = "/Users/iancleary/Development/forge"
+source_repo_slug = "owner/forge"
+source_repo_path = "/abs/path/to/forge"
 source_ref = "main"
 source_hash = "abc123"
 ```

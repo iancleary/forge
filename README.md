@@ -34,7 +34,7 @@ That installer:
 If you want a deterministic install pinned to a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260411.0.3
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.2
 ```
 
 If you want the binaries but not the Codex baseline:
@@ -174,8 +174,12 @@ Repo layout:
 Current CLIs:
 
 - `forge` for shared config and self-management
+- `codex-threads` for local Codex session archive search and retrieval
 - `slack-cli` for Slack research workflows
 - `linear` for Linear issue, project, and milestone workflows
+
+Planned CLIs:
+
 - `openclaw-slack` for stricter OpenClaw Slack workflows
 
 Key design notes:
