@@ -5257,6 +5257,32 @@ mod tests {
     }
 
     #[test]
+    fn doctor_human_output_uses_terminal_probe_for_color() {
+        let result = DoctorResult {
+            summary: DoctorSummary {
+                status: "ready".to_string(),
+                ready: true,
+                passed: 1,
+                warnings: 0,
+                failures: 0,
+            },
+            checks: vec![DoctorCheck {
+                id: "cargo".to_string(),
+                category: "tool".to_string(),
+                status: "pass".to_string(),
+                summary: "cargo is available".to_string(),
+                detail: None,
+                remediation: Vec::new(),
+                upgrades: Vec::new(),
+            }],
+        };
+
+        let output = format_doctor_human(&result);
+
+        assert!(output.contains("[PASS] cargo: cargo is available") == !output.contains("\x1b["));
+    }
+
+    #[test]
     fn doctor_windows_remediation_prefers_winget_for_gh_and_git() {
         assert_eq!(
             platform_tool_remediation("windows", "git"),
