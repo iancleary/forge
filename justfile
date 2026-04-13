@@ -9,6 +9,9 @@ default:
 check:
   cargo check
 
+bump-version version:
+  "{{root}}/scripts/bump-version.sh" "{{version}}"
+
 fmt:
   cargo fmt
 
