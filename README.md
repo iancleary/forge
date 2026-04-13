@@ -78,14 +78,51 @@ Forge installs two managed surfaces by default:
 
 These are intentionally narrower than taking ownership of all local Codex state.
 
-## Key Commands
+## Common Commands
+
+The most common commands and their intent:
+
+- `forge doctor`  
+  checks your local Forge health and state files.
+- `forge self update-check`  
+  compares the installed Forge version to the latest GitHub release.
+- `forge self update`  
+  updates Forge and managed assets when behind.
+- `forge version [--json] [--update]`  
+  reports the current hash/version plus release state; `--update` runs `forge self update` directly when an update is available.
+- `forge skills install --all`  
+  reconciles all managed skills from the release catalog.
+- `forge skills status`  
+  shows managed/unmanaged and health status for skills.
+- `forge codex install`  
+  installs the managed Forge baseline under `~/.codex`.
+- `forge codex diff`  
+  compares managed `~/.codex` files with installed versions.
+- `forge codex render`  
+  applies templated policy artifacts from managed files into local state.
+
+Quick reference:
 
 ```sh
 forge doctor
 forge self update-check
 forge self update
+forge version
 forge skills status
 forge codex diff
+```
+
+Common maintenance commands:
+
+```sh
+forge skills list --source all
+forge skills validate --all
+forge skills diff design-algorithm --target user
+forge skills diff linear-cli --target user
+forge skills status --scope all
+forge codex render
+forge skills install --all --source repo
+forge skills revert --all --target user
 ```
 
 ## Codex Notes
@@ -114,21 +151,6 @@ forge skills install --all
 forge skills status
 forge codex diff
 forge codex install
-```
-
-Useful commands:
-
-```sh
-forge skills list --source all
-forge skills validate --all
-forge skills diff design-algorithm --target user
-forge skills diff linear-cli --target user
-forge skills status --scope all
-forge codex render
-forge codex diff
-forge codex install
-forge self update-check
-forge self update
 ```
 
 Forge-managed Codex user config is intentionally narrower than the skills surface. In v1, `forge codex render`, `forge codex diff`, and `forge codex install` manage only:
