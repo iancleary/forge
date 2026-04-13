@@ -13,6 +13,9 @@ name = "gh-body-file"
 name = "linear-cli"
 
 [[skills]]
+name = "learning-systems"
+
+[[skills]]
 name = "slack-query-cli"
 legacy_names = ["slack-query-research", "slack-cli-research"]
 
