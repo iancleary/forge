@@ -128,7 +128,7 @@ enum Command {
     #[command(about = "Check whether the local Forge environment is ready")]
     Doctor,
     #[command(about = "Show Forge release version and git hash")]
-    Version,
+    Version(VersionArgs),
     #[command(about = "Run explicit Forge development workflows", subcommand)]
     Dev(DevCommand),
     #[command(
@@ -149,6 +149,12 @@ enum Command {
         subcommand
     )]
     Codex(CodexCommand),
+}
+
+#[derive(Args, Debug)]
+struct VersionArgs {
+    #[arg(long, help = "Run self-update automatically when a newer release is available")]
+    update: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -948,8 +954,13 @@ fn run(cli: Cli) -> Result<()> {
             let data = doctor()?;
             emit_output(output, data, format_doctor_human)?;
         }
-        Command::Version => {
+        Command::Version(args) => {
             let data = version_info()?;
+            if args.update && data.update_available {
+                let update_result = update(UpdateArgs {}, output)?;
+                emit_output(output, update_result, format_update_human)?;
+                return Ok(());
+            }
             if output == OutputMode::Human
                 && data.update_available
                 && let Some(latest_version) = data.latest_version.as_deref()
@@ -5935,6 +5946,26 @@ EOF
             Some(CollisionPromptChoice::SkipAll)
         );
         assert_eq!(parse_collision_prompt_choice("maybe"), None);
+    }
+
+    #[test]
+    fn version_comparison_prefers_calver_semantics() {
+        assert!(is_version_out_of_date(
+            "20260412.0.0",
+            Some("20260413.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "20260413.0.0",
+            Some("20260412.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "20260413.0.0",
+            Some("20260413.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "bad-current",
+            Some("20260413.0.0")
+        ));
     }
 
     #[test]
