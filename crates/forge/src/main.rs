@@ -4180,6 +4180,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("design-algorithm"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
+        embedded_skill!("learning-systems"),
         embedded_skill!("slack-query-cli"),
         embedded_skill!("slack-agent-cli"),
         embedded_skill!("codex-threads-cli"),
