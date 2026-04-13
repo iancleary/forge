@@ -120,6 +120,47 @@ Important boundary:
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
 
+### `forge version`
+
+```sh
+forge version [--json] [--update]
+```
+
+Shows release/version metadata for the running Forge binary, including:
+
+- `release_version`
+- `latest_version`
+- `update_available`
+- `git_hash`
+- binary path
+- platform
+
+Behavior:
+
+- in human mode, when `update_available` is true, Forge prompts before running `forge self update`
+- in non-interactive contexts (`--json`, no tty), `forge version` reports availability but does not prompt
+- `--update` runs `forge self update` immediately when an update is available (useful for automation)
+
+Examples:
+
+```sh
+# Informational output
+forge version
+
+# Machine-readable output
+forge version --json
+
+# Directly trigger an update check/apply when newer release is available
+forge version --update
+```
+
+If `forge self update` reports an unmanaged collision, take ownership once (example):
+
+```sh
+forge skills install learning-systems --source release --force-unmanaged
+forge self update
+```
+
 ### `forge dev install`
 
 ```sh
