@@ -72,6 +72,14 @@ When you add, remove, or rename a binary CLI crate under `crates/`:
 - ensure the crate directory name matches the binary name (`crates/<bin>/src/main.rs`)
 - run `just install-list-check` (fails if a binary crate exists but is not listed)
 
+## Adding A New Managed Skill
+
+When adding a new Forge-managed skill, update these three locations together:
+
+- add the skill directory and `SKILL.md` under `.agents/skills/<skill-name>/`
+- add the skill to `config/release-skills.toml`
+- add `embedded_skill!("<skill-name>")` to `release_skills()` in `crates/forge/src/main.rs`
+
 ## Versioning And Releases
 
 - use semver-compatible CalVer: `YYYY.MMDD.N`
