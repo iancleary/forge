@@ -127,6 +127,8 @@ impl Drop for UpdateProgress {
 enum Command {
     #[command(about = "Check whether the local Forge environment is ready")]
     Doctor,
+    #[command(about = "Show Forge release version and git hash")]
+    Version(VersionArgs),
     #[command(about = "Run explicit Forge development workflows", subcommand)]
     Dev(DevCommand),
     #[command(
@@ -147,6 +149,12 @@ enum Command {
         subcommand
     )]
     Codex(CodexCommand),
+}
+
+#[derive(Args, Debug)]
+struct VersionArgs {
+    #[arg(long, help = "Run self-update automatically when a newer release is available")]
+    update: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -557,6 +565,17 @@ struct DevInstallResult {
     installed_binaries: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct VersionResult {
+    release_version: String,
+    latest_version: Option<String>,
+    update_available: bool,
+    git_hash: Option<String>,
+    binary_path: String,
+    os: String,
+    arch: String,
+}
+
 #[derive(Debug, Default)]
 struct ReconcileSummary {
     skills_reconciled: usize,
@@ -935,6 +954,24 @@ fn run(cli: Cli) -> Result<()> {
             let data = doctor()?;
             emit_output(output, data, format_doctor_human)?;
         }
+        Command::Version(args) => {
+            let data = version_info()?;
+            if args.update && data.update_available {
+                let update_result = update(UpdateArgs {}, output)?;
+                emit_output(output, update_result, format_update_human)?;
+                return Ok(());
+            }
+            if output == OutputMode::Human
+                && data.update_available
+                && let Some(latest_version) = data.latest_version.as_deref()
+                && should_update_to_latest(&data.release_version, latest_version)?
+            {
+                let update_result = update(UpdateArgs {}, output)?;
+                emit_output(output, update_result, format_update_human)?;
+                return Ok(());
+            }
+            emit_output(output, data, format_version_human)?;
+        }
         Command::Dev(DevCommand::Install(args)) => {
             let data = dev_install(args)?;
             emit_output(output, data, format_dev_install_human)?;
@@ -998,6 +1035,81 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn version_info() -> Result<VersionResult> {
+    let binary_path = env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    let release_version = env!("CARGO_PKG_VERSION").to_string();
+    let latest_version = latest_release_version().ok().flatten();
+    let update_available = is_version_out_of_date(&release_version, latest_version.as_deref());
+
+    Ok(VersionResult {
+        release_version,
+        latest_version,
+        update_available,
+        git_hash: build_forge_git_hash(),
+        binary_path,
+        os: env::consts::OS.to_string(),
+        arch: env::consts::ARCH.to_string(),
+    })
+}
+
+fn should_update_to_latest(current_version: &str, latest_version: &str) -> Result<bool> {
+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        return Ok(false);
+    }
+
+    let mut stderr = io::stderr().lock();
+    writeln!(
+        stderr,
+        "forge update available: {current_version} -> {latest_version}"
+    )
+    .context("failed to write update prompt")?;
+    write!(
+        stderr,
+        "Run `forge self update` now? [y]es / [n]o [n] "
+    )
+    .context("failed to write update prompt")?;
+    stderr.flush().context("failed to flush update prompt")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read update prompt response")?;
+    Ok(parse_update_prompt_choice(&input).unwrap_or(false))
+}
+
+fn is_version_out_of_date(current_version: &str, latest_version: Option<&str>) -> bool {
+    let Some(latest_version) = latest_version else {
+        return false;
+    };
+    let Some(latest_version_parts) = parse_calver(latest_version) else {
+        return latest_version != current_version;
+    };
+    let Some(current_version_parts) = parse_calver(current_version) else {
+        return latest_version != current_version;
+    };
+
+    latest_version_parts > current_version_parts
+}
+
+fn parse_update_prompt_choice(input: &str) -> Option<bool> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Some(true),
+        "" | "n" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+fn build_forge_git_hash() -> Option<String> {
+    if let Some(hash) = option_env!("GIT_HASH") {
+        return Some(hash.to_string());
+    }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_dir = manifest_dir.parent().and_then(|path| path.parent())?;
+    git_stdout(repo_dir, &["rev-parse", "--short=12", "HEAD"]).ok()
 }
 
 fn doctor() -> Result<DoctorResult> {
@@ -1120,17 +1232,34 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let progress = UpdateProgress::new(output);
 
     let mut state = load_state_or_default()?;
+    progress.step(format!("[1/{total_steps}] Checking latest Forge release"));
+    let target_version = latest_release_version()?
+        .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
     progress.step(format!(
-        "[1/{total_steps}] Checking managed skill ownership"
+        "[2/{total_steps}] Loading release contracts for {target_version}"
+    ));
+    let release_contract = fetch_release_tools_contract(&target_version)?;
+    let release_skill_contract = fetch_release_skills_contract(&target_version)?;
+    let release_skill_names = release_skill_contract
+        .skills
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<Vec<_>>();
+    let release_skill_defs =
+        release_skill_definitions(&target_version, &release_skill_contract);
+
+    progress.step(format!(
+        "[3/{total_steps}] Checking managed skill ownership"
     ));
     // Before attempting updates/installs, detect unmanaged collisions and provide a single actionable error.
     // This keeps the default safety posture (no implicit takeover) while making remediation obvious.
-    let status = skills_status_with_source(
+    let status = skills_status_with_defs(
         &config,
         &state,
-        source_kind.clone(),
-        None,
+        &source_kind,
+        &release_skill_defs,
         SkillsStatusScope::Mainline,
+        None,
         None,
     )?;
     let collisions = status
@@ -1142,19 +1271,6 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
 
     let _ = args;
     let before_version = Some(env!("CARGO_PKG_VERSION").to_string());
-    progress.step(format!("[2/{total_steps}] Checking latest Forge release"));
-    let target_version = latest_release_version()?
-        .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
-    progress.step(format!(
-        "[3/{total_steps}] Loading release contracts for {target_version}"
-    ));
-    let release_contract = fetch_release_tools_contract(&target_version)?;
-    let release_skill_contract = fetch_release_skills_contract(&target_version)?;
-    let release_skill_names = release_skill_contract
-        .skills
-        .iter()
-        .map(|skill| skill.name.clone())
-        .collect::<Vec<_>>();
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
             progress.step(format!(
@@ -2272,6 +2388,32 @@ fn format_update_check_human(result: &UpdateCheckResult) -> String {
         append_skill_status_entries(&mut out, noteworthy.into_iter());
     }
 
+    out.trim_end().to_string()
+}
+
+fn format_version_human(result: &VersionResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "forge version: {}", result.release_version);
+    if let Some(latest_version) = result.latest_version.as_ref() {
+        let _ = writeln!(out, "latest version: {latest_version}");
+    } else {
+        let _ = writeln!(out, "latest version: unavailable");
+    }
+    let _ = writeln!(
+        out,
+        "update available: {}",
+        if result.update_available { "yes" } else { "no" }
+    );
+    let _ = writeln!(
+        out,
+        "git hash: {}",
+        result
+            .git_hash
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string())
+    );
+    let _ = writeln!(out, "binary: {}", result.binary_path);
+    let _ = writeln!(out, "platform: {}/{}", result.os, result.arch);
     out.trim_end().to_string()
 }
 
@@ -4206,6 +4348,38 @@ fn load_release_skills() -> Vec<SkillDefinition> {
         .collect()
 }
 
+fn release_skill_definitions(
+    source_ref: &str,
+    skills_contract: &ReleaseSkillsContract,
+) -> Vec<SkillDefinition> {
+    let mut embedded_by_name = BTreeMap::new();
+    for skill in release_skills() {
+        embedded_by_name.insert(skill.name, skill.skill_md);
+    }
+    let mut definitions = Vec::new();
+    for skill in &skills_contract.skills {
+        let mut files = BTreeMap::new();
+        files.insert(
+            "SKILL.md".to_string(),
+            embedded_by_name
+                .get(skill.name.as_str())
+                .copied()
+                .unwrap_or("")
+                .as_bytes()
+                .to_vec(),
+        );
+        definitions.push(SkillDefinition {
+            name: skill.name.clone(),
+            source_kind: SkillSourceKind::Release,
+            source_path: None,
+            source_ref: source_ref.to_string(),
+            source_repo_path: None,
+            files,
+        });
+    }
+    definitions
+}
+
 #[cfg(test)]
 fn release_skill_names() -> Vec<String> {
     load_release_skills()
@@ -4592,6 +4766,26 @@ fn skills_status_with_source(
     target_filter: Option<TargetFilter>,
 ) -> Result<SkillsStatusResult> {
     let defs = load_skills_for_source(&source_kind, repo_path.as_deref())?;
+    skills_status_with_defs(
+        config,
+        state,
+        &source_kind,
+        &defs,
+        scope,
+        target_filter,
+        repo_path.as_deref(),
+    )
+}
+
+fn skills_status_with_defs(
+    config: &ForgeConfig,
+    state: &ForgeState,
+    source_kind: &SkillSourceKind,
+    defs: &[SkillDefinition],
+    scope: SkillsStatusScope,
+    target_filter: Option<TargetFilter>,
+    repo_path: Option<&Path>,
+) -> Result<SkillsStatusResult> {
     let source_hashes = defs
         .iter()
         .map(|def| (def.name.clone(), hash_skill_files(&def.files)))
@@ -4648,7 +4842,7 @@ fn skills_status_with_source(
         });
     }
 
-    for target in managed_target_roots(config, repo_path.as_deref())? {
+    for target in managed_target_roots(config, repo_path)? {
         if !matches_scope(&target.role, scope) {
             continue;
         }
@@ -4666,7 +4860,7 @@ fn skills_status_with_source(
         if !target.root.exists() {
             continue;
         }
-        for def in &defs {
+        for def in defs {
             let candidate = target.root.join(&def.name);
             if !candidate.exists() {
                 continue;
@@ -4931,6 +5125,35 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn release_skill_definitions_contains_unknown_release_skills() {
+        let definitions = release_skill_definitions(
+            "0.0.0",
+            &ReleaseSkillsContract {
+                version: 1,
+                skills: vec![ReleaseSkillEntry {
+                    name: "learning-systems".to_string(),
+                    legacy_names: Vec::new(),
+                }, ReleaseSkillEntry {
+                    name: "brand-new-skill".to_string(),
+                    legacy_names: Vec::new(),
+                }],
+            },
+        );
+        assert_eq!(definitions.len(), 2);
+        let embedded_skill = definitions
+            .iter()
+            .find(|def| def.name == "learning-systems")
+            .expect("embedded skill included");
+        assert!(!embedded_skill.files.is_empty());
+
+        let synthetic_skill = definitions
+            .iter()
+            .find(|def| def.name == "brand-new-skill")
+            .expect("synthetic skill included");
+        assert_eq!(synthetic_skill.files.get("SKILL.md"), Some(&Vec::new()));
     }
 
     #[test]
@@ -5723,6 +5946,26 @@ EOF
             Some(CollisionPromptChoice::SkipAll)
         );
         assert_eq!(parse_collision_prompt_choice("maybe"), None);
+    }
+
+    #[test]
+    fn version_comparison_prefers_calver_semantics() {
+        assert!(is_version_out_of_date(
+            "20260412.0.0",
+            Some("20260413.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "20260413.0.0",
+            Some("20260412.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "20260413.0.0",
+            Some("20260413.0.0")
+        ));
+        assert!(!is_version_out_of_date(
+            "bad-current",
+            Some("20260413.0.0")
+        ));
     }
 
     #[test]
