@@ -187,6 +187,53 @@ fn cli_parse_errors_honor_json_flag() {
 }
 
 #[test]
+fn cli_version_is_available_in_json() {
+    let root = temp_path("version-json");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let output = run_forge(&["--json", "version"], &config_dir, &home_dir);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let body: Value = serde_json::from_str(stdout.trim()).expect("version json");
+    assert_eq!(body["ok"], true);
+    let data = &body["data"];
+    assert_eq!(data["release_version"].as_str(), Some(env!("CARGO_PKG_VERSION")));
+    assert!(data["latest_version"].is_string() || data["latest_version"].is_null());
+    assert!(data["update_available"].is_boolean());
+    assert!(data["git_hash"].is_string() || data["git_hash"].is_null());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cli_version_is_available_human() {
+    let root = temp_path("version-human");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let output = run_forge(&["version"], &config_dir, &home_dir);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    assert!(stdout.contains("forge version"));
+    assert!(stdout.contains(env!("CARGO_PKG_VERSION")));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cli_self_update_rejects_repo_mode_flags() {
     let root = temp_path("self-update-release-only");
     let config_dir = root.join("config");
