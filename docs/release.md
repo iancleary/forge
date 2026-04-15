@@ -39,6 +39,8 @@ The script currently enforces:
 - release diff must be limited to `Cargo.lock` and crate manifests
 - the script commits, pushes `main`, and creates the GitHub release
 
+After the release is published, GitHub Actions builds and uploads the supported release artifacts plus verification metadata.
+
 The underlying GitHub release step still uses GitHub CLI.
 
 Recommended sequence:
@@ -114,7 +116,7 @@ cargo check
 
 ## User Install And Update Story
 
-The current user-facing release bootstrap path is a tagged source install driven by a small installer script in this repo.
+The current user-facing release bootstrap path is a verified artifact install when possible, with tagged source build fallback.
 
 New machine install:
 
@@ -125,32 +127,37 @@ curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/instal
 That script:
 
 - resolves the latest published Forge release tag by default
-- installs the Forge binaries listed in `scripts/install-forge-release.sh` from that tagged release source
+- re-executes the installer script from the exact tag it is about to install
+- prefers a verified platform release artifact when available
+- verifies artifact SHA-256 before install
+- falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
 
 Deterministic install:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260413.0.0
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260413.0.0/scripts/install-forge-release.sh | sh -s -- --tag 20260413.0.0
 ```
 
 Update story:
 
 - use the installer script for first install and recovery
 - use `forge self update-check` and `forge self update` as the steady-state release update path
-- in release mode, that path checks the latest repo tag and upgrades the installed Forge binaries with Cargo when needed
+- in release mode, that path checks the latest repo tag and prefers a verified platform artifact when available
+- in release mode, `forge self update --build-from-source` forces the tagged source-build path
+- in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
+- checksum mismatch is a hard failure; do not silently fall back after verification failure
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
 - in release mode, `config/release-skills.toml` is the source of truth for current and legacy managed skill names used during local skill migration
 - after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
 
-This is intentionally narrower than a full artifact-packaging system. Forge does not yet publish platform-specific tarballs or native package-manager formulas.
+Forge now publishes a curated set of platform release artifacts plus:
 
-Later this can expand to:
+- `forge-release-manifest.json`
+- `forge-release-sha256sums.txt`
 
-- `cargo test`
-- artifact builds
-- checksums
+This is still intentionally narrower than native package-manager formulas or a fully generalized release service.
 
 ## Maintaining The Installer Binary List
 
@@ -218,4 +225,5 @@ gh release create <version> --target main --title <version> --generate-notes --l
 
 - crates.io publishing
 - automatic branch merging
-- automatic cross-platform artifact packaging
+- signed checksums or provenance attestations
+- broad target coverage beyond the curated release matrix

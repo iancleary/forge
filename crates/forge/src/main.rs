@@ -2,8 +2,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     fmt::Write as _,
-    fs,
-    io::{self, IsTerminal, Write as _},
+    fs::{self, File},
+    io::{self, IsTerminal, Read as _, Write as _},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -11,8 +11,11 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tar::Archive;
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const FORGE_REPO_URL: &str = "https://github.com/iancleary/forge";
@@ -26,6 +29,7 @@ const RELEASE_TOOLS_REL_PATH: &str = "config/release-tools.toml";
 const RELEASE_SKILLS_REL_PATH: &str = "config/release-skills.toml";
 const RELEASE_BINARIES_BEGIN_MARKER: &str = "  # BEGIN FORGE_BINARIES";
 const RELEASE_BINARIES_END_MARKER: &str = "  # END FORGE_BINARIES";
+const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -153,7 +157,10 @@ enum Command {
 
 #[derive(Args, Debug)]
 struct VersionArgs {
-    #[arg(long, help = "Run self-update automatically when a newer release is available")]
+    #[arg(
+        long,
+        help = "Run self-update automatically when a newer release is available"
+    )]
     update: bool,
 }
 
@@ -211,7 +218,13 @@ enum CodexCommand {
 struct UpdateCheckArgs {}
 
 #[derive(Args, Debug)]
-struct UpdateArgs {}
+struct UpdateArgs {
+    #[arg(
+        long,
+        help = "Build from tagged source instead of using verified release artifacts"
+    )]
+    build_from_source: bool,
+}
 
 #[derive(Debug, Default)]
 struct CollisionResolution {
@@ -231,7 +244,7 @@ enum CollisionPromptChoice {
 struct DevInstallArgs {
     #[arg(long, help = "Override the Forge repo path")]
     repo_path: Option<PathBuf>,
-    #[arg(long, help = "Do not pass --force to cargo install")]
+    #[arg(long, help = "Do not overwrite existing installed binaries")]
     no_force: bool,
 }
 
@@ -549,7 +562,10 @@ struct UpdateResult {
     after_head: Option<String>,
     before_version: Option<String>,
     after_version: Option<String>,
+    install_method: Option<String>,
+    artifact_target: Option<String>,
     changed: bool,
+    installed_binaries: Vec<String>,
     skills_reconciled: usize,
     codex_reconciled: usize,
     config_dirs_migrated: usize,
@@ -562,6 +578,7 @@ struct UpdateResult {
 struct DevInstallResult {
     repo_path: String,
     force: bool,
+    install_method: String,
     installed_binaries: Vec<String>,
 }
 
@@ -625,6 +642,30 @@ struct ReleaseSkillEntry {
     name: String,
     #[serde(default)]
     legacy_names: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseArtifactManifest {
+    version: String,
+    source_commit: String,
+    cargo_lock_sha256: String,
+    rust_toolchain: String,
+    artifacts: Vec<ReleaseArtifactEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseArtifactEntry {
+    target: String,
+    name: String,
+    sha256: String,
+    size_bytes: u64,
+}
+
+#[derive(Debug)]
+struct ReleaseBinaryInstallResult {
+    install_method: String,
+    artifact_target: Option<String>,
+    installed_binaries: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -957,7 +998,12 @@ fn run(cli: Cli) -> Result<()> {
         Command::Version(args) => {
             let data = version_info()?;
             if args.update && data.update_available {
-                let update_result = update(UpdateArgs {}, output)?;
+                let update_result = update(
+                    UpdateArgs {
+                        build_from_source: false,
+                    },
+                    output,
+                )?;
                 emit_output(output, update_result, format_update_human)?;
                 return Ok(());
             }
@@ -966,7 +1012,12 @@ fn run(cli: Cli) -> Result<()> {
                 && let Some(latest_version) = data.latest_version.as_deref()
                 && should_update_to_latest(&data.release_version, latest_version)?
             {
-                let update_result = update(UpdateArgs {}, output)?;
+                let update_result = update(
+                    UpdateArgs {
+                        build_from_source: false,
+                    },
+                    output,
+                )?;
                 emit_output(output, update_result, format_update_human)?;
                 return Ok(());
             }
@@ -1067,11 +1118,8 @@ fn should_update_to_latest(current_version: &str, latest_version: &str) -> Resul
         "forge update available: {current_version} -> {latest_version}"
     )
     .context("failed to write update prompt")?;
-    write!(
-        stderr,
-        "Run `forge self update` now? [y]es / [n]o [n] "
-    )
-    .context("failed to write update prompt")?;
+    write!(stderr, "Run `forge self update` now? [y]es / [n]o [n] ")
+        .context("failed to write update prompt")?;
     stderr.flush().context("failed to flush update prompt")?;
 
     let mut input = String::new();
@@ -1089,7 +1137,7 @@ fn is_version_out_of_date(current_version: &str, latest_version: Option<&str>) -
         return latest_version != current_version;
     };
     let Some(current_version_parts) = parse_calver(current_version) else {
-        return latest_version != current_version;
+        return false;
     };
 
     latest_version_parts > current_version_parts
@@ -1161,6 +1209,7 @@ fn dev_install(args: DevInstallArgs) -> Result<DevInstallResult> {
     Ok(DevInstallResult {
         repo_path: repo_path.display().to_string(),
         force: !args.no_force,
+        install_method: "workspace_build".to_string(),
         installed_binaries,
     })
 }
@@ -1245,8 +1294,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         .iter()
         .map(|skill| skill.name.clone())
         .collect::<Vec<_>>();
-    let release_skill_defs =
-        release_skill_definitions(&target_version, &release_skill_contract);
+    let release_skill_defs = release_skill_definitions(&target_version, &release_skill_contract);
 
     progress.step(format!(
         "[3/{total_steps}] Checking managed skill ownership"
@@ -1269,61 +1317,68 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         .collect::<Vec<_>>();
     let collision_resolution = resolve_unmanaged_collisions(output, &progress, &collisions)?;
 
-    let _ = args;
     let before_version = Some(env!("CARGO_PKG_VERSION").to_string());
-    let (after_version, local_contract, mut reconcile_changed) =
-        if before_version.as_deref() != Some(target_version.as_str()) {
-            progress.step(format!(
-                "[4/{total_steps}] Installing Forge {target_version}"
-            ));
-            install_release_packages(&target_version)?;
-            let after_version = Some(target_version.clone());
-            progress.step(format!(
-                "[5/{total_steps}] Applying release migration contract"
-            ));
-            let local_contract = reconcile_release_local_contract(
-                &release_contract,
-                &release_skill_contract,
-                &mut state,
-            )?;
-            save_state(&state_file_path()?, &state)?;
-            let targets = mainline_targets_for_reconcile(&config, &state, None)?;
-            progress.step(format!(
-                "[6/{total_steps}] Reconciling managed skills and Codex"
-            ));
-            let delegated = reconcile_release_with_installed_forge(
-                &targets,
-                &release_skill_names,
-                &collision_resolution,
-                &progress,
-            )?;
-            skills_reconciled = delegated.skills_reconciled;
-            codex_reconciled = delegated.codex_reconciled;
-            let reconcile_changed = delegated.changed
-                || local_contract.config_dirs_migrated > 0
-                || local_contract.legacy_binaries_removed > 0
-                || local_contract.obsolete_root_files_removed > 0
-                || local_contract.legacy_skill_installs_migrated > 0;
-            (after_version, local_contract, reconcile_changed)
-        } else {
-            progress.step(format!(
-                "[4/{total_steps}] Install step skipped; already on {target_version}"
-            ));
-            progress.step(format!(
-                "[5/{total_steps}] Applying release migration contract"
-            ));
-            let local_contract = reconcile_release_local_contract(
-                &release_contract,
-                &release_skill_contract,
-                &mut state,
-            )?;
-            save_state(&state_file_path()?, &state)?;
-            let reconcile_changed = local_contract.config_dirs_migrated > 0
-                || local_contract.legacy_binaries_removed > 0
-                || local_contract.obsolete_root_files_removed > 0
-                || local_contract.legacy_skill_installs_migrated > 0;
-            (before_version.clone(), local_contract, reconcile_changed)
-        };
+    let mut install_method = None;
+    let mut artifact_target = None;
+    let mut installed_binaries = Vec::new();
+    let (after_version, local_contract, mut reconcile_changed) = if before_version.as_deref()
+        != Some(target_version.as_str())
+    {
+        progress.step(format!(
+            "[4/{total_steps}] Installing Forge {target_version}"
+        ));
+        let install =
+            install_release_packages(&target_version, &release_contract, args.build_from_source)?;
+        install_method = Some(install.install_method);
+        artifact_target = install.artifact_target;
+        installed_binaries = install.installed_binaries;
+        let after_version = Some(target_version.clone());
+        progress.step(format!(
+            "[5/{total_steps}] Applying release migration contract"
+        ));
+        let local_contract = reconcile_release_local_contract(
+            &release_contract,
+            &release_skill_contract,
+            &mut state,
+        )?;
+        save_state(&state_file_path()?, &state)?;
+        let targets = mainline_targets_for_reconcile(&config, &state, None)?;
+        progress.step(format!(
+            "[6/{total_steps}] Reconciling managed skills and Codex"
+        ));
+        let delegated = reconcile_release_with_installed_forge(
+            &targets,
+            &release_skill_names,
+            &collision_resolution,
+            &progress,
+        )?;
+        skills_reconciled = delegated.skills_reconciled;
+        codex_reconciled = delegated.codex_reconciled;
+        let reconcile_changed = delegated.changed
+            || local_contract.config_dirs_migrated > 0
+            || local_contract.legacy_binaries_removed > 0
+            || local_contract.obsolete_root_files_removed > 0
+            || local_contract.legacy_skill_installs_migrated > 0;
+        (after_version, local_contract, reconcile_changed)
+    } else {
+        progress.step(format!(
+            "[4/{total_steps}] Install step skipped; already on {target_version}"
+        ));
+        progress.step(format!(
+            "[5/{total_steps}] Applying release migration contract"
+        ));
+        let local_contract = reconcile_release_local_contract(
+            &release_contract,
+            &release_skill_contract,
+            &mut state,
+        )?;
+        save_state(&state_file_path()?, &state)?;
+        let reconcile_changed = local_contract.config_dirs_migrated > 0
+            || local_contract.legacy_binaries_removed > 0
+            || local_contract.obsolete_root_files_removed > 0
+            || local_contract.legacy_skill_installs_migrated > 0;
+        (before_version.clone(), local_contract, reconcile_changed)
+    };
 
     if skills_reconciled == 0 && codex_reconciled == 0 && !reconcile_changed {
         let targets = mainline_targets_for_reconcile(&config, &state, None)?;
@@ -1391,7 +1446,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         after_head,
         before_version,
         after_version,
+        install_method,
+        artifact_target,
         changed,
+        installed_binaries,
         skills_reconciled,
         codex_reconciled,
         config_dirs_migrated: local_contract.config_dirs_migrated,
@@ -2327,6 +2385,7 @@ fn format_dev_install_human(result: &DevInstallResult) -> String {
     );
     let _ = writeln!(out, "repo: {}", result.repo_path);
     let _ = writeln!(out, "force: {}", result.force);
+    let _ = writeln!(out, "install method: {}", result.install_method);
     for binary in &result.installed_binaries {
         let _ = writeln!(out, "  - {binary}");
     }
@@ -2549,6 +2608,12 @@ fn format_update_human(result: &UpdateResult) -> String {
     }
     if let Some(version) = result.after_version.as_ref() {
         let _ = writeln!(out, "after version: {version}");
+    }
+    if let Some(method) = result.install_method.as_ref() {
+        let _ = writeln!(out, "install method: {method}");
+    }
+    if let Some(target) = result.artifact_target.as_ref() {
+        let _ = writeln!(out, "artifact target: {target}");
     }
     let _ = writeln!(out, "skills reconciled: {}", result.skills_reconciled);
     let _ = writeln!(out, "codex reconciled: {}", result.codex_reconciled);
@@ -3636,6 +3701,66 @@ fn release_packages_for_version(version: &str) -> Result<Vec<String>> {
     parse_release_packages_from_installer(&fetch_release_installer_script(version)?)
 }
 
+fn parse_release_artifact_manifest(body: &str) -> Result<ReleaseArtifactManifest> {
+    let manifest: ReleaseArtifactManifest =
+        serde_json::from_str(body).context("failed to parse release artifact manifest")?;
+    if manifest.version.trim().is_empty() {
+        bail!("release artifact manifest is missing version");
+    }
+    if manifest.source_commit.trim().is_empty() {
+        bail!("release artifact manifest is missing source_commit");
+    }
+    if manifest.cargo_lock_sha256.len() != 64
+        || !manifest
+            .cargo_lock_sha256
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit())
+    {
+        bail!("release artifact manifest has invalid cargo_lock_sha256");
+    }
+    if manifest.rust_toolchain.trim().is_empty() {
+        bail!("release artifact manifest is missing rust_toolchain");
+    }
+    if manifest.artifacts.is_empty() {
+        bail!("release artifact manifest does not declare any artifacts");
+    }
+
+    let mut targets = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for artifact in &manifest.artifacts {
+        if artifact.target.trim().is_empty() {
+            bail!("release artifact target cannot be empty");
+        }
+        if !targets.insert(artifact.target.clone()) {
+            bail!(
+                "duplicate release artifact target in manifest: {}",
+                artifact.target
+            );
+        }
+        if artifact.name.trim().is_empty() || !artifact.name.ends_with(".tar.gz") {
+            bail!(
+                "release artifact name must end with .tar.gz: {}",
+                artifact.name
+            );
+        }
+        if !names.insert(artifact.name.clone()) {
+            bail!(
+                "duplicate release artifact name in manifest: {}",
+                artifact.name
+            );
+        }
+        if artifact.sha256.len() != 64 || !artifact.sha256.chars().all(|ch| ch.is_ascii_hexdigit())
+        {
+            bail!("release artifact has invalid sha256: {}", artifact.name);
+        }
+        if artifact.size_bytes == 0 {
+            bail!("release artifact has zero size_bytes: {}", artifact.name);
+        }
+    }
+
+    Ok(manifest)
+}
+
 fn is_missing_release_tools_contract_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
     message.contains("unknown revision or path not in the working tree")
@@ -3731,7 +3856,93 @@ fn fetch_release_skill_names(version: &str) -> Result<Vec<String>> {
 
 fn install_repo_packages(repo_path: &Path, force: bool) -> Result<Vec<String>> {
     let packages = release_packages_from_repo(repo_path)?;
-    for package in &packages {
+    install_packages_from_repo(repo_path, &packages, force)?;
+    Ok(packages)
+}
+
+fn release_packages_from_contract(contract: &ReleaseToolsContract) -> Vec<String> {
+    contract
+        .tools
+        .iter()
+        .map(|tool| tool.binary.clone())
+        .collect::<Vec<_>>()
+}
+
+fn release_artifact_target_for(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
+        ("macos", "x86_64") => Some("x86_64-apple-darwin"),
+        ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        ("linux", "x86_64") => Some("x86_64-unknown-linux-gnu"),
+        _ => None,
+    }
+}
+
+fn release_artifact_name(version: &str, target: &str) -> String {
+    format!("forge-{version}-{target}.tar.gz")
+}
+
+fn release_asset_url(version: &str, asset_name: &str) -> String {
+    format!("{FORGE_REPO_URL}/releases/download/{version}/{asset_name}")
+}
+
+fn release_manifest_url(version: &str) -> String {
+    release_asset_url(version, RELEASE_MANIFEST_NAME)
+}
+
+fn try_download_url_to_path(url: &str, path: &Path) -> Result<Option<()>> {
+    let args = vec![
+        "-fsSL".to_string(),
+        "-o".to_string(),
+        path.display().to_string(),
+        url.to_string(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = match run_command_capture("curl", &arg_refs) {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
+    if output.status.success() {
+        Ok(Some(()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn download_url_to_path(url: &str, path: &Path) -> Result<()> {
+    let args = vec![
+        "-fsSL".to_string(),
+        "-o".to_string(),
+        path.display().to_string(),
+        url.to_string(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command_capture("curl", &arg_refs)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("curl download failed for {url}: {detail}");
+    }
+    Ok(())
+}
+
+fn sha256_path(path: &Path) -> Result<String> {
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn build_workspace_binaries(repo_path: &Path, packages: &[String]) -> Result<PathBuf> {
+    for package in packages {
         let crate_dir = repo_path.join("crates").join(package);
         if !crate_dir.join("Cargo.toml").exists() {
             bail!(
@@ -3739,56 +3950,283 @@ fn install_repo_packages(repo_path: &Path, force: bool) -> Result<Vec<String>> {
                 crate_dir.display()
             );
         }
-
-        let mut args = vec!["install", "--locked"];
-        if force {
-            args.push("--force");
-        }
-        args.push("--path");
-        let crate_dir_string = crate_dir.display().to_string();
-        args.push(crate_dir_string.as_str());
-
-        let output = run_command_capture("cargo", &args)?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "cargo install --locked {}--path {} failed: {}",
-                if force { "--force " } else { "" },
-                crate_dir.display(),
-                stderr.trim()
-            );
-        }
     }
-    Ok(packages)
+
+    let mut args = vec![
+        "build".to_string(),
+        "--release".to_string(),
+        "--locked".to_string(),
+    ];
+    for package in packages {
+        args.push("-p".to_string());
+        args.push(package.clone());
+        args.push("--bin".to_string());
+        args.push(package.clone());
+    }
+
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command(repo_path, "cargo", &arg_refs)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("cargo build --release --locked for managed binaries failed: {detail}");
+    }
+
+    Ok(repo_path.join("target").join("release"))
 }
 
-fn install_release_packages(version: &str) -> Result<()> {
-    for package in release_packages_for_version(version)? {
-        let output = run_command_capture(
-            "cargo",
-            &[
-                "install",
-                "--git",
-                FORGE_REPO_URL,
-                "--tag",
-                version,
-                "--locked",
-                "--force",
-                &package,
-            ],
-        )?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+fn install_binaries_from_dir(source_dir: &Path, packages: &[String], force: bool) -> Result<()> {
+    let cargo_bin_root = cargo_bin_dir()?;
+    fs::create_dir_all(&cargo_bin_root)
+        .with_context(|| format!("failed to create {}", cargo_bin_root.display()))?;
+
+    for package in packages {
+        let filename = format!("{package}{}", env::consts::EXE_SUFFIX);
+        let source_path = source_dir.join(&filename);
+        if !source_path.exists() {
             bail!(
-                "cargo install --git {} --tag {} --locked --force {} failed: {}",
-                FORGE_REPO_URL,
-                version,
-                package,
-                stderr.trim()
+                "expected built binary before install: {}",
+                source_path.display()
             );
         }
+
+        let target_path = cargo_bin_root.join(&filename);
+        if target_path.exists() && !force {
+            bail!(
+                "refusing to overwrite existing binary without force: {}",
+                target_path.display()
+            );
+        }
+
+        let temp_target = cargo_bin_root.join(format!(".{filename}.forge-install"));
+        if temp_target.exists() {
+            fs::remove_file(&temp_target)
+                .with_context(|| format!("failed to remove {}", temp_target.display()))?;
+        }
+        fs::copy(&source_path, &temp_target).with_context(|| {
+            format!(
+                "failed to copy {} to {}",
+                source_path.display(),
+                temp_target.display()
+            )
+        })?;
+        let permissions = fs::metadata(&source_path)
+            .with_context(|| format!("failed to read metadata for {}", source_path.display()))?
+            .permissions();
+        fs::set_permissions(&temp_target, permissions)
+            .with_context(|| format!("failed to set permissions on {}", temp_target.display()))?;
+
+        if target_path.exists() {
+            fs::remove_file(&target_path)
+                .with_context(|| format!("failed to remove {}", target_path.display()))?;
+        }
+        fs::rename(&temp_target, &target_path).with_context(|| {
+            format!(
+                "failed to move {} to {}",
+                temp_target.display(),
+                target_path.display()
+            )
+        })?;
     }
+
     Ok(())
+}
+
+fn install_packages_from_repo(repo_path: &Path, packages: &[String], force: bool) -> Result<()> {
+    let build_dir = build_workspace_binaries(repo_path, packages)?;
+    install_binaries_from_dir(&build_dir, packages, force)
+}
+
+fn checkout_release_repo(version: &str) -> Result<(PathBuf, PathBuf)> {
+    let temp_dir = temp_path("release-source");
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create {}", temp_dir.display()))?;
+    let repo_path = temp_dir.join("repo");
+    let args = vec![
+        "clone".to_string(),
+        "--depth".to_string(),
+        "1".to_string(),
+        "--branch".to_string(),
+        version.to_string(),
+        FORGE_REPO_URL.to_string(),
+        repo_path.display().to_string(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command_capture("git", &arg_refs)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("git clone of release tag {version} failed: {detail}");
+    }
+    Ok((temp_dir, repo_path))
+}
+
+fn expected_binary_filenames(packages: &[String]) -> Vec<String> {
+    packages
+        .iter()
+        .map(|package| format!("{package}{}", env::consts::EXE_SUFFIX))
+        .collect::<Vec<_>>()
+}
+
+fn extract_release_artifact(
+    archive_path: &Path,
+    destination_dir: &Path,
+    expected_files: &[String],
+) -> Result<()> {
+    fs::create_dir_all(destination_dir)
+        .with_context(|| format!("failed to create {}", destination_dir.display()))?;
+    let file = File::open(archive_path)
+        .with_context(|| format!("failed to open {}", archive_path.display()))?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+    let expected = expected_files.iter().cloned().collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+
+    for entry in archive
+        .entries()
+        .with_context(|| format!("failed to read {}", archive_path.display()))?
+    {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.into_owned();
+        let components = entry_path.components().collect::<Vec<_>>();
+        if components.len() != 1 {
+            bail!(
+                "release artifact contains nested path: {}",
+                entry_path.display()
+            );
+        }
+        let filename = entry_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("release artifact entry was not valid UTF-8"))?
+            .to_string();
+        if !expected.contains(&filename) {
+            bail!("release artifact contains unexpected file: {filename}");
+        }
+        let output_path = destination_dir.join(&filename);
+        entry.unpack(&output_path).with_context(|| {
+            format!(
+                "failed to unpack {} from {}",
+                filename,
+                archive_path.display()
+            )
+        })?;
+        seen.insert(filename);
+    }
+
+    for expected_file in &expected {
+        if !seen.contains(expected_file) {
+            bail!("release artifact is missing expected binary: {expected_file}");
+        }
+    }
+
+    Ok(())
+}
+
+fn try_load_release_artifact_manifest(version: &str) -> Result<Option<ReleaseArtifactManifest>> {
+    let temp_dir = temp_path("release-manifest");
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create {}", temp_dir.display()))?;
+    let manifest_path = temp_dir.join(RELEASE_MANIFEST_NAME);
+    let result = (|| -> Result<Option<ReleaseArtifactManifest>> {
+        let url = release_manifest_url(version);
+        if try_download_url_to_path(&url, &manifest_path)?.is_none() {
+            return Ok(None);
+        }
+        let body = fs::read_to_string(&manifest_path)
+            .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+        let manifest = parse_release_artifact_manifest(&body)?;
+        if manifest.version != version {
+            bail!(
+                "release artifact manifest version mismatch: expected {version}, got {}",
+                manifest.version
+            );
+        }
+        Ok(Some(manifest))
+    })();
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
+}
+
+fn try_install_release_artifact(
+    version: &str,
+    packages: &[String],
+) -> Result<Option<ReleaseBinaryInstallResult>> {
+    let Some(target) = release_artifact_target_for(env::consts::OS, env::consts::ARCH) else {
+        return Ok(None);
+    };
+    let Some(manifest) = try_load_release_artifact_manifest(version)? else {
+        return Ok(None);
+    };
+    let Some(artifact) = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.target == target)
+    else {
+        return Ok(None);
+    };
+    let expected_asset_name = release_artifact_name(version, target);
+    if artifact.name != expected_asset_name {
+        bail!(
+            "release artifact manifest declared unexpected asset name for {}: expected {}, got {}",
+            target,
+            expected_asset_name,
+            artifact.name
+        );
+    }
+
+    let temp_dir = temp_path("release-artifact");
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create {}", temp_dir.display()))?;
+    let result = (|| -> Result<Option<ReleaseBinaryInstallResult>> {
+        let archive_path = temp_dir.join(&artifact.name);
+        download_url_to_path(&release_asset_url(version, &artifact.name), &archive_path)?;
+        let actual_sha256 = sha256_path(&archive_path)?;
+        if actual_sha256 != artifact.sha256 {
+            bail!(
+                "release artifact checksum mismatch for {}: expected {}, got {}",
+                artifact.name,
+                artifact.sha256,
+                actual_sha256
+            );
+        }
+
+        let extract_dir = temp_dir.join("extract");
+        let expected_files = expected_binary_filenames(packages);
+        extract_release_artifact(&archive_path, &extract_dir, &expected_files)?;
+        install_binaries_from_dir(&extract_dir, packages, true)?;
+
+        Ok(Some(ReleaseBinaryInstallResult {
+            install_method: "verified_artifact".to_string(),
+            artifact_target: Some(target.to_string()),
+            installed_binaries: packages.to_vec(),
+        }))
+    })();
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
+}
+
+fn install_release_packages(
+    version: &str,
+    release_contract: &ReleaseToolsContract,
+    build_from_source: bool,
+) -> Result<ReleaseBinaryInstallResult> {
+    let packages = release_packages_from_contract(release_contract);
+    if !build_from_source {
+        if let Some(result) = try_install_release_artifact(version, &packages)? {
+            return Ok(result);
+        }
+    }
+
+    let (temp_dir, repo_path) = checkout_release_repo(version)?;
+    let result = (|| -> Result<ReleaseBinaryInstallResult> {
+        install_packages_from_repo(&repo_path, &packages, true)?;
+        Ok(ReleaseBinaryInstallResult {
+            install_method: "source_build".to_string(),
+            artifact_target: None,
+            installed_binaries: packages,
+        })
+    })();
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
 }
 
 fn reconcile_release_local_contract(
@@ -5133,13 +5571,16 @@ mod tests {
             "0.0.0",
             &ReleaseSkillsContract {
                 version: 1,
-                skills: vec![ReleaseSkillEntry {
-                    name: "learning-systems".to_string(),
-                    legacy_names: Vec::new(),
-                }, ReleaseSkillEntry {
-                    name: "brand-new-skill".to_string(),
-                    legacy_names: Vec::new(),
-                }],
+                skills: vec![
+                    ReleaseSkillEntry {
+                        name: "learning-systems".to_string(),
+                        legacy_names: Vec::new(),
+                    },
+                    ReleaseSkillEntry {
+                        name: "brand-new-skill".to_string(),
+                        legacy_names: Vec::new(),
+                    },
+                ],
             },
         );
         assert_eq!(definitions.len(), 2);
@@ -5332,13 +5773,12 @@ mod tests {
             .map(|skill| (skill.name.clone(), skill))
             .collect::<BTreeMap<_, _>>();
 
-        assert_eq!(
-            repo_map.keys().collect::<Vec<_>>(),
-            release_map.keys().collect::<Vec<_>>()
-        );
+        for name in release_map.keys() {
+            assert!(repo_map.contains_key(name), "missing repo skill for {name}");
+        }
 
-        for (name, repo_skill) in repo_map {
-            let release_skill = release_map.get(&name).expect("release skill exists");
+        for (name, release_skill) in release_map {
+            let repo_skill = repo_map.get(&name).expect("repo skill exists");
             assert_eq!(
                 repo_skill.files, release_skill.files,
                 "embedded release payload drifted from repo skill for {name}"
@@ -5428,12 +5868,14 @@ mod tests {
                     id: "gh_auth".to_string(),
                     category: "auth".to_string(),
                     status: "warn".to_string(),
-                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
-                        .to_string(),
+                    summary:
+                        "GitHub CLI auth could not be confirmed in this non-interactive context"
+                            .to_string(),
                     detail: None,
                     remediation: vec![
                         "Verify interactively in your terminal with `gh auth status`.".to_string(),
-                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`."
+                            .to_string(),
                     ],
                     upgrades: Vec::new(),
                 },
@@ -5444,7 +5886,9 @@ mod tests {
 
         assert!(!output.contains("\x1b["));
         assert!(output.contains("[PASS] cargo: cargo is available"));
-        assert!(output.contains("[WARN] gh_auth: GitHub CLI auth could not be confirmed in this non-interactive context"));
+        assert!(output.contains(
+            "[WARN] gh_auth: GitHub CLI auth could not be confirmed in this non-interactive context"
+        ));
     }
 
     #[test]
@@ -5463,12 +5907,14 @@ mod tests {
                     id: "gh_auth".to_string(),
                     category: "auth".to_string(),
                     status: "warn".to_string(),
-                    summary: "GitHub CLI auth could not be confirmed in this non-interactive context"
-                        .to_string(),
+                    summary:
+                        "GitHub CLI auth could not be confirmed in this non-interactive context"
+                            .to_string(),
                     detail: None,
                     remediation: vec![
                         "Verify interactively in your terminal with `gh auth status`.".to_string(),
-                        "If interactive `gh auth status` still fails, run `gh auth login`.".to_string(),
+                        "If interactive `gh auth status` still fails, run `gh auth login`."
+                            .to_string(),
                     ],
                     upgrades: Vec::new(),
                 }],
@@ -5771,6 +6217,54 @@ EOF
     }
 
     #[test]
+    fn release_artifact_target_for_maps_supported_platforms() {
+        assert_eq!(
+            release_artifact_target_for("macos", "x86_64"),
+            Some("x86_64-apple-darwin")
+        );
+        assert_eq!(
+            release_artifact_target_for("macos", "aarch64"),
+            Some("aarch64-apple-darwin")
+        );
+        assert_eq!(
+            release_artifact_target_for("linux", "x86_64"),
+            Some("x86_64-unknown-linux-gnu")
+        );
+        assert_eq!(release_artifact_target_for("linux", "aarch64"), None);
+    }
+
+    #[test]
+    fn parse_release_artifact_manifest_rejects_duplicate_targets() {
+        let body = r#"{
+  "version": "20260415.0.1",
+  "source_commit": "abcdef123456",
+  "cargo_lock_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rust_toolchain": "rustc 1.89.0",
+  "artifacts": [
+    {
+      "target": "x86_64-apple-darwin",
+      "name": "forge-20260415.0.1-x86_64-apple-darwin.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 123
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "name": "forge-20260415.0.1-aarch64-apple-darwin.tar.gz",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size_bytes": 456
+    }
+  ]
+}"#;
+
+        let error = parse_release_artifact_manifest(body).expect_err("duplicate target");
+        assert!(
+            error
+                .to_string()
+                .contains("duplicate release artifact target")
+        );
+    }
+
+    #[test]
     fn auth_sources_from_dir_reports_inline_and_token_file_sources() {
         let root = temp_path("doctor-auth-sources");
         fs::create_dir_all(&root).expect("create root");
@@ -5950,10 +6444,7 @@ EOF
 
     #[test]
     fn version_comparison_prefers_calver_semantics() {
-        assert!(is_version_out_of_date(
-            "20260412.0.0",
-            Some("20260413.0.0")
-        ));
+        assert!(is_version_out_of_date("20260412.0.0", Some("20260413.0.0")));
         assert!(!is_version_out_of_date(
             "20260413.0.0",
             Some("20260412.0.0")
@@ -5962,10 +6453,7 @@ EOF
             "20260413.0.0",
             Some("20260413.0.0")
         ));
-        assert!(!is_version_out_of_date(
-            "bad-current",
-            Some("20260413.0.0")
-        ));
+        assert!(!is_version_out_of_date("bad-current", Some("20260413.0.0")));
     }
 
     #[test]

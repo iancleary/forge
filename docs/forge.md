@@ -101,7 +101,7 @@ Behavior:
 ### `forge self update`
 
 ```sh
-forge self update [--json]
+forge self update [--build-from-source] [--json]
 ```
 
 Updates to the newest published Forge release and reconciles Forge-managed surfaces.
@@ -109,9 +109,13 @@ Updates to the newest published Forge release and reconciles Forge-managed surfa
 Important boundary:
 
 - `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
-- `forge self update` resolves the target tag's binary list from that tag's release installer before calling Cargo
+- `forge self update` resolves the target tag's binary list from that tag's release installer
 - `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
 - `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
+- `forge self update` prefers a verified platform release artifact when one is published for the current platform
+- `forge self update` verifies artifact SHA-256 before install
+- `forge self update` falls back to a tagged source build with `--locked` when verified artifacts are unavailable or when `--build-from-source` is passed
+- checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
 - in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
 - in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
 - in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly
@@ -173,7 +177,8 @@ Behavior:
 
 - defaults `--repo-path` to the current Git worktree root when available, otherwise the current directory
 - reads the managed binary list from `scripts/install-forge-release.sh` in that checkout
-- installs those crates with `cargo install --path`
+- builds the managed binaries in one workspace release build and installs them into `~/.cargo/bin`
+- `--no-force` means do not overwrite an existing installed binary
 - does not affect `forge self update` source-of-truth behavior
 
 ### `forge codex render`
