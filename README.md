@@ -65,7 +65,7 @@ forge codex diff
 If you want to verify a downloaded release archive against the published GitHub provenance attestation:
 
 ```sh
-gh release verify-asset 20260412.0.7 ./forge-20260412.0.7-x86_64-apple-darwin.tar.gz -R iancleary/forge
+gh release verify-asset 20260412.0.7 ./forge-20260412.0.7-aarch64-apple-darwin.tar.gz -R iancleary/forge
 ```
 
 ### 3. Steady-State Updates

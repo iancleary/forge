@@ -564,6 +564,10 @@ struct UpdateResult {
     after_version: Option<String>,
     install_method: Option<String>,
     artifact_target: Option<String>,
+    attestation_verified: Option<bool>,
+    artifact_name: Option<String>,
+    artifact_sha256_expected: Option<String>,
+    artifact_sha256_downloaded: Option<String>,
     changed: bool,
     installed_binaries: Vec<String>,
     skills_reconciled: usize,
@@ -666,6 +670,10 @@ struct ReleaseBinaryInstallResult {
     install_method: String,
     artifact_target: Option<String>,
     installed_binaries: Vec<String>,
+    artifact_name: Option<String>,
+    artifact_sha256_expected: Option<String>,
+    artifact_sha256_downloaded: Option<String>,
+    attestation_verified: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1321,6 +1329,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let before_version = Some(env!("CARGO_PKG_VERSION").to_string());
     let mut install_method = None;
     let mut artifact_target = None;
+    let mut attestation_verified = None;
+    let mut artifact_name = None;
+    let mut artifact_sha256_expected = None;
+    let mut artifact_sha256_downloaded = None;
     let mut installed_binaries = Vec::new();
     let (after_version, local_contract, mut reconcile_changed) = if before_version.as_deref()
         != Some(target_version.as_str())
@@ -1332,6 +1344,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             install_release_packages(&target_version, &release_contract, args.build_from_source)?;
         install_method = Some(install.install_method);
         artifact_target = install.artifact_target;
+        attestation_verified = install.attestation_verified;
+        artifact_name = install.artifact_name;
+        artifact_sha256_expected = install.artifact_sha256_expected;
+        artifact_sha256_downloaded = install.artifact_sha256_downloaded;
         installed_binaries = install.installed_binaries;
         let after_version = Some(target_version.clone());
         progress.step(format!(
@@ -1449,6 +1465,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         after_version,
         install_method,
         artifact_target,
+        attestation_verified,
+        artifact_name,
+        artifact_sha256_expected,
+        artifact_sha256_downloaded,
         changed,
         installed_binaries,
         skills_reconciled,
@@ -2664,6 +2684,18 @@ fn format_update_human(result: &UpdateResult) -> String {
     }
     if let Some(target) = result.artifact_target.as_ref() {
         let _ = writeln!(out, "artifact target: {target}");
+    }
+    if let Some(attested) = result.attestation_verified {
+        let _ = writeln!(out, "attestation verified: {attested}");
+    }
+    if let Some(name) = result.artifact_name.as_ref() {
+        let _ = writeln!(out, "artifact name: {name}");
+    }
+    if let (Some(expected), Some(actual)) = (
+        result.artifact_sha256_expected.as_ref(),
+        result.artifact_sha256_downloaded.as_ref(),
+    ) {
+        let _ = writeln!(out, "artifact sha256: expected={expected} actual={actual}");
     }
     let _ = writeln!(out, "skills reconciled: {}", result.skills_reconciled);
     let _ = writeln!(out, "codex reconciled: {}", result.codex_reconciled);
@@ -4281,6 +4313,10 @@ fn try_install_release_artifact(
             install_method: "attested_artifact".to_string(),
             artifact_target: Some(target.to_string()),
             installed_binaries: packages.to_vec(),
+            artifact_name: Some(artifact.name.clone()),
+            artifact_sha256_expected: Some(artifact.sha256.clone()),
+            artifact_sha256_downloaded: Some(actual_sha256),
+            attestation_verified: Some(true),
         }))
     })();
     let _ = fs::remove_dir_all(&temp_dir);
@@ -4306,6 +4342,10 @@ fn install_release_packages(
             install_method: "source_build".to_string(),
             artifact_target: None,
             installed_binaries: packages,
+            artifact_name: None,
+            artifact_sha256_expected: None,
+            artifact_sha256_downloaded: None,
+            attestation_verified: Some(false),
         })
     })();
     let _ = fs::remove_dir_all(&temp_dir);
