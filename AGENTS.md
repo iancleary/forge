@@ -64,6 +64,14 @@ Before committing:
 - if the CLI talks to a real external API, verify at least the core read path live when practical
 - prefer doing heavy lifting inside the CLI rather than leaving filtering or normalization to the LLM
 
+## Repo Skills
+
+- use the repo-local `cut-release` skill for Forge release work
+- that skill establishes and maintains the repo-local release process, then routes release mutations through `just cut-release` / `scripts/cut-release.sh`
+- prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
+- keep `cut-release` repo-local; do not promote it to a Forge-managed user skill unless the workflow is generalized beyond this Cargo workspace
+- if the release flow changes, update the script, [docs/release.md](docs/release.md), and the skill together
+
 ## Adding A New CLI
 
 When you add, remove, or rename a binary CLI crate under `crates/`:
@@ -82,11 +90,13 @@ When adding a new Forge-managed skill, update these three locations together:
 
 ## Versioning And Releases
 
-- use semver-compatible CalVer: `YYYY.MMDD.N`
+- use semver-compatible CalVer: `YYYYMMDD.0.N`
+- for this repo specifically, releases use Phoenix-date CalVer such as `20260415.0.0`
 - keep crate versions aligned across the workspace
 - current release flow is:
-  - `git push origin main`
-  - `gh release create <version> --target main --title <version> --generate-notes --latest`
+  - `just cut-release`
+- use the repo-local release script instead of reconstructing release commands by hand
+- for agent work, route release requests through the `cut-release` skill first
 
 ## Scope Discipline
 

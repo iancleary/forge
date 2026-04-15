@@ -22,7 +22,10 @@ There is also a matching `just` entrypoint:
 
 ```sh
 just cut-release
+just cut-release --dry-run
 ```
+
+For agent work in this repo, use the repo-local `cut-release` skill and route release requests through `just cut-release` unless you are explicitly correcting an already-published release.
 
 The script currently enforces:
 
