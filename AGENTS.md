@@ -67,7 +67,7 @@ Before committing:
 ## Repo Skills
 
 - use the repo-local `cut-release` skill for Forge release work
-- that skill routes release mutations through `just cut-release` / `scripts/cut-release.sh`
+- that skill establishes and maintains the repo-local release process, then routes release mutations through `just cut-release` / `scripts/cut-release.sh`
 - prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
 - keep `cut-release` repo-local; do not promote it to a Forge-managed user skill unless the workflow is generalized beyond this Cargo workspace
 - if the release flow changes, update the script, [docs/release.md](docs/release.md), and the skill together

@@ -1,11 +1,11 @@
 ---
 name: cut-release
-description: "Use the repo-local `just cut-release` or `scripts/cut-release.sh` workflow when the task is to cut a Forge GitHub release, bump the CalVer, dry-run the release path, or update the deterministic Forge release procedure."
+description: "Create or update a repo-local release process, then route release work through a checked-in `scripts/cut-release.sh` plus repo-local instructions in `AGENTS.md`, adapted to the repo’s package manager and release situation."
 ---
 
 # Cut Release
 
-Use this skill for repo-local release work. Prefer a checked-in release path over reconstructing the sequence by hand.
+Use this skill to establish or update a repo-local release process. The goal is not just to run a release once. The goal is to leave behind a deterministic local pattern that future agent runs can follow.
 
 Primary commands:
 
@@ -19,11 +19,12 @@ In Forge itself, read [docs/release.md](../../../docs/release.md) when you need 
 
 When a repo does not already have the release pattern in place:
 
+- inspect the repo to identify the package manager, version files, lockfiles, validation command, and release mode
 - create `scripts/` if it does not exist
 - create `.agents/skills/cut-release/` if it does not exist
 - add a repo-local `scripts/cut-release.sh`
 - add or update the repo-local `.agents/skills/cut-release/SKILL.md`
-- reference the skill and script in the repo `AGENTS.md`
+- add repo-local instructions in `AGENTS.md` that tell future agents when to use the skill and script
 
 The pattern should stay deterministic:
 
@@ -33,6 +34,19 @@ The pattern should stay deterministic:
 - normal use is dry-run first, then real release
 - corrections to an already-published release stay explicit and manual
 
+## Detection
+
+Decide the release process from repo evidence, not habit.
+
+Look for:
+
+- package manager and version source: `Cargo.toml`, `pyproject.toml`, `package.json`, workspace files
+- lockfiles: `Cargo.lock`, `uv.lock`, `pnpm-lock.yaml`, `package-lock.json`
+- task runner: `justfile`, `Makefile`, `package.json` scripts, repo scripts
+- release mode: checked-in script already exists, GitHub release is manual via `gh`, or the repo has another explicit release contract in docs
+
+If the repo already has a deterministic checked-in release process, refine it instead of replacing it.
+
 ## Repo Adaptation
 
 Keep the workflow shape stable, but swap the toolchain-specific steps for each repo:
@@ -40,12 +54,26 @@ Keep the workflow shape stable, but swap the toolchain-specific steps for each r
 - Cargo: bump crate manifests, update `Cargo.lock`, run `cargo check`
 - `uv` / `pyproject.toml`: bump `pyproject.toml`, refresh the lockfile if the repo tracks one, run the repo’s Python verification command
 - `pnpm`: bump `package.json` or workspace package manifests, refresh `pnpm-lock.yaml`, run the repo’s package-manager verification command
+- manual GitHub release flow: keep versioning and validation in the script, but let the final publish step call `gh release create` explicitly if that is the repo contract
+- non-`gh` publish flow: document the repo’s actual final publish command and keep it explicit in the script
 
 The script should verify the actual files and checks used by that repo rather than assuming Cargo.
 
+## Agent Instructions
+
+After creating the local release process, leave repo-local instructions that future agents can follow without rediscovering the workflow.
+
+Those instructions should say:
+
+- when to use the `cut-release` skill
+- which entrypoint to prefer: `just cut-release`, `./scripts/cut-release.sh`, or another repo wrapper
+- whether dry-run is required before the real release
+- which package manager and version files the script owns
+- whether the final publish step is `gh release create` or another explicit repo-local release action
+
 Working rules:
 
-- Prefer `just cut-release` as the default entrypoint.
+- Prefer `just cut-release` as the default entrypoint when a `justfile` exists; otherwise use the checked-in repo wrapper that fits the repo.
 - Use `--dry-run` before mutating when you need to verify the next version or the enforced sequence.
 - Use `--version <v>` only when the release version is already decided; otherwise let the script resolve the next Phoenix-date CalVer.
 - Do not reconstruct the flow with separate bump, check, push, and `gh release create` commands unless you are explicitly correcting a previously published release.
