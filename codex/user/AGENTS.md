@@ -33,6 +33,8 @@ Ask first:
 - No `Co-Authored-By` lines in commits.
 - Use one branch per feature or fix.
 - Prefer worktrees for parallel work when helpful.
+- Run mutating git commands serially, not in parallel.
+- Do not overlap `git add`, `git commit`, `git push`, branch updates, or other index-writing commands in concurrent tool calls.
 - Clean up branches after merge.
 - Use conventional commits when the repo already uses them.
 
