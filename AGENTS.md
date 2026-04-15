@@ -91,6 +91,7 @@ When adding a new Forge-managed skill, update these three locations together:
 ## Versioning And Releases
 
 - use semver-compatible CalVer: `YYYYMMDD.0.N`
+- for this repo specifically, releases use Phoenix-date CalVer such as `20260415.0.0`
 - keep crate versions aligned across the workspace
 - current release flow is:
   - `just cut-release`
