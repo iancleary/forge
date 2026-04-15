@@ -4,7 +4,14 @@ Agent-friendly CLIs built as Rust binaries.
 
 ## Install (User-First)
 
-Prerequisite: install Rust and Cargo first with `rustup` from <https://rustup.rs>.
+On supported macOS and Linux targets, the fast release install path uses attested release artifacts. That fast path requires GitHub CLI with `gh release verify-asset`.
+
+Rust and Cargo are still required when:
+
+- you pass `--build-from-source`
+- no attested release artifact is available for your platform
+- `gh release verify-asset` is unavailable locally, which causes an explicit fallback to tagged source build
+- you are developing Forge from source
 
 This section is the primary path: using Forge as an installed tool on a machine.
 
@@ -25,7 +32,11 @@ curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/instal
 That installer:
 
 - resolves the latest published Forge release tag by default
-- installs the Forge binaries listed in `scripts/install-forge-release.sh` from that tagged release source
+- re-executes the installer script from the exact release tag it is about to install
+- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
+- verifies artifact SHA-256 against the published release checksums
+- verifies the GitHub release attestation before installing an artifact
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
@@ -34,7 +45,7 @@ That installer:
 If you want a deterministic install pinned to a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260412.0.7/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
 ```
 
 If you want the binaries but not the Codex baseline:
@@ -51,6 +62,12 @@ forge skills status
 forge codex diff
 ```
 
+If you want to verify a downloaded release archive against the published GitHub provenance attestation:
+
+```sh
+gh release verify-asset 20260412.0.7 ./forge-20260412.0.7-x86_64-apple-darwin.tar.gz -R iancleary/forge
+```
+
 ### 3. Steady-State Updates
 
 After bootstrap, prefer the Forge-managed update path:
@@ -63,7 +80,9 @@ forge self update
 In release mode, that path now:
 
 - checks GitHub release tags by querying the Forge repo tags
-- updates installed Forge binaries to the newest tagged release with Cargo when needed
+- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
+- verifies artifacts against the published release manifest, checksums, and GitHub release attestation
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable
 - reconciles Forge-managed skills
 - reapplies the managed Codex baseline
 
@@ -86,7 +105,7 @@ The most common commands and their intent:
   checks your local Forge health and state files.
 - `forge self update-check`  
   compares the installed Forge version to the latest GitHub release.
-- `forge self update`  
+- `forge self update [--build-from-source]`
   updates Forge and managed assets when behind.
 - `forge version [--json] [--update]`  
   reports the current hash/version plus release state; `--update` runs `forge self update` directly when an update is available.

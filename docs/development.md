@@ -19,11 +19,7 @@ cargo run -p linear -- --json viewer
 ## Install Locally From Checkout
 
 ```sh
-cargo install --path crates/forge
-cargo install --path crates/slack-query
-cargo install --path crates/slack-agent
-cargo install --path crates/codex-threads
-cargo install --path crates/linear
+cargo run -p forge -- dev install --repo-path "$(pwd)"
 ```
 
 Then:

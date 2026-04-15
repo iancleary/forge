@@ -7,7 +7,7 @@ install-forge-dev-repo.sh
 
 Dev-only bootstrap for private development:
   - clones iancleary/forge via `gh` into /tmp
-  - delegates to `install-forge-dev-local.sh` to install all workspace binary crates
+  - delegates to `install-forge-dev-local.sh` to build and install the managed binaries
 
 Usage:
   scripts/install-forge-dev-repo.sh [--repo OWNER/REPO] [--ref REF] [--dir PATH] [--no-force]
@@ -16,7 +16,7 @@ Options:
   --repo   GitHub repo to clone (default: iancleary/forge)
   --ref    Git ref to check out (default: main)
   --dir    Clone directory (default: /tmp/forge)
-  --no-force  Do not pass --force to cargo install
+  --no-force  Do not overwrite existing installed binaries
   -h,--help  Show help
 EOF
 }
