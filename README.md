@@ -4,13 +4,13 @@ Agent-friendly CLIs built as Rust binaries.
 
 ## Install (User-First)
 
-On supported macOS and Linux targets, the default release install path uses attested release artifacts and does not require a local Rust toolchain when `gh` is available for attestation verification.
+On supported macOS and Linux targets, the fast release install path uses attested release artifacts. That fast path requires GitHub CLI with `gh release verify-asset`.
 
 Rust and Cargo are still required when:
 
 - you pass `--build-from-source`
 - no attested release artifact is available for your platform
-- `gh release verify-asset` is unavailable locally, which causes an explicit fallback to source build
+- `gh release verify-asset` is unavailable locally, which causes an explicit fallback to tagged source build
 - you are developing Forge from source
 
 This section is the primary path: using Forge as an installed tool on a machine.
@@ -33,7 +33,7 @@ That installer:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact release tag it is about to install
-- prefers attested release artifacts for supported platforms
+- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
 - verifies artifact SHA-256 against the published release checksums
 - verifies the GitHub release attestation before installing an artifact
 - falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available
@@ -80,7 +80,7 @@ forge self update
 In release mode, that path now:
 
 - checks GitHub release tags by querying the Forge repo tags
-- prefers attested release artifacts for supported platforms
+- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
 - verifies artifacts against the published release manifest, checksums, and GitHub release attestation
 - falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable
 - reconciles Forge-managed skills

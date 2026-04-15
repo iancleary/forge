@@ -15,6 +15,10 @@ usage() {
   cat <<'EOF'
 Install Forge CLIs from the latest published release or a specific tagged release.
 
+The fast verified artifact path requires GitHub CLI (`gh`) with
+`gh release verify-asset` support. Without that, the installer falls back to a
+tagged source build with `cargo` and `git`.
+
 Usage:
   install-forge-release.sh [--tag <release-tag>] [--skip-codex] [--build-from-source]
 
@@ -32,6 +36,27 @@ die() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+ensure_source_build_prereqs() {
+  missing=""
+  if ! command -v cargo >/dev/null 2>&1; then
+    missing="cargo"
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    if [ -n "$missing" ]; then
+      missing="$missing, git"
+    else
+      missing="git"
+    fi
+  fi
+  [ -z "$missing" ] && return 0
+
+  if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+    die "tagged source builds require: $missing"
+  fi
+
+  die "the fast verified artifact path requires GitHub CLI (gh); tagged source-build fallback requires: $missing"
 }
 
 resolve_latest_tag() {
@@ -100,6 +125,30 @@ sha256_file() {
 can_verify_artifact_attestation() {
   command -v gh >/dev/null 2>&1 || return 1
   gh release verify-asset --help >/dev/null 2>&1 || return 1
+}
+
+artifact_install_unavailable_reason() {
+  if ! command -v curl >/dev/null 2>&1; then
+    printf '%s\n' "release artifact download requires curl"
+    return 0
+  fi
+  if ! command -v tar >/dev/null 2>&1; then
+    printf '%s\n' "release artifact extraction requires tar"
+    return 0
+  fi
+  if ! detect_target >/dev/null 2>&1; then
+    printf '%s\n' "no attested release artifact is published for this platform"
+    return 0
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    printf '%s\n' "fast verified artifact install requires GitHub CLI (gh)"
+    return 0
+  fi
+  if ! gh release verify-asset --help >/dev/null 2>&1; then
+    printf '%s\n' "fast verified artifact install requires a GitHub CLI with gh release verify-asset support"
+    return 0
+  fi
+  return 1
 }
 
 verify_artifact_attestation() {
@@ -257,6 +306,7 @@ handoff_to_tagged_installer
 echo "Installing Forge CLIs from ${REPO_URL} @ ${REF}"
 
 if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
+  artifact_reason="$(artifact_install_unavailable_reason || true)"
   if install_from_artifact; then
     echo "Installed attested release artifacts for ${REF}"
   else
@@ -264,10 +314,16 @@ if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
     if [ "$status" -ne 2 ]; then
       exit "$status"
     fi
-    echo "Attested release artifact install unavailable; falling back to source build."
+    if [ -n "$artifact_reason" ]; then
+      echo "${artifact_reason}; falling back to tagged source build." >&2
+    else
+      echo "Attested release artifact install unavailable; falling back to tagged source build." >&2
+    fi
+    ensure_source_build_prereqs
     install_from_source
   fi
 else
+  ensure_source_build_prereqs
   install_from_source
 fi
 

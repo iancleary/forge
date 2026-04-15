@@ -116,7 +116,7 @@ cargo check
 
 ## User Install And Update Story
 
-The current user-facing release bootstrap path is a verified artifact install when possible, with tagged source build fallback.
+The current user-facing release bootstrap path is GitHub-only: the fast verified artifact path requires GitHub CLI with `gh release verify-asset`, and the secure fallback is a tagged source build with `--locked`.
 
 New machine install:
 
@@ -128,7 +128,7 @@ That script:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact tag it is about to install
-- prefers a verified platform release artifact when available
+- uses a verified platform release artifact only when `gh release verify-asset` is available locally
 - verifies artifact SHA-256 before install
 - falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
 - installs Forge-managed skills into `~/.agents/skills`
@@ -144,7 +144,7 @@ Update story:
 
 - use the installer script for first install and recovery
 - use `forge self update-check` and `forge self update` as the steady-state release update path
-- in release mode, that path checks the latest repo tag and prefers an attested platform artifact when available
+- in release mode, that path checks the latest repo tag and uses an attested platform artifact only when `gh release verify-asset` is available locally
 - in release mode, `forge self update --build-from-source` forces the tagged source-build path
 - in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
 - in release mode, missing local support for `gh release verify-asset` also falls back to a tagged source build with `--locked`

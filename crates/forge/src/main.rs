@@ -1166,6 +1166,7 @@ fn doctor() -> Result<DoctorResult> {
         doctor_command_check("cargo", "tool", "cargo", &["--version"]),
         doctor_command_check("git", "tool", "git", &["--version"]),
         doctor_command_check("gh", "tool", "gh", &["--version"]),
+        doctor_release_artifact_verification_check(),
         doctor_command_check("rg", "tool", "rg", &["--version"]),
         doctor_command_check("jq", "tool", "jq", &["--version"]),
         doctor_gh_auth_check(),
@@ -2170,6 +2171,55 @@ fn doctor_gh_auth_check() -> DoctorCheck {
                     .to_string(),
             detail: Some(err.to_string()),
             remediation,
+            upgrades: Vec::new(),
+        },
+    }
+}
+
+fn doctor_release_artifact_verification_check() -> DoctorCheck {
+    let upgrades = tool_upgrade_commands("gh");
+    match run_command_capture("gh", &["release", "verify-asset", "--help"]) {
+        Ok(output) if output.status.success() => DoctorCheck {
+            id: "release_artifact_verification".to_string(),
+            category: "release".to_string(),
+            status: "pass".to_string(),
+            summary: "Fast Forge release installs and updates are ready".to_string(),
+            detail: Some(
+                "GitHub CLI release attestation verification is available locally.".to_string(),
+            ),
+            remediation: Vec::new(),
+            upgrades,
+        },
+        Ok(output) => DoctorCheck {
+            id: "release_artifact_verification".to_string(),
+            category: "release".to_string(),
+            status: "warn".to_string(),
+            summary: "Fast Forge release installs and updates are unavailable".to_string(),
+            detail: output_failure_detail(&output).or_else(|| {
+                Some(
+                    "Forge requires `gh release verify-asset` for the fast verified artifact path."
+                        .to_string(),
+                )
+            }),
+            remediation: vec![
+                "install or upgrade GitHub CLI so `gh release verify-asset` is available"
+                    .to_string(),
+                "without that command, release install and `forge self update` fall back to tagged source builds".to_string(),
+            ],
+            upgrades,
+        },
+        Err(err) => DoctorCheck {
+            id: "release_artifact_verification".to_string(),
+            category: "release".to_string(),
+            status: "warn".to_string(),
+            summary: "Fast Forge release installs and updates are unavailable".to_string(),
+            detail: Some(format!(
+                "Forge requires GitHub CLI with `gh release verify-asset` for the fast verified artifact path: {err}"
+            )),
+            remediation: vec![
+                "install GitHub CLI so `gh release verify-asset` is available".to_string(),
+                "without GitHub CLI, release install and `forge self update` fall back to tagged source builds".to_string(),
+            ],
             upgrades: Vec::new(),
         },
     }
