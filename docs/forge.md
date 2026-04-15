@@ -116,6 +116,7 @@ Important boundary:
 - `forge self update` verifies artifact SHA-256 before install
 - `forge self update` falls back to a tagged source build with `--locked` when verified artifacts are unavailable or when `--build-from-source` is passed
 - checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
+- release assets also publish GitHub provenance attestations for manual or policy-driven verification outside the installer
 - in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
 - in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
 - in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly

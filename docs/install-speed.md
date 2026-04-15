@@ -7,7 +7,8 @@ Current status:
 - single-workspace source builds are implemented for install and update fallback
 - verified release artifacts are implemented for the curated supported platforms
 - release metadata now includes a JSON manifest plus published SHA-256 sums
-- stronger signing and provenance are still future hardening work
+- GitHub provenance attestations are published for release archives and release metadata
+- stronger signing inside the installer trust path is still future hardening work
 
 ## Problem
 
@@ -218,6 +219,12 @@ Stronger later options:
 - GitHub artifact provenance attestation
 
 Those are valuable, but they should be layered on top of a clean checksum-and-manifest model rather than replacing it.
+
+Current state:
+
+- GitHub artifact provenance attestation is implemented for published release archives and release metadata
+- release verification by end users can use `gh release verify-asset`
+- installer-side use of attestations is still future work
 
 ## Why Not Binary Comparison
 

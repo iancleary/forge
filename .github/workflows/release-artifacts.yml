@@ -6,6 +6,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   build:
@@ -34,6 +37,17 @@ jobs:
             --version "${{ github.event.release.tag_name }}" \
             --target "${{ matrix.target }}" \
             --output-dir dist
+      - name: Attest Release Artifact
+        id: attest_artifact
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Save Artifact Attestation Bundle
+        shell: bash
+        run: |
+          cp \
+            "${{ steps.attest_artifact.outputs.bundle-path }}" \
+            "dist/forge-${{ github.event.release.tag_name }}-${{ matrix.target }}.attestation.json"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
@@ -57,6 +71,19 @@ jobs:
           scripts/build-forge-release-manifest.sh \
             --version "${{ github.event.release.tag_name }}" \
             --artifacts-dir dist
+      - name: Attest Release Metadata
+        id: attest_metadata
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/forge-release-manifest.json
+            dist/forge-release-sha256sums.txt
+      - name: Save Metadata Attestation Bundle
+        shell: bash
+        run: |
+          cp \
+            "${{ steps.attest_metadata.outputs.bundle-path }}" \
+            dist/forge-release-metadata.attestation.json
       - name: Upload Release Assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,6 +91,7 @@ jobs:
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
             dist/*.tar.gz \
+            dist/*.attestation.json \
             dist/forge-release-manifest.json \
             dist/forge-release-sha256sums.txt \
             --clobber

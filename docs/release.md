@@ -156,6 +156,7 @@ Forge now publishes a curated set of platform release artifacts plus:
 
 - `forge-release-manifest.json`
 - `forge-release-sha256sums.txt`
+- per-artifact provenance bundles as `*.attestation.json`
 
 This is still intentionally narrower than native package-manager formulas or a fully generalized release service.
 
@@ -170,6 +171,20 @@ just install-list-check
 ```
 
 This check fails if a binary crate exists under `crates/*/src/main.rs` but is not listed in the installer.
+
+## Verifying Release Assets
+
+Forge release assets now publish GitHub artifact attestations in addition to raw checksums.
+
+Recommended online verification for a downloaded archive:
+
+```sh
+gh release verify-asset 20260415.0.1 ./forge-20260415.0.1-x86_64-apple-darwin.tar.gz -R iancleary/forge
+```
+
+That verification path uses the published GitHub attestation associated with the release asset and checks that the asset matches the release provenance.
+
+For offline workflows, the release also publishes `*.attestation.json` bundle files that correspond to the built artifacts and release metadata.
 
 ## Maintaining The Release Tool Contract
 
@@ -225,5 +240,5 @@ gh release create <version> --target main --title <version> --generate-notes --l
 
 - crates.io publishing
 - automatic branch merging
-- signed checksums or provenance attestations
 - broad target coverage beyond the curated release matrix
+- installer-side verification of GitHub provenance attestations during bootstrap or self-update

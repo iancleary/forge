@@ -35,6 +35,7 @@ That installer:
 - prefers verified release artifacts for supported platforms
 - verifies artifact SHA-256 against the published release checksums
 - falls back to a tagged source build with `--locked` when no verified artifact is available
+- publishes GitHub artifact attestations for release assets so downloaded archives can be provenance-verified
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
@@ -58,6 +59,12 @@ After installation, a good first verification step is:
 forge doctor
 forge skills status
 forge codex diff
+```
+
+If you want to verify a downloaded release archive against the published GitHub provenance attestation:
+
+```sh
+gh release verify-asset 20260412.0.7 ./forge-20260412.0.7-x86_64-apple-darwin.tar.gz -R iancleary/forge
 ```
 
 ### 3. Steady-State Updates
