@@ -4,12 +4,13 @@ Agent-friendly CLIs built as Rust binaries.
 
 ## Install (User-First)
 
-On supported macOS and Linux targets, the default release install path uses verified release artifacts and does not require a local Rust toolchain.
+On supported macOS and Linux targets, the default release install path uses attested release artifacts and does not require a local Rust toolchain when `gh` is available for attestation verification.
 
 Rust and Cargo are still required when:
 
 - you pass `--build-from-source`
-- no verified release artifact is available for your platform
+- no attested release artifact is available for your platform
+- `gh release verify-asset` is unavailable locally, which causes an explicit fallback to source build
 - you are developing Forge from source
 
 This section is the primary path: using Forge as an installed tool on a machine.
@@ -32,10 +33,10 @@ That installer:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact release tag it is about to install
-- prefers verified release artifacts for supported platforms
+- prefers attested release artifacts for supported platforms
 - verifies artifact SHA-256 against the published release checksums
-- falls back to a tagged source build with `--locked` when no verified artifact is available
-- publishes GitHub artifact attestations for release assets so downloaded archives can be provenance-verified
+- verifies the GitHub release attestation before installing an artifact
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
@@ -79,9 +80,9 @@ forge self update
 In release mode, that path now:
 
 - checks GitHub release tags by querying the Forge repo tags
-- prefers verified release artifacts for supported platforms
-- verifies artifacts against the published release manifest and checksums
-- falls back to a tagged source build with `--locked` when verified artifacts are unavailable
+- prefers attested release artifacts for supported platforms
+- verifies artifacts against the published release manifest, checksums, and GitHub release attestation
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable
 - reconciles Forge-managed skills
 - reapplies the managed Codex baseline
 

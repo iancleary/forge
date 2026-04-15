@@ -3,6 +3,7 @@
 set -eu
 
 REPO_URL="https://github.com/iancleary/forge"
+REPO_SLUG="iancleary/forge"
 REPO_API_URL="https://api.github.com/repos/iancleary/forge"
 RAW_REPO_URL="https://raw.githubusercontent.com/iancleary/forge"
 RELEASE_DOWNLOAD_URL="${REPO_URL}/releases/download"
@@ -96,6 +97,25 @@ sha256_file() {
   die "missing SHA-256 tool (sha256sum, shasum, or openssl)"
 }
 
+can_verify_artifact_attestation() {
+  command -v gh >/dev/null 2>&1 || return 1
+  gh release verify-asset --help >/dev/null 2>&1 || return 1
+}
+
+verify_artifact_attestation() {
+  archive_path="$1"
+
+  if ! can_verify_artifact_attestation; then
+    return 2
+  fi
+
+  if gh release verify-asset "$REF" "$archive_path" -R "$REPO_SLUG" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  die "GitHub attestation verification failed for $archive_path"
+}
+
 handoff_to_tagged_installer() {
   [ "${FORGE_INSTALLER_PINNED:-0}" = "1" ] && return 0
   command -v curl >/dev/null 2>&1 || return 0
@@ -118,10 +138,10 @@ handoff_to_tagged_installer() {
 install_from_artifact() (
   set -eu
 
-  command -v curl >/dev/null 2>&1 || exit 1
-  command -v tar >/dev/null 2>&1 || exit 1
+  command -v curl >/dev/null 2>&1 || return 2
+  command -v tar >/dev/null 2>&1 || return 2
 
-  target="$(detect_target)" || exit 1
+  target="$(detect_target)" || return 2
   asset_name="forge-${REF}-${target}.tar.gz"
 
   tmp_dir="$(mktemp -d)"
@@ -129,19 +149,22 @@ install_from_artifact() (
 
   sha256sums_path="$tmp_dir/forge-release-sha256sums.txt"
   if ! curl -fsSL "${RELEASE_DOWNLOAD_URL}/${REF}/forge-release-sha256sums.txt" -o "$sha256sums_path"; then
-    exit 1
+    return 2
   fi
 
   expected_sha="$(grep "  ${asset_name}\$" "$sha256sums_path" | awk '{print $1}' | head -n 1)"
-  [ -n "$expected_sha" ] || exit 1
+  [ -n "$expected_sha" ] || return 2
+  can_verify_artifact_attestation || return 2
 
   archive_path="$tmp_dir/$asset_name"
   curl -fsSL "${RELEASE_DOWNLOAD_URL}/${REF}/${asset_name}" -o "$archive_path" ||
-    die "failed to download verified release artifact: $asset_name"
+    die "failed to download attested release artifact: $asset_name"
 
   actual_sha="$(sha256_file "$archive_path")"
   [ "$actual_sha" = "$expected_sha" ] ||
     die "checksum mismatch for $asset_name: expected $expected_sha, got $actual_sha"
+
+  verify_artifact_attestation "$archive_path"
 
   entries="$(tar -tzf "$archive_path")"
   for entry in $entries; do
@@ -149,7 +172,7 @@ install_from_artifact() (
       forge|codex-threads|linear|slack-agent|slack-query)
         ;;
       *)
-        die "verified release artifact contains unexpected entry: $entry"
+        die "attested release artifact contains unexpected entry: $entry"
         ;;
     esac
   done
@@ -162,7 +185,7 @@ install_from_artifact() (
   mkdir -p "$cargo_bin"
   for bin in $(default_binaries); do
     src="$extract_dir/$bin"
-    [ -f "$src" ] || die "verified release artifact is missing binary: $bin"
+    [ -f "$src" ] || die "attested release artifact is missing binary: $bin"
     cp "$src" "$cargo_bin/$bin"
     chmod 755 "$cargo_bin/$bin" 2>/dev/null || true
   done
@@ -233,12 +256,18 @@ handoff_to_tagged_installer
 
 echo "Installing Forge CLIs from ${REPO_URL} @ ${REF}"
 
-if [ "$BUILD_FROM_SOURCE" -eq 0 ] && install_from_artifact; then
-  echo "Installed verified release artifacts for ${REF}"
-else
-  if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
-    echo "Verified release artifact unavailable for this platform; falling back to source build."
+if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
+  if install_from_artifact; then
+    echo "Installed attested release artifacts for ${REF}"
+  else
+    status=$?
+    if [ "$status" -ne 2 ]; then
+      exit "$status"
+    fi
+    echo "Attested release artifact install unavailable; falling back to source build."
+    install_from_source
   fi
+else
   install_from_source
 fi
 

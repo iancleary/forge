@@ -144,10 +144,12 @@ Update story:
 
 - use the installer script for first install and recovery
 - use `forge self update-check` and `forge self update` as the steady-state release update path
-- in release mode, that path checks the latest repo tag and prefers a verified platform artifact when available
+- in release mode, that path checks the latest repo tag and prefers an attested platform artifact when available
 - in release mode, `forge self update --build-from-source` forces the tagged source-build path
 - in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
+- in release mode, missing local support for `gh release verify-asset` also falls back to a tagged source build with `--locked`
 - checksum mismatch is a hard failure; do not silently fall back after verification failure
+- attestation verification failure is a hard failure; do not silently fall back after verification failure
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
 - in release mode, `config/release-skills.toml` is the source of truth for current and legacy managed skill names used during local skill migration
 - after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
@@ -241,4 +243,4 @@ gh release create <version> --target main --title <version> --generate-notes --l
 - crates.io publishing
 - automatic branch merging
 - broad target coverage beyond the curated release matrix
-- installer-side verification of GitHub provenance attestations during bootstrap or self-update
+- a second non-GitHub-native trust path such as Sigstore verification in the installer

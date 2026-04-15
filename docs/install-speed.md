@@ -5,10 +5,11 @@ This document defines the recommended direction for making Forge installs and up
 Current status:
 
 - single-workspace source builds are implemented for install and update fallback
-- verified release artifacts are implemented for the curated supported platforms
+- attested release artifacts are implemented for the curated supported platforms
 - release metadata now includes a JSON manifest plus published SHA-256 sums
 - GitHub provenance attestations are published for release archives and release metadata
-- stronger signing inside the installer trust path is still future hardening work
+- installer and `forge self update` now verify GitHub release attestations before taking the artifact path
+- stronger non-GitHub-native signing inside the installer trust path is still future hardening work
 
 ## Problem
 
@@ -224,7 +225,9 @@ Current state:
 
 - GitHub artifact provenance attestation is implemented for published release archives and release metadata
 - release verification by end users can use `gh release verify-asset`
-- installer-side use of attestations is still future work
+- installer and `forge self update` use `gh release verify-asset` when it is available locally
+- if attestation verification cannot run locally, the installer falls back to the tagged source-build path
+- if attestation verification runs and fails, install/update fails closed
 
 ## Why Not Binary Comparison
 

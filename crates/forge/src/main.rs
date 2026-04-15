@@ -221,7 +221,7 @@ struct UpdateCheckArgs {}
 struct UpdateArgs {
     #[arg(
         long,
-        help = "Build from tagged source instead of using verified release artifacts"
+        help = "Build from tagged source instead of using attested release artifacts"
     )]
     build_from_source: bool,
 }
@@ -3889,6 +3889,35 @@ fn release_manifest_url(version: &str) -> String {
     release_asset_url(version, RELEASE_MANIFEST_NAME)
 }
 
+fn can_verify_release_asset_attestation() -> bool {
+    run_command_capture("gh", &["release", "verify-asset", "--help"])
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn verify_release_asset_attestation(version: &str, archive_path: &Path) -> Result<()> {
+    let archive_path_string = archive_path.display().to_string();
+    let args = vec![
+        "release".to_string(),
+        "verify-asset".to_string(),
+        version.to_string(),
+        archive_path_string,
+        "-R".to_string(),
+        FORGE_REPO_SLUG.to_string(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command_capture("gh", &arg_refs)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!(
+            "GitHub attestation verification failed for {}: {detail}",
+            archive_path.display()
+        );
+    }
+
+    Ok(())
+}
+
 fn try_download_url_to_path(url: &str, path: &Path) -> Result<Option<()>> {
     let args = vec![
         "-fsSL".to_string(),
@@ -4172,6 +4201,9 @@ fn try_install_release_artifact(
             artifact.name
         );
     }
+    if !can_verify_release_asset_attestation() {
+        return Ok(None);
+    }
 
     let temp_dir = temp_path("release-artifact");
     fs::create_dir_all(&temp_dir)
@@ -4188,6 +4220,7 @@ fn try_install_release_artifact(
                 actual_sha256
             );
         }
+        verify_release_asset_attestation(version, &archive_path)?;
 
         let extract_dir = temp_dir.join("extract");
         let expected_files = expected_binary_filenames(packages);
@@ -4195,7 +4228,7 @@ fn try_install_release_artifact(
         install_binaries_from_dir(&extract_dir, packages, true)?;
 
         Ok(Some(ReleaseBinaryInstallResult {
-            install_method: "verified_artifact".to_string(),
+            install_method: "attested_artifact".to_string(),
             artifact_target: Some(target.to_string()),
             installed_binaries: packages.to_vec(),
         }))

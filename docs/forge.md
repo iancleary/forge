@@ -112,11 +112,12 @@ Important boundary:
 - `forge self update` resolves the target tag's binary list from that tag's release installer
 - `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
 - `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
-- `forge self update` prefers a verified platform release artifact when one is published for the current platform
+- `forge self update` prefers an attested platform release artifact when one is published for the current platform
 - `forge self update` verifies artifact SHA-256 before install
-- `forge self update` falls back to a tagged source build with `--locked` when verified artifacts are unavailable or when `--build-from-source` is passed
+- `forge self update` verifies the GitHub release attestation before installing an artifact
+- `forge self update` falls back to a tagged source build with `--locked` when attestation verification cannot run, when attested artifacts are unavailable, or when `--build-from-source` is passed
 - checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
-- release assets also publish GitHub provenance attestations for manual or policy-driven verification outside the installer
+- attestation verification failure is a hard failure; Forge does not silently fall back after a failed attestation check
 - in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
 - in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
 - in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly
