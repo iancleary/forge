@@ -12,6 +12,9 @@ check:
 bump-version version:
   "{{root}}/scripts/bump-version.sh" "{{version}}"
 
+cut-release *args:
+  "{{root}}/scripts/cut-release.sh" {{args}}
+
 fmt:
   cargo fmt
 

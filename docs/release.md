@@ -4,26 +4,55 @@ This document defines the current release process and the intended future `forge
 
 ## Current Process
 
-Use GitHub CLI directly for now.
+Use the repo script directly for now:
+
+```sh
+./scripts/cut-release.sh
+```
+
+Optional flags:
+
+```sh
+./scripts/cut-release.sh --version 20260415.0.1
+./scripts/cut-release.sh --notes-file notes.md
+./scripts/cut-release.sh --dry-run
+```
+
+There is also a matching `just` entrypoint:
+
+```sh
+just cut-release
+```
+
+The script currently enforces:
+
+- branch must be `main`
+- working tree must be clean
+- local `main` must include `origin/main`
+- version format must match `YYYYMMDD.0.N`
+- omitted `--version` resolves the next Phoenix-date CalVer automatically
+- version bumping happens through `just bump-version`
+- `cargo check` must pass and `Cargo.lock` is included in the release commit
+- release diff must be limited to `Cargo.lock` and crate manifests
+- the script commits, pushes `main`, and creates the GitHub release
+
+The underlying GitHub release step still uses GitHub CLI.
 
 Recommended sequence:
 
 ```sh
-cargo check
-git push origin main
-gh release create 20260413.0.0 --target main --title 20260413.0.0 --generate-notes --latest
+./scripts/cut-release.sh
 ```
 
 Shell note:
 
-- do not wrap the `gh release create` command across lines unless you use trailing `\`
-- if `--generate-notes` ends up on its own line, zsh will try to execute it as a separate command
+- the script keeps the `gh release create` invocation on one command line, which avoids the zsh split-command footgun
 
 Why:
 
-- `gh release create` already has a good command surface
-- releases are still infrequent
-- the repo does not need a wrapper until the process becomes repetitive enough to justify one
+- the release sequence is now repetitive enough that the safe path should be the obvious path
+- GitHub CLI still provides the final release surface
+- the repo does not need a dedicated Rust release crate yet
 
 ## Version Source Of Truth
 
@@ -184,7 +213,6 @@ gh release create <version> --target main --title <version> --generate-notes --l
 
 ## Out Of Scope For Now
 
-- automatic version bumping
 - crates.io publishing
 - automatic branch merging
 - automatic cross-platform artifact packaging
