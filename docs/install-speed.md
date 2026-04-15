@@ -134,7 +134,6 @@ The release workflow now publishes:
 Supported artifact targets are intentionally curated:
 
 - `x86_64-unknown-linux-gnu`
-- `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 
 Broader target coverage is optional future work, not part of the current security requirement.

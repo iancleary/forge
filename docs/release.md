@@ -181,7 +181,7 @@ Forge release assets now publish GitHub artifact attestations in addition to raw
 Recommended online verification for a downloaded archive:
 
 ```sh
-gh release verify-asset 20260415.0.1 ./forge-20260415.0.1-x86_64-apple-darwin.tar.gz -R iancleary/forge
+gh release verify-asset 20260415.0.2 ./forge-20260415.0.2-aarch64-apple-darwin.tar.gz -R iancleary/forge
 ```
 
 That verification path uses the published GitHub attestation associated with the release asset and checks that the asset matches the release provenance.
