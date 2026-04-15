@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "20260415.0.0"
+version = "20260415.0.1"
 edition = "2024"
 license = "MIT"
 
