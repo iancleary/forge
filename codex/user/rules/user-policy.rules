@@ -63,6 +63,7 @@ prefix_rule(pattern=["cargo", "publish"], decision="forbidden", justification="P
 
 prefix_rule(pattern=["just", "--list"], decision="allow")
 prefix_rule(pattern=["just", "--summary"], decision="allow")
+prefix_rule(pattern=["just", "check"], decision="allow")
 prefix_rule(pattern=["just"], decision="prompt")
 
 prefix_rule(pattern=["eza"], decision="allow")
