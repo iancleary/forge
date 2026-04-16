@@ -10,6 +10,7 @@ RELEASE_DOWNLOAD_URL="${REPO_URL}/releases/download"
 REF="${FORGE_TAG:-}"
 INSTALL_CODEX=1
 BUILD_FROM_SOURCE=0
+ATTESTATION_FAILURE_MODE="${ATTESTATION_FAILURE_MODE:-prompt}"
 
 usage() {
   cat <<'EOF'
@@ -22,11 +23,13 @@ tagged source build with `cargo` and `git` (source build only).
 
 Usage:
   install-forge-release.sh [--tag <release-tag>] [--skip-codex] [--build-from-source]
+  install-forge-release.sh [--attestation-failure <prompt|source|fail>]
 
 Examples:
   install-forge-release.sh
   install-forge-release.sh --tag 20260412.0.7
   install-forge-release.sh --tag 20260412.0.7 --build-from-source
+  install-forge-release.sh --attestation-failure fail
 EOF
 }
 
@@ -164,11 +167,45 @@ verify_artifact_attestation() {
     --source-ref "refs/tags/$REF" \
     --signer-workflow "$REPO_SLUG/.github/workflows/release-artifacts.yml" \
     --predicate-type https://slsa.dev/provenance/v1 \
-    >/dev/null 2>&1; then
+    >/dev/null 2>&1
+  then
     return 0
   fi
 
-  die "GitHub attestation verification failed for $archive_path"
+  return 3
+}
+
+handle_attestation_failure() {
+  detail="$1"
+
+  case "$ATTESTATION_FAILURE_MODE" in
+    source)
+      echo "$detail; continuing with tagged source build by policy" >&2
+      return 0
+      ;;
+    fail)
+      die "$detail"
+      ;;
+    prompt|*)
+      if [ -t 0 ] && [ -t 2 ]; then
+        printf '%s\n' "$detail" >&2
+        printf 'Build from tagged source instead? [y/N] ' >&2
+        read -r ans
+        case "$ans" in
+          [Yy]|[Yy][Ee][Ss])
+            echo "continuing with tagged source build by policy" >&2
+            return 0
+            ;;
+          *)
+            die "$detail"
+            ;;
+        esac
+      fi
+
+      echo "$detail; continuing with tagged source build by policy" >&2
+      return 0
+      ;;
+  esac
 }
 
 handoff_to_tagged_installer() {
@@ -187,7 +224,8 @@ handoff_to_tagged_installer() {
   [ "$INSTALL_CODEX" -eq 0 ] && set -- "$@" --skip-codex
   [ "$BUILD_FROM_SOURCE" -eq 1 ] && set -- "$@" --build-from-source
 
-  FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" exec "$installer_path" "$@"
+  ATTESTATION_FAILURE_MODE="$ATTESTATION_FAILURE_MODE" FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" \
+    exec "$installer_path" "$@"
 }
 
 install_from_artifact() (
@@ -219,7 +257,16 @@ install_from_artifact() (
   [ "$actual_sha" = "$expected_sha" ] ||
     die "checksum mismatch for $asset_name: expected $expected_sha, got $actual_sha"
 
-  verify_artifact_attestation "$archive_path"
+  if ! verify_artifact_attestation "$archive_path"; then
+    status=$?
+    if [ "$status" -eq 2 ]; then
+      return 2
+    elif [ "$status" -eq 3 ]; then
+      handle_attestation_failure "GitHub attestation verification failed for $archive_path"
+      return 2
+    fi
+    return "$status"
+  fi
 
   entries="$(tar -tzf "$archive_path")"
   for entry in $entries; do
@@ -292,6 +339,18 @@ while [ "$#" -gt 0 ]; do
     --build-from-source)
       BUILD_FROM_SOURCE=1
       shift
+      ;;
+    --attestation-failure)
+      [ "$#" -ge 2 ] || die "missing value for --attestation-failure"
+      ATTESTATION_FAILURE_MODE="$2"
+      case "$ATTESTATION_FAILURE_MODE" in
+        prompt|source|fail)
+          ;;
+        *)
+          die "invalid value for --attestation-failure: $ATTESTATION_FAILURE_MODE (expected prompt|source|fail)"
+          ;;
+      esac
+      shift 2
       ;;
     -h|--help)
       usage

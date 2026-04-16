@@ -227,6 +227,23 @@ struct UpdateArgs {
         help = "Build from tagged source instead of using attested release artifacts"
     )]
     build_from_source: bool,
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = AttestationFailurePolicy::Prompt,
+        help = "How to handle attestation verification failures: prompt, source, or fail"
+    )]
+    attestation_failure: AttestationFailurePolicy,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum AttestationFailurePolicy {
+    #[value(alias = "prompt")]
+    Prompt,
+    #[value(alias = "source")]
+    Source,
+    #[value(alias = "fail")]
+    Fail,
 }
 
 #[derive(Debug, Default)]
@@ -1012,6 +1029,7 @@ fn run(cli: Cli) -> Result<()> {
                 let update_result = update(
                     UpdateArgs {
                         build_from_source: false,
+                        attestation_failure: AttestationFailurePolicy::Prompt,
                     },
                     output,
                 )?;
@@ -1026,6 +1044,7 @@ fn run(cli: Cli) -> Result<()> {
                 let update_result = update(
                     UpdateArgs {
                         build_from_source: false,
+                        attestation_failure: AttestationFailurePolicy::Prompt,
                     },
                     output,
                 )?;
@@ -1343,8 +1362,13 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         progress.step(format!(
             "[4/{total_steps}] Installing Forge {target_version}"
         ));
-        let install =
-            install_release_packages(&target_version, &release_contract, args.build_from_source)?;
+        let install = install_release_packages(
+            &target_version,
+            &release_contract,
+            args.attestation_failure,
+            output,
+            args.build_from_source,
+        )?;
         install_method = Some(install.install_method);
         artifact_target = install.artifact_target;
         attestation_verified = install.attestation_verified;
@@ -2636,6 +2660,64 @@ fn parse_collision_prompt_choice(input: &str) -> Option<CollisionPromptChoice> {
         "" | "n" | "no" => Some(CollisionPromptChoice::SkipOne),
         "s" | "skip-all" => Some(CollisionPromptChoice::SkipAll),
         _ => None,
+    }
+}
+
+#[derive(Debug)]
+struct AttestationVerificationFailure {
+    detail: String,
+}
+
+impl std::fmt::Display for AttestationVerificationFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.detail)
+    }
+}
+
+impl std::error::Error for AttestationVerificationFailure {}
+
+fn prompt_fallback_to_source_build(output: OutputMode, detail: &str) -> Result<bool> {
+    if output == OutputMode::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        eprintln!("[WARN] attestation verification failed: {detail}");
+        eprintln!("[WARN] falling back to tagged source build");
+        return Ok(true);
+    }
+
+    let mut stderr = io::stderr().lock();
+    writeln!(stderr, "attestation verification failed: {detail}")
+        .context("failed to write attestation prompt")?;
+    write!(
+        stderr,
+        "Build from tagged source instead? [y]es / [n]o [n] "
+    )
+    .context("failed to write attestation prompt")?;
+    stderr.flush().context("failed to flush attestation prompt")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read attestation prompt response")?;
+    Ok(parse_update_prompt_choice(&input).unwrap_or(false))
+}
+
+fn should_fallback_to_source_build(
+    output: OutputMode,
+    policy: AttestationFailurePolicy,
+    detail: &str,
+) -> Result<bool> {
+    match policy {
+        AttestationFailurePolicy::Prompt => prompt_fallback_to_source_build(output, detail),
+        AttestationFailurePolicy::Source => {
+            if output == OutputMode::Human && io::stdin().is_terminal() && io::stderr().is_terminal() {
+                eprintln!("attestation verification failed: {detail}");
+                eprintln!("continuing with tagged source build by policy");
+            } else {
+                eprintln!("[WARN] attestation verification failed: {detail}");
+                eprintln!("[WARN] continuing with tagged source build by policy");
+            }
+            Ok(true)
+        }
+        AttestationFailurePolicy::Fail => Ok(false),
     }
 }
 
@@ -4006,7 +4088,12 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
     let output = run_command_capture("gh", &arg_refs)?;
     if !output.status.success() {
         let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
-        bail!("explicit provenance verification failed for {archive_path_string}: {detail}");
+        return Err(AttestationVerificationFailure {
+            detail: format!(
+                "explicit provenance verification failed for {archive_path_string}: {detail}"
+            ),
+        }
+        .into());
     }
 
     Ok(())
@@ -4338,12 +4425,32 @@ fn try_install_release_artifact(
 fn install_release_packages(
     version: &str,
     release_contract: &ReleaseToolsContract,
+    attestation_failure_policy: AttestationFailurePolicy,
+    output: OutputMode,
     build_from_source: bool,
 ) -> Result<ReleaseBinaryInstallResult> {
     let packages = release_packages_from_contract(release_contract);
     if !build_from_source {
-        if let Some(result) = try_install_release_artifact(version, &packages)? {
-            return Ok(result);
+        match try_install_release_artifact(version, &packages) {
+            Ok(Some(result)) => return Ok(result),
+            Ok(None) => {}
+            Err(err) => {
+                if let Some(attestation_error) = err.downcast_ref::<AttestationVerificationFailure>() {
+                    if should_fallback_to_source_build(
+                        output,
+                        attestation_failure_policy,
+                        &attestation_error.detail,
+                    )? {
+                        eprintln!(
+                            "falling back to tagged source build after failed attestation verification"
+                        );
+                    } else {
+                        return Err(err);
+                    }
+                } else {
+                    return Err(err);
+                }
+            }
         }
     }
 

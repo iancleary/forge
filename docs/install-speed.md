@@ -37,7 +37,7 @@ It gives:
 
 - materially faster first install and self-update on supported platforms
 - explicit integrity checks for downloaded binaries
-- a fail-closed path on checksum or attestation verification failure
+- a checksum-verification hard-fail path and interactive fallback on attestation failure (automatic fallback when non-interactive)
 - a source-built escape hatch when the fast path cannot be verified locally (including missing or unsupported `gh attestation verify`)
 
 It does not try to defend against every possible GitHub-side compromise. That higher bar is real, but it is not a hard requirement for this project right now.
@@ -102,7 +102,8 @@ Current behavior:
 Important failure rules:
 
 - checksum mismatch is a hard failure
-- attestation verification failure is a hard failure
+- attestation verification failure prompts to continue from source, or falls back automatically when non-interactive
+- `forge self update --attestation-failure fail` enforces hard-fail behavior on attestation mismatch
 - Forge does not silently install an unverified artifact
 
 ## Update Behavior
@@ -182,6 +183,6 @@ Treat the current model as complete for the project today:
 - GitHub-only verified artifact fast path
 - `gh` required for that fast path
 - tagged `--locked` source-build fallback
-- hard failure on checksum or attestation mismatch
+- hard failure on checksum mismatch; attestation mismatch triggers source fallback after confirmation
 
 If the project grows beyond that threat model later, the next step is a signed release manifest published on GitHub Releases. It is not required now.
