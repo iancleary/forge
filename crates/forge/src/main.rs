@@ -30,6 +30,9 @@ const RELEASE_SKILLS_REL_PATH: &str = "config/release-skills.toml";
 const RELEASE_BINARIES_BEGIN_MARKER: &str = "  # BEGIN FORGE_BINARIES";
 const RELEASE_BINARIES_END_MARKER: &str = "  # END FORGE_BINARIES";
 const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
+const RELEASE_ARTIFACT_VERIFICATION_WORKFLOW: &str = ".github/workflows/release-artifacts.yml";
+const RELEASE_ATTESTATION_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
+const RELEASE_ATTESTATION_SOURCE_REF_PREFIX: &str = "refs/tags/";
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -2198,14 +2201,14 @@ fn doctor_gh_auth_check() -> DoctorCheck {
 
 fn doctor_release_artifact_verification_check() -> DoctorCheck {
     let upgrades = tool_upgrade_commands("gh");
-    match run_command_capture("gh", &["release", "verify-asset", "--help"]) {
+    match run_command_capture("gh", &["attestation", "verify", "--help"]) {
         Ok(output) if output.status.success() => DoctorCheck {
             id: "release_artifact_verification".to_string(),
             category: "release".to_string(),
             status: "pass".to_string(),
             summary: "Fast Forge release installs and updates are ready".to_string(),
             detail: Some(
-                "GitHub CLI release attestation verification is available locally.".to_string(),
+                "GitHub CLI attestation verification is available locally.".to_string(),
             ),
             remediation: Vec::new(),
             upgrades,
@@ -2217,14 +2220,14 @@ fn doctor_release_artifact_verification_check() -> DoctorCheck {
             summary: "Fast Forge release installs and updates are unavailable".to_string(),
             detail: output_failure_detail(&output).or_else(|| {
                 Some(
-                    "Forge requires `gh release verify-asset` for the fast verified artifact path."
+                    "Forge requires `gh attestation verify` for the fast verified artifact path."
                         .to_string(),
                 )
             }),
             remediation: vec![
-                "install or upgrade GitHub CLI so `gh release verify-asset` is available"
+                "install or upgrade GitHub CLI so `gh attestation verify` is available"
                     .to_string(),
-                "without that command, release install and `forge self update` fall back to tagged source builds".to_string(),
+                "without it, forge skips verified artifact install (artifact path unavailable) and uses tagged source builds only".to_string(),
             ],
             upgrades,
         },
@@ -2234,11 +2237,11 @@ fn doctor_release_artifact_verification_check() -> DoctorCheck {
             status: "warn".to_string(),
             summary: "Fast Forge release installs and updates are unavailable".to_string(),
             detail: Some(format!(
-                "Forge requires GitHub CLI with `gh release verify-asset` for the fast verified artifact path: {err}"
+                "Forge requires GitHub CLI attestation support for the fast verified artifact path: {err}"
             )),
             remediation: vec![
-                "install GitHub CLI so `gh release verify-asset` is available".to_string(),
-                "without GitHub CLI, release install and `forge self update` fall back to tagged source builds".to_string(),
+                "install GitHub CLI so `gh attestation verify` is available".to_string(),
+                "without it, forge skips verified artifact install (artifact path unavailable) and uses tagged source builds only".to_string(),
             ],
             upgrades: Vec::new(),
         },
@@ -3972,29 +3975,38 @@ fn release_manifest_url(version: &str) -> String {
 }
 
 fn can_verify_release_asset_attestation() -> bool {
-    run_command_capture("gh", &["release", "verify-asset", "--help"])
+    let has_attestation_verify = run_command_capture("gh", &["attestation", "verify", "--help"])
         .map(|output| output.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    has_attestation_verify
 }
 
 fn verify_release_asset_attestation(version: &str, archive_path: &Path) -> Result<()> {
+    verify_release_asset_with_attestation_verify(version, archive_path)
+}
+
+fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Path) -> Result<()> {
     let archive_path_string = archive_path.display().to_string();
+    let source_ref = format!("{RELEASE_ATTESTATION_SOURCE_REF_PREFIX}{version}");
+    let signer_workflow = format!("{FORGE_REPO_SLUG}/{RELEASE_ARTIFACT_VERIFICATION_WORKFLOW}");
     let args = vec![
-        "release".to_string(),
-        "verify-asset".to_string(),
-        version.to_string(),
-        archive_path_string,
-        "-R".to_string(),
+        "attestation".to_string(),
+        "verify".to_string(),
+        archive_path_string.clone(),
+        "--repo".to_string(),
         FORGE_REPO_SLUG.to_string(),
+        "--source-ref".to_string(),
+        source_ref,
+        "--signer-workflow".to_string(),
+        signer_workflow,
+        "--predicate-type".to_string(),
+        RELEASE_ATTESTATION_PREDICATE_TYPE.to_string(),
     ];
     let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
     let output = run_command_capture("gh", &arg_refs)?;
     if !output.status.success() {
         let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
-        bail!(
-            "GitHub attestation verification failed for {}: {detail}",
-            archive_path.display()
-        );
+        bail!("explicit provenance verification failed for {archive_path_string}: {detail}");
     }
 
     Ok(())

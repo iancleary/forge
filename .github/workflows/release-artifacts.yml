@@ -104,12 +104,23 @@ jobs:
         run: |
           for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do
             asset_name="forge-${{ github.event.release.tag_name }}-${target}.tar.gz"
+            source_ref="refs/tags/${{ github.event.release.tag_name }}"
             if [ ! -f "dist/$asset_name" ]; then
               echo "missing release asset for verification: dist/$asset_name"
               exit 1
             fi
-            if ! gh release verify-asset "${{ github.event.release.tag_name }}" "dist/$asset_name" -R "${{ github.repository }}"; then
-              echo "failed to verify attestation for dist/$asset_name"
-              exit 1
-            fi
+            for attempt in 1 2 3; do
+              if gh attestation verify "dist/$asset_name" \
+                --repo "${{ github.repository }}" \
+                --source-ref "$source_ref" \
+                --signer-workflow "${{ github.repository }}/.github/workflows/release-artifacts.yml" \
+                --predicate-type https://slsa.dev/provenance/v1; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "failed to verify attestation for dist/$asset_name"
+                exit 1
+              fi
+              sleep "$((attempt * 2))"
+            done
           done

@@ -18,8 +18,8 @@ That means:
 - GitHub Actions builds release artifacts
 - GitHub Releases publishes the artifacts and release metadata
 - GitHub provenance attestations are published for release archives and release metadata
-- the fast install and update path requires GitHub CLI with `gh release verify-asset`
-- if that verification path is unavailable locally, Forge falls back to a tagged source build with `--locked`
+- the fast install and update path requires GitHub CLI attestation support
+- if that verification path is unavailable locally, Forge falls back to a tagged source build with `--locked` and skips artifact install
 
 This is the intended tradeoff for the project today:
 
@@ -38,7 +38,7 @@ It gives:
 - materially faster first install and self-update on supported platforms
 - explicit integrity checks for downloaded binaries
 - a fail-closed path on checksum or attestation verification failure
-- a source-built escape hatch when the fast path cannot be verified locally
+- a source-built escape hatch when the fast path cannot be verified locally (including missing or unsupported `gh attestation verify`)
 
 It does not try to defend against every possible GitHub-side compromise. That higher bar is real, but it is not a hard requirement for this project right now.
 
@@ -48,7 +48,7 @@ The fast verified artifact path requires all of the following:
 
 - supported platform artifact
 - GitHub release manifest and checksums for the target release
-- local GitHub CLI with `gh release verify-asset`
+- local GitHub CLI with attestation verification via `gh attestation verify`
 - successful checksum verification
 - successful GitHub attestation verification
 
@@ -92,12 +92,12 @@ Current behavior:
 1. Resolve the target release tag.
 2. Re-exec the installer from that exact release tag.
 3. Detect the current platform.
-4. Attempt the verified artifact path only if `gh release verify-asset` is available locally.
+4. Attempt the verified artifact path only if local attestation verification is available. If the `gh attestation verify` command is missing/unsupported, skip artifact install and use source build only.
 5. Verify artifact SHA-256.
 6. Verify GitHub release attestation.
 7. Install the binaries.
 8. Reconcile Forge-managed skills and Codex assets.
-9. If the verified artifact path is unavailable, fall back to a tagged source build with `--locked`.
+9. If the verified artifact path is unavailable, fall back to a tagged source build with `--locked` and no artifact install.
 
 Important failure rules:
 
@@ -113,9 +113,9 @@ Current behavior:
 
 1. Resolve the latest release tag.
 2. Load the release contracts from that release.
-3. Attempt the verified artifact path only if `gh release verify-asset` is available locally.
+3. Attempt the verified artifact path only if local attestation verification is available.
 4. Verify checksum and attestation before installing an artifact.
-5. Fall back to tagged source build with `--locked` when the verified artifact path is unavailable.
+5. Fall back to tagged source build with `--locked` when the verified artifact path is unavailable. This includes missing or unsupported `gh attestation verify`, in which case source build is the only path.
 6. Apply release migrations.
 7. Reconcile Forge-managed skills and Codex assets with the installed release.
 

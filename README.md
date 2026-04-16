@@ -4,13 +4,13 @@ Agent-friendly CLIs built as Rust binaries.
 
 ## Install (User-First)
 
-On supported macOS and Linux targets, the fast release install path uses attested release artifacts. That fast path requires GitHub CLI with `gh release verify-asset`.
+On supported macOS and Linux targets, the fast release install path uses attested release artifacts. That fast path uses local attestation verification through GitHub CLI.
 
 Rust and Cargo are still required when:
 
 - you pass `--build-from-source`
 - no attested release artifact is available for your platform
-- `gh release verify-asset` is unavailable locally, which causes an explicit fallback to tagged source build
+- `gh` attestation verification support is unavailable locally, which causes an explicit tagged source-build fallback (artifact path disabled; source build only)
 - you are developing Forge from source
 
 This section is the primary path: using Forge as an installed tool on a machine.
@@ -33,10 +33,10 @@ That installer:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact release tag it is about to install
-- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
+- uses attested release artifacts for supported platforms when local attestation verification is available
 - verifies artifact SHA-256 against the published release checksums
 - verifies the GitHub release attestation before installing an artifact
-- falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available (artifact path disabled, source build only)
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
@@ -65,8 +65,14 @@ forge codex diff
 If you want to verify a downloaded release archive against the published GitHub provenance attestation:
 
 ```sh
-gh release verify-asset 20260412.0.7 ./forge-20260412.0.7-aarch64-apple-darwin.tar.gz -R iancleary/forge
+gh attestation verify ./forge-20260412.0.7-aarch64-apple-darwin.tar.gz \
+  --repo iancleary/forge \
+  --source-ref refs/tags/20260412.0.7 \
+  --signer-workflow iancleary/forge/.github/workflows/release-artifacts.yml \
+  --predicate-type https://slsa.dev/provenance/v1
 ```
+
+That command is the strictest and explicit check used for release artifact trust.
 
 ### 3. Steady-State Updates
 
@@ -80,9 +86,9 @@ forge self update
 In release mode, that path now:
 
 - checks GitHub release tags by querying the Forge repo tags
-- uses attested release artifacts for supported platforms only when `gh release verify-asset` is available locally
+- uses attested release artifacts for supported platforms when local attestation verification is available
 - verifies artifacts against the published release manifest, checksums, and GitHub release attestation
-- falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable
+- falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable (artifact path disabled, source build only)
 - reconciles Forge-managed skills
 - reapplies the managed Codex baseline
 

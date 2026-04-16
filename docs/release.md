@@ -116,7 +116,7 @@ cargo check
 
 ## User Install And Update Story
 
-The current user-facing release bootstrap path is GitHub-only: the fast verified artifact path requires GitHub CLI with `gh release verify-asset`, and the secure fallback is a tagged source build with `--locked`.
+The current user-facing release bootstrap path is GitHub-only: the fast verified artifact path requires local GitHub CLI attestation support, and the secure fallback is a tagged source build with `--locked` (if `gh attestation verify` is missing/unsupported, installer artifact path is disabled and source build is the only path).
 
 New machine install:
 
@@ -128,7 +128,7 @@ That script:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact tag it is about to install
-- uses a verified platform release artifact only when `gh release verify-asset` is available locally
+- uses a verified platform release artifact only when local attestation verification is available
 - verifies artifact SHA-256 before install
 - falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
 - installs Forge-managed skills into `~/.agents/skills`
@@ -144,10 +144,10 @@ Update story:
 
 - use the installer script for first install and recovery
 - use `forge self update-check` and `forge self update` as the steady-state release update path
-- in release mode, that path checks the latest repo tag and uses an attested platform artifact only when `gh release verify-asset` is available locally
+- in release mode, that path checks the latest repo tag and uses an attested platform artifact only when local attestation verification is available
 - in release mode, `forge self update --build-from-source` forces the tagged source-build path
 - in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
-- in release mode, missing local support for `gh release verify-asset` also falls back to a tagged source build with `--locked`
+- in release mode, missing local attestation verification (including missing/unsupported `gh attestation verify`) also falls back to a tagged source build with `--locked`
 - checksum mismatch is a hard failure; do not silently fall back after verification failure
 - attestation verification failure is a hard failure; do not silently fall back after verification failure
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
@@ -178,10 +178,14 @@ This check fails if a binary crate exists under `crates/*/src/main.rs` but is no
 
 Forge release assets now publish GitHub artifact attestations in addition to raw checksums.
 
-Recommended online verification for a downloaded archive:
+Recommended online verification for a downloaded archive (strict path):
 
 ```sh
-gh release verify-asset 20260415.0.2 ./forge-20260415.0.2-aarch64-apple-darwin.tar.gz -R iancleary/forge
+gh attestation verify ./forge-20260415.0.2-aarch64-apple-darwin.tar.gz \
+  --repo iancleary/forge \
+  --source-ref refs/tags/20260415.0.2 \
+  --signer-workflow iancleary/forge/.github/workflows/release-artifacts.yml \
+  --predicate-type https://slsa.dev/provenance/v1
 ```
 
 That verification path uses the published GitHub attestation associated with the release asset and checks that the asset matches the release provenance.

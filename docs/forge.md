@@ -112,10 +112,10 @@ Important boundary:
 - `forge self update` resolves the target tag's binary list from that tag's release installer
 - `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
 - `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
-- `forge self update` uses an attested platform release artifact only when one is published for the current platform and `gh release verify-asset` is available locally
+- `forge self update` uses an attested platform release artifact only when one is published for the current platform and local attestation verification is available
 - `forge self update` verifies artifact SHA-256 before install
 - `forge self update` verifies the GitHub release attestation before installing an artifact
-- `forge self update` falls back to a tagged source build with `--locked` when attestation verification cannot run, when attested artifacts are unavailable, or when `--build-from-source` is passed
+- `forge self update` falls back to a tagged source build with `--locked` when attestation verification cannot run (including unsupported `gh attestation verify` command), when attested artifacts are unavailable, or when `--build-from-source` is passed. In all of these cases, source build is the only install path.
 - checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
 - attestation verification failure is a hard failure; Forge does not silently fall back after a failed attestation check
 - in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
