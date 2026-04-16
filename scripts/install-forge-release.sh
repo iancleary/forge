@@ -16,8 +16,9 @@ usage() {
 Install Forge CLIs from the latest published release or a specific tagged release.
 
 The fast verified artifact path requires GitHub CLI (`gh`) with
-`gh release verify-asset` support. Without that, the installer falls back to a
-tagged source build with `cargo` and `git`.
+`gh attestation verify` support.
+Without that, the installer skips the fast artifact path and uses a
+tagged source build with `cargo` and `git` (source build only).
 
 Usage:
   install-forge-release.sh [--tag <release-tag>] [--skip-codex] [--build-from-source]
@@ -124,7 +125,7 @@ sha256_file() {
 
 can_verify_artifact_attestation() {
   command -v gh >/dev/null 2>&1 || return 1
-  gh release verify-asset --help >/dev/null 2>&1 || return 1
+  gh attestation verify --help >/dev/null 2>&1 || return 1
 }
 
 artifact_install_unavailable_reason() {
@@ -141,11 +142,11 @@ artifact_install_unavailable_reason() {
     return 0
   fi
   if ! command -v gh >/dev/null 2>&1; then
-    printf '%s\n' "fast verified artifact install requires GitHub CLI (gh)"
+    printf '%s\n' "fast verified artifact install requires GitHub CLI (gh); source build only"
     return 0
   fi
-  if ! gh release verify-asset --help >/dev/null 2>&1; then
-    printf '%s\n' "fast verified artifact install requires a GitHub CLI with gh release verify-asset support"
+  if ! gh attestation verify --help >/dev/null 2>&1; then
+    printf '%s\n' "fast verified artifact install requires a GitHub CLI with `gh attestation verify`; source build only"
     return 0
   fi
   return 1
@@ -158,7 +159,12 @@ verify_artifact_attestation() {
     return 2
   fi
 
-  if gh release verify-asset "$REF" "$archive_path" -R "$REPO_SLUG" >/dev/null 2>&1; then
+  if gh attestation verify "$archive_path" \
+    --repo "$REPO_SLUG" \
+    --source-ref "refs/tags/$REF" \
+    --signer-workflow "$REPO_SLUG/.github/workflows/release-artifacts.yml" \
+    --predicate-type https://slsa.dev/provenance/v1 \
+    >/dev/null 2>&1; then
     return 0
   fi
 
@@ -315,9 +321,9 @@ if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
       exit "$status"
     fi
     if [ -n "$artifact_reason" ]; then
-      echo "${artifact_reason}; falling back to tagged source build." >&2
+      echo "${artifact_reason}; falling back to tagged source build only." >&2
     else
-      echo "Attested release artifact install unavailable; falling back to tagged source build." >&2
+      echo "Attested release artifact install unavailable; falling back to tagged source build only." >&2
     fi
     ensure_source_build_prereqs
     install_from_source
