@@ -115,9 +115,13 @@ Important boundary:
 - `forge self update` uses an attested platform release artifact only when one is published for the current platform and local attestation verification is available
 - `forge self update` verifies artifact SHA-256 before install
 - `forge self update` verifies the GitHub release attestation before installing an artifact
+- `forge self update --attestation-failure <prompt|source|fail>` controls attestation failure behavior:
+  - `prompt` (default): prompt in interactive mode; fallback in non-interactive mode
+  - `source`: always fallback to tagged source build
+  - `fail`: abort on attestation failure
 - `forge self update` falls back to a tagged source build with `--locked` when attestation verification cannot run (including unsupported `gh attestation verify` command), when attested artifacts are unavailable, or when `--build-from-source` is passed. In all of these cases, source build is the only install path.
 - checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
-- attestation verification failure is a hard failure; Forge does not silently fall back after a failed attestation check
+- attestation verification failure is not silent: Forge prompts to build from tagged source (or automatically falls back in non-interactive contexts)
 - in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
 - in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
 - in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly

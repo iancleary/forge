@@ -129,6 +129,7 @@ That script:
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact tag it is about to install
 - uses a verified platform release artifact only when local attestation verification is available
+- supports `--attestation-failure prompt|source|fail` (default: `prompt`)
 - verifies artifact SHA-256 before install
 - falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
 - installs Forge-managed skills into `~/.agents/skills`
@@ -148,8 +149,12 @@ Update story:
 - in release mode, `forge self update --build-from-source` forces the tagged source-build path
 - in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
 - in release mode, missing local attestation verification (including missing/unsupported `gh attestation verify`) also falls back to a tagged source build with `--locked`
+- `forge self update --attestation-failure <prompt|source|fail>` controls attestation failure behavior:
+  - `prompt` (default): prompt in interactive mode, fallback in non-interactive
+  - `source`: always fallback to tagged source
+  - `fail`: abort when attestation fails
 - checksum mismatch is a hard failure; do not silently fall back after verification failure
-- attestation verification failure is a hard failure; do not silently fall back after verification failure
+- attestation verification failure prompts to continue with a tagged source fallback (or falls back automatically when non-interactive)
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
 - in release mode, `config/release-skills.toml` is the source of truth for current and legacy managed skill names used during local skill migration
 - after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
