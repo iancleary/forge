@@ -29,23 +29,26 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Build Release Artifact
+        id: artifact
         shell: bash
         run: |
           scripts/build-forge-release-artifact.sh \
             --version "${{ github.event.release.tag_name }}" \
             --target "${{ matrix.target }}" \
             --output-dir dist
+          echo "name=forge-${{ github.event.release.tag_name }}-${{ matrix.target }}.tar.gz" >> "$GITHUB_OUTPUT"
+
       - name: Attest Release Artifact
         id: attest_artifact
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*.tar.gz
+          subject-path: dist/${{ steps.artifact.outputs.name }}
       - name: Save Artifact Attestation Bundle
         shell: bash
         run: |
           cp \
             "${{ steps.attest_artifact.outputs.bundle-path }}" \
-            "dist/forge-${{ github.event.release.tag_name }}-${{ matrix.target }}.attestation.json"
+            "dist/${{ steps.artifact.outputs.name }}.attestation.json"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
@@ -93,3 +96,20 @@ jobs:
             dist/forge-release-manifest.json \
             dist/forge-release-sha256sums.txt \
             --clobber
+
+      - name: Verify attestation visibility for published assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do
+            asset_name="forge-${{ github.event.release.tag_name }}-${target}.tar.gz"
+            if [ ! -f "dist/$asset_name" ]; then
+              echo "missing release asset for verification: dist/$asset_name"
+              exit 1
+            fi
+            if ! gh release verify-asset "${{ github.event.release.tag_name }}" "dist/$asset_name" -R "${{ github.repository }}"; then
+              echo "failed to verify attestation for dist/$asset_name"
+              exit 1
+            fi
+          done
