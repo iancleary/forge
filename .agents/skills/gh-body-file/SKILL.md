@@ -12,6 +12,7 @@ Use this skill for `gh` workflows that send substantial markdown to GitHub.
 - creating a GitHub issue with more than a short one-line body
 - editing an existing issue body
 - creating or editing a pull request body
+- adding a substantial pull-request or issue comment, especially when it contains backticks or markdown examples
 - preparing a substantial markdown comment or update where a file-backed workflow is safer and easier to review
 
 ## Do Not Use This When
@@ -24,8 +25,10 @@ Use this skill for `gh` workflows that send substantial markdown to GitHub.
 
 - Write substantial markdown content to a local file first.
 - Prefer `--body-file` when the `gh` command supports it.
+- For `gh pr comment` and similar comment flows, prefer `--body-file` whenever the comment includes backticks, fenced code, or inline command examples.
 - Keep inline `--body` only for short low-risk text.
 - Avoid shell-interpolated multiline markdown when it contains backticks, `$HOME`-style paths, angle brackets, fenced code blocks, or other content likely to break quoting.
+- Backticks inside a double-quoted shell command can trigger command substitution before `gh` ever sees the text.
 - Prefer a local file because it is reviewable before submission and more deterministic for Codex.
 
 ### Preferred File Creation
@@ -52,6 +55,7 @@ gh issue create --title "..." --body-file /tmp/issue.md
 gh issue edit 123 --body-file /tmp/issue.md
 gh pr create --title "..." --body-file /tmp/pr.md
 gh pr edit 456 --body-file /tmp/pr.md
+gh pr comment 456 --body-file /tmp/comment.md
 ```
 
 ## Expected Outcome
