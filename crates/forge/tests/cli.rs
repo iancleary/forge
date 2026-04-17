@@ -132,8 +132,6 @@ fn cli_self_update_reports_all_unmanaged_collisions_actionably() {
     fs::create_dir_all(&config_dir).expect("create config dir");
     fs::create_dir_all(&unmanaged_root).expect("create unmanaged root");
 
-    // Create an unmanaged skill dir that matches a repo-provided skill name.
-    // This should produce an unmanaged_collision during self update.
     let skill_dir = unmanaged_root.join("forge-tools");
     fs::create_dir_all(&skill_dir).expect("create unmanaged skill dir");
     fs::write(skill_dir.join("SKILL.md"), "unmanaged").expect("write unmanaged skill file");
@@ -204,7 +202,10 @@ fn cli_version_is_available_in_json() {
     let body: Value = serde_json::from_str(stdout.trim()).expect("version json");
     assert_eq!(body["ok"], true);
     let data = &body["data"];
-    assert_eq!(data["release_version"].as_str(), Some(env!("CARGO_PKG_VERSION")));
+    assert_eq!(
+        data["release_version"].as_str(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
     assert!(data["latest_version"].is_string() || data["latest_version"].is_null());
     assert!(data["update_available"].is_boolean());
     assert!(data["git_hash"].is_string() || data["git_hash"].is_null());

@@ -1,42 +1,42 @@
 use std::{
     cmp::Reverse,
     collections::HashMap,
-    env, fs,
+    env,
     fmt::Write as _,
+    fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args, Parser, Subcommand};
+use cli_core::{ErrorBody, OutputMode, emit_output, format_error_human, print_error_json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Parser, Debug)]
 #[command(name = "codex-threads")]
 #[command(about = "Search and read local Codex thread archives")]
-#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
+#[command(
+    after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
+)]
 struct Cli {
     #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
-    #[arg(long, global = true, help = "Override the Codex home directory; defaults to ~/.codex or CODEX_HOME")]
+    #[arg(
+        long,
+        global = true,
+        help = "Override the Codex home directory; defaults to ~/.codex or CODEX_HOME"
+    )]
     codex_home: Option<PathBuf>,
-    #[arg(long, global = true, help = "Override the local index path; defaults to ~/.config/forge/codex-threads/index.json")]
+    #[arg(
+        long,
+        global = true,
+        help = "Override the local index path; defaults to ~/.config/forge/codex-threads/index.json"
+    )]
     index_path: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OutputMode {
-    Human,
-    Json,
-}
-
-impl OutputMode {
-    fn from_json_flag(json: bool) -> Self {
-        if json { Self::Json } else { Self::Human }
-    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -90,27 +90,6 @@ struct EventsReadArgs {
     session_id: String,
     #[arg(long, default_value_t = 50)]
     limit: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct Envelope<T>
-where
-    T: Serialize,
-{
-    ok: bool,
-    data: T,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorEnvelope {
-    ok: bool,
-    error: ErrorBody,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    code: String,
-    message: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -236,19 +215,10 @@ fn main() {
                     let _ = err.print();
                 }
                 _ if wants_json => {
-                    let error = ErrorEnvelope {
-                        ok: false,
-                        error: ErrorBody {
-                            code: "invalid_usage".to_string(),
-                            message: err.to_string(),
-                        },
-                    };
-                    eprintln!(
-                        "{}",
-                        serde_json::to_string(&error).unwrap_or_else(|_| {
-                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                        })
-                    );
+                    print_error_json(&ErrorBody {
+                        code: "invalid_usage".to_string(),
+                        message: err.to_string(),
+                    });
                 }
                 _ => {
                     let _ = err.print();
@@ -260,18 +230,10 @@ fn main() {
     let output = OutputMode::from_json_flag(cli.json);
     let result = run(cli);
     if let Err(err) = result {
-        let error = ErrorEnvelope {
-            ok: false,
-            error: classify_error(&err),
-        };
+        let cli_error = classify_error(&err);
         match output {
-            OutputMode::Json => eprintln!(
-                "{}",
-                serde_json::to_string(&error).unwrap_or_else(|_| {
-                    "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                })
-            ),
-            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+            OutputMode::Json => print_error_json(&cli_error),
+            OutputMode::Human => eprintln!("{}", format_error_human("codex-threads", &cli_error)),
         }
         std::process::exit(1);
     }
@@ -306,48 +268,6 @@ fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn print_json<T>(value: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    println!(
-        "{}",
-        serde_json::to_string(value).context("failed to render JSON output")?
-    );
-    Ok(())
-}
-
-fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(&T) -> String,
-{
-    match mode {
-        OutputMode::Json => print_json(&Envelope { ok: true, data }),
-        OutputMode::Human => {
-            print_human_text(&human(&data));
-            Ok(())
-        }
-    }
-}
-
-fn print_human_text(text: &str) {
-    if text.ends_with('\n') {
-        print!("{text}");
-    } else {
-        println!("{text}");
-    }
-}
-
-fn format_error_human(error: &ErrorBody) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "codex-threads error [{}]", error.code);
-    for line in error.message.lines() {
-        let _ = writeln!(out, "{line}");
-    }
-    out.trim_end().to_string()
 }
 
 fn format_sync_human(result: &SyncResult) -> String {
@@ -389,13 +309,7 @@ fn format_threads_resolve_human(result: &ThreadsResolveResult) -> String {
         result.query
     );
     for (idx, thread) in result.matches.iter().enumerate() {
-        let _ = writeln!(
-            out,
-            "{}. {} [{}]",
-            idx + 1,
-            thread.thread_name,
-            thread.id
-        );
+        let _ = writeln!(out, "{}. {} [{}]", idx + 1, thread.thread_name, thread.id);
         let _ = writeln!(
             out,
             "   updated: {}  model: {}  messages: {}",
@@ -418,8 +332,7 @@ fn format_thread_read_human(result: &ThreadReadResult) -> String {
     let _ = writeln!(
         out,
         "codex-threads threads read: {} [{}]",
-        result.thread.thread_name,
-        result.thread.id
+        result.thread.thread_name, result.thread.id
     );
     let _ = writeln!(
         out,
@@ -521,8 +434,12 @@ fn sync_index(paths: &Paths) -> Result<SyncResult> {
     let mut messages = Vec::new();
 
     for session_path in session_files {
-        let session_id = session_id_from_path(&session_path)
-            .ok_or_else(|| anyhow!("failed to derive session id from {}", session_path.display()))?;
+        let session_id = session_id_from_path(&session_path).ok_or_else(|| {
+            anyhow!(
+                "failed to derive session id from {}",
+                session_path.display()
+            )
+        })?;
         let entry = session_index.get(&session_id).cloned();
         let build = parse_session_file(&session_path, &session_id, entry)?;
         let thread = IndexedThread {
@@ -582,14 +499,17 @@ fn search_messages(index: &ThreadIndex, query: &str, limit: usize) -> MessageSea
             if score == 0 {
                 return None;
             }
-            Some((score, MessageMatch {
-                session_id: message.session_id.clone(),
-                thread_name: message.thread_name.clone(),
-                timestamp: message.timestamp.clone(),
-                role: message.role.clone(),
-                preview: message.preview.clone(),
-                text: message.text.clone(),
-            }))
+            Some((
+                score,
+                MessageMatch {
+                    session_id: message.session_id.clone(),
+                    thread_name: message.thread_name.clone(),
+                    timestamp: message.timestamp.clone(),
+                    role: message.role.clone(),
+                    preview: message.preview.clone(),
+                    text: message.text.clone(),
+                },
+            ))
         })
         .collect::<Vec<_>>();
     matches.sort_by(|(left_score, left), (right_score, right)| {
@@ -621,7 +541,11 @@ fn resolve_threads(index: &ThreadIndex, query: &str, limit: usize) -> ThreadsRes
 
         let mut best_preview = None;
         let mut best_message_score = 0;
-        for message in index.messages.iter().filter(|message| message.session_id == thread.id) {
+        for message in index
+            .messages
+            .iter()
+            .filter(|message| message.session_id == thread.id)
+        {
             let message_score = score_text(&message.text, &needle, &tokens);
             if message_score > best_message_score {
                 best_message_score = message_score;
@@ -639,15 +563,20 @@ fn resolve_threads(index: &ThreadIndex, query: &str, limit: usize) -> ThreadsRes
         .threads
         .iter()
         .filter_map(|thread| {
-            scores.get(&thread.id).map(|(score, preview)| (*score, ThreadMatch {
-                id: thread.id.clone(),
-                thread_name: thread.thread_name.clone(),
-                updated_at: thread.updated_at.clone(),
-                cwd: thread.cwd.clone(),
-                model: thread.model.clone(),
-                message_count: thread.message_count,
-                matched_preview: preview.clone(),
-            }))
+            scores.get(&thread.id).map(|(score, preview)| {
+                (
+                    *score,
+                    ThreadMatch {
+                        id: thread.id.clone(),
+                        thread_name: thread.thread_name.clone(),
+                        updated_at: thread.updated_at.clone(),
+                        cwd: thread.cwd.clone(),
+                        model: thread.model.clone(),
+                        message_count: thread.message_count,
+                        matched_preview: preview.clone(),
+                    },
+                )
+            })
         })
         .collect::<Vec<_>>();
 
@@ -764,7 +693,9 @@ fn parse_session_file(
             .find(|message| message.role == "user" && is_meaningful_title_candidate(&message.text))
         {
             build.thread_name = first_meaningful_line(&first_prompt.text, 60);
-        } else if let Some(first_user) = build.messages.iter().find(|message| message.role == "user") {
+        } else if let Some(first_user) =
+            build.messages.iter().find(|message| message.role == "user")
+        {
             build.thread_name = first_meaningful_line(&first_user.text, 60);
         }
     }
@@ -781,7 +712,10 @@ fn extract_session_data(build: &mut SessionBuild, value: &Value) -> Result<()> {
         Some("session_meta") => {
             if let Some(payload) = value.get("payload") {
                 if build.cwd.is_none() {
-                    build.cwd = payload.get("cwd").and_then(Value::as_str).map(ToString::to_string);
+                    build.cwd = payload
+                        .get("cwd")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string);
                 }
                 if build.cli_version.is_none() {
                     build.cli_version = payload
@@ -841,7 +775,13 @@ fn extract_session_data(build: &mut SessionBuild, value: &Value) -> Result<()> {
     Ok(())
 }
 
-fn push_message(build: &mut SessionBuild, value: &Value, role: &str, text: &str, source_type: &str) {
+fn push_message(
+    build: &mut SessionBuild,
+    value: &Value,
+    role: &str,
+    text: &str,
+    source_type: &str,
+) {
     let text = text.trim();
     if text.is_empty() {
         return;
@@ -948,7 +888,8 @@ fn normalize_event_shape(value: &Value) -> (String, Option<String>, Option<Strin
 }
 
 fn read_session_index(path: &Path) -> Result<Vec<SessionIndexEntry>> {
-    let file = fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let file =
+        fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut entries = Vec::new();
     for line in reader.lines() {
@@ -991,11 +932,7 @@ fn list_session_files(sessions_root: &Path) -> Result<Vec<PathBuf>> {
                 for file in fs::read_dir(day.path())? {
                     let file = file?;
                     if file.file_type()?.is_file()
-                        && file
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            == Some("jsonl")
+                        && file.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl")
                     {
                         files.push(file.path());
                     }
@@ -1194,10 +1131,13 @@ mod tests {
 
     #[test]
     fn human_error_output_is_not_json() {
-        let rendered = format_error_human(&ErrorBody {
-            code: "not_found".to_string(),
-            message: "session not found".to_string(),
-        });
+        let rendered = format_error_human(
+            "codex-threads",
+            &ErrorBody {
+                code: "not_found".to_string(),
+                message: "session not found".to_string(),
+            },
+        );
 
         assert!(rendered.starts_with("codex-threads error [not_found]"));
         assert!(rendered.contains("session not found"));

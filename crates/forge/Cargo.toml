@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
+cli-core = { path = "../cli-core" }
 clap = { version = "4", features = ["derive"] }
 flate2 = "1"
 indicatif = "0.17"

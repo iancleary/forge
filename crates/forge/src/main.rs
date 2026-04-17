@@ -11,6 +11,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use cli_core::{ErrorBody, OutputMode, emit_output, format_error_human, print_error_json};
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -101,18 +102,6 @@ struct Cli {
     json: bool,
     #[command(subcommand)]
     command: Command,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OutputMode {
-    Human,
-    Json,
-}
-
-impl OutputMode {
-    fn from_json_flag(json: bool) -> Self {
-        if json { Self::Json } else { Self::Human }
-    }
 }
 
 struct UpdateProgress {
@@ -262,11 +251,8 @@ struct UpdateArgs {
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum AttestationFailurePolicy {
-    #[value(alias = "prompt")]
     Prompt,
-    #[value(alias = "source")]
     Source,
-    #[value(alias = "fail")]
     Fail,
 }
 
@@ -493,27 +479,6 @@ struct CodexInstallArgs {
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Serialize)]
-struct Envelope<T>
-where
-    T: Serialize,
-{
-    ok: bool,
-    data: T,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorEnvelope {
-    ok: bool,
-    error: ErrorBody,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    code: String,
-    message: String,
 }
 
 #[allow(dead_code)]
@@ -1002,19 +967,10 @@ fn main() {
                     let _ = err.print();
                 }
                 _ if wants_json => {
-                    let error = ErrorEnvelope {
-                        ok: false,
-                        error: ErrorBody {
-                            code: "invalid_usage".to_string(),
-                            message: err.to_string(),
-                        },
-                    };
-                    eprintln!(
-                        "{}",
-                        serde_json::to_string(&error).unwrap_or_else(|_| {
-                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                        })
-                    );
+                    print_error_json(&ErrorBody {
+                        code: "invalid_usage".to_string(),
+                        message: err.to_string(),
+                    });
                 }
                 _ => {
                     let _ = err.print();
@@ -1027,20 +983,10 @@ fn main() {
     let result = run(cli);
 
     if let Err(err) = result {
-        let error = ErrorEnvelope {
-            ok: false,
-            error: classify_error(&err),
-        };
+        let cli_error = classify_error(&err);
         match output {
-            OutputMode::Json => {
-                eprintln!(
-                    "{}",
-                    serde_json::to_string(&error).unwrap_or_else(|_| {
-                        "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                    })
-                );
-            }
-            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+            OutputMode::Json => print_error_json(&cli_error),
+            OutputMode::Human => eprintln!("{}", format_error_human("forge", &cli_error)),
         }
         std::process::exit(1);
     }
@@ -1361,8 +1307,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     progress.step(format!(
         "[3/{total_steps}] Checking managed skill ownership"
     ));
-    // Before attempting updates/installs, detect unmanaged collisions and provide a single actionable error.
-    // This keeps the default safety posture (no implicit takeover) while making remediation obvious.
+    // Detect unmanaged skill collisions before installing anything.
     let status = skills_status_with_defs(
         &config,
         &state,
@@ -1387,73 +1332,72 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let mut artifact_sha256_expected = None;
     let mut artifact_sha256_downloaded = None;
     let mut installed_binaries = Vec::new();
-    let (after_version, local_contract, mut reconcile_changed) = if before_version.as_deref()
-        != Some(target_version.as_str())
-    {
-        progress.step(format!(
-            "[4/{total_steps}] Installing Forge {target_version}"
-        ));
-        let install = install_release_packages(
-            &target_version,
-            &release_contract,
-            args.attestation_failure,
-            output,
-            args.build_from_source,
-        )?;
-        install_method = Some(install.install_method);
-        artifact_target = install.artifact_target;
-        attestation_verified = install.attestation_verified;
-        artifact_name = install.artifact_name;
-        artifact_sha256_expected = install.artifact_sha256_expected;
-        artifact_sha256_downloaded = install.artifact_sha256_downloaded;
-        installed_binaries = install.installed_binaries;
-        let after_version = Some(target_version.clone());
-        progress.step(format!(
-            "[5/{total_steps}] Applying release migration contract"
-        ));
-        let local_contract = reconcile_release_local_contract(
-            &release_contract,
-            &release_skill_contract,
-            &mut state,
-        )?;
-        save_state(&state_file_path()?, &state)?;
-        let targets = mainline_targets_for_reconcile(&config, &state, None)?;
-        progress.step(format!(
-            "[6/{total_steps}] Reconciling managed skills and Codex"
-        ));
-        let delegated = reconcile_release_with_installed_forge(
-            &targets,
-            &release_skill_names,
-            &collision_resolution,
-            &progress,
-        )?;
-        skills_reconciled = delegated.skills_reconciled;
-        codex_reconciled = delegated.codex_reconciled;
-        let reconcile_changed = delegated.changed
-            || local_contract.config_dirs_migrated > 0
-            || local_contract.legacy_binaries_removed > 0
-            || local_contract.obsolete_root_files_removed > 0
-            || local_contract.legacy_skill_installs_migrated > 0;
-        (after_version, local_contract, reconcile_changed)
-    } else {
-        progress.step(format!(
-            "[4/{total_steps}] Install step skipped; already on {target_version}"
-        ));
-        progress.step(format!(
-            "[5/{total_steps}] Applying release migration contract"
-        ));
-        let local_contract = reconcile_release_local_contract(
-            &release_contract,
-            &release_skill_contract,
-            &mut state,
-        )?;
-        save_state(&state_file_path()?, &state)?;
-        let reconcile_changed = local_contract.config_dirs_migrated > 0
-            || local_contract.legacy_binaries_removed > 0
-            || local_contract.obsolete_root_files_removed > 0
-            || local_contract.legacy_skill_installs_migrated > 0;
-        (before_version.clone(), local_contract, reconcile_changed)
-    };
+    let (after_version, local_contract, mut reconcile_changed) =
+        if before_version.as_deref() != Some(target_version.as_str()) {
+            progress.step(format!(
+                "[4/{total_steps}] Installing Forge {target_version}"
+            ));
+            let install = install_release_packages(
+                &target_version,
+                &release_contract,
+                args.attestation_failure,
+                output,
+                args.build_from_source,
+            )?;
+            install_method = Some(install.install_method);
+            artifact_target = install.artifact_target;
+            attestation_verified = install.attestation_verified;
+            artifact_name = install.artifact_name;
+            artifact_sha256_expected = install.artifact_sha256_expected;
+            artifact_sha256_downloaded = install.artifact_sha256_downloaded;
+            installed_binaries = install.installed_binaries;
+            let after_version = Some(target_version.clone());
+            progress.step(format!(
+                "[5/{total_steps}] Applying release migration contract"
+            ));
+            let local_contract = reconcile_release_local_contract(
+                &release_contract,
+                &release_skill_contract,
+                &mut state,
+            )?;
+            save_state(&state_file_path()?, &state)?;
+            let targets = mainline_targets_for_reconcile(&config, &state, None)?;
+            progress.step(format!(
+                "[6/{total_steps}] Reconciling managed skills and Codex"
+            ));
+            let delegated = reconcile_release_with_installed_forge(
+                &targets,
+                &release_skill_names,
+                &collision_resolution,
+                &progress,
+            )?;
+            skills_reconciled = delegated.skills_reconciled;
+            codex_reconciled = delegated.codex_reconciled;
+            let reconcile_changed = delegated.changed
+                || local_contract.config_dirs_migrated > 0
+                || local_contract.legacy_binaries_removed > 0
+                || local_contract.obsolete_root_files_removed > 0
+                || local_contract.legacy_skill_installs_migrated > 0;
+            (after_version, local_contract, reconcile_changed)
+        } else {
+            progress.step(format!(
+                "[4/{total_steps}] Install step skipped; already on {target_version}"
+            ));
+            progress.step(format!(
+                "[5/{total_steps}] Applying release migration contract"
+            ));
+            let local_contract = reconcile_release_local_contract(
+                &release_contract,
+                &release_skill_contract,
+                &mut state,
+            )?;
+            save_state(&state_file_path()?, &state)?;
+            let reconcile_changed = local_contract.config_dirs_migrated > 0
+                || local_contract.legacy_binaries_removed > 0
+                || local_contract.obsolete_root_files_removed > 0
+                || local_contract.legacy_skill_installs_migrated > 0;
+            (before_version.clone(), local_contract, reconcile_changed)
+        };
 
     if skills_reconciled == 0 && codex_reconciled == 0 && !reconcile_changed {
         let targets = mainline_targets_for_reconcile(&config, &state, None)?;
@@ -2475,37 +2419,6 @@ fn doctor_status_style(text: &str, use_color: bool, color: &str) -> String {
     }
 }
 
-fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(&T) -> String,
-{
-    match mode {
-        OutputMode::Json => print_json(&Envelope { ok: true, data }),
-        OutputMode::Human => {
-            print_human_text(&human(&data));
-            Ok(())
-        }
-    }
-}
-
-fn print_human_text(text: &str) {
-    if text.ends_with('\n') {
-        print!("{text}");
-    } else {
-        println!("{text}");
-    }
-}
-
-fn format_error_human(error: &ErrorBody) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "forge error [{}]", error.code);
-    for line in error.message.lines() {
-        let _ = writeln!(out, "{line}");
-    }
-    out.trim_end().to_string()
-}
-
 fn format_dev_install_human(result: &DevInstallResult) -> String {
     let mut out = String::new();
     let _ = writeln!(
@@ -2724,7 +2637,9 @@ fn prompt_fallback_to_source_build(output: OutputMode, detail: &str) -> Result<b
         "Build from tagged source instead? [y]es / [n]o [n] "
     )
     .context("failed to write attestation prompt")?;
-    stderr.flush().context("failed to flush attestation prompt")?;
+    stderr
+        .flush()
+        .context("failed to flush attestation prompt")?;
 
     let mut input = String::new();
     io::stdin()
@@ -2741,7 +2656,10 @@ fn should_fallback_to_source_build(
     match policy {
         AttestationFailurePolicy::Prompt => prompt_fallback_to_source_build(output, detail),
         AttestationFailurePolicy::Source => {
-            if output == OutputMode::Human && io::stdin().is_terminal() && io::stderr().is_terminal() {
+            if output == OutputMode::Human
+                && io::stdin().is_terminal()
+                && io::stderr().is_terminal()
+            {
                 eprintln!("attestation verification failed: {detail}");
                 eprintln!("continuing with tagged source build by policy");
             } else {
@@ -2876,12 +2794,14 @@ fn format_update_human(result: &UpdateResult) -> String {
         result.legacy_skill_installs_migrated.to_string(),
     ));
 
-    let label_width = rows
-        .iter()
-        .map(|(label, _)| label.len())
-        .max()
-        .unwrap_or(0);
-    let _ = writeln!(out, "{:<width$} | {}", "FIELD", "VALUE", width = label_width);
+    let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+    let _ = writeln!(
+        out,
+        "{:<width$} | {}",
+        "FIELD",
+        "VALUE",
+        width = label_width
+    );
     let value_width = "VALUE".len();
     let _ = writeln!(
         out,
@@ -3495,17 +3415,6 @@ fn temp_path(label: &str) -> PathBuf {
 
 fn format_mode(mode: u32) -> String {
     format!("{mode:04o}")
-}
-
-fn print_json<T>(value: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    println!(
-        "{}",
-        serde_json::to_string(value).context("failed to render JSON output")?
-    );
-    Ok(())
 }
 
 fn load_config() -> Result<ForgeConfig> {
@@ -4530,7 +4439,9 @@ fn install_release_packages(
             Ok(Some(result)) => return Ok(result),
             Ok(None) => {}
             Err(err) => {
-                if let Some(attestation_error) = err.downcast_ref::<AttestationVerificationFailure>() {
+                if let Some(attestation_error) =
+                    err.downcast_ref::<AttestationVerificationFailure>()
+                {
                     if should_fallback_to_source_build(
                         output,
                         attestation_failure_policy,
@@ -4978,7 +4889,7 @@ fn reconcile_release_with_installed_forge(
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
     let message = error.to_string();
     let code = match message.as_str() {
-        // User mistakes (stable codes for agent branching).
+        // Map common failures to stable machine-readable codes.
         msg if msg.contains("provide a skill name or --all") => "invalid_usage",
         msg if msg.contains("invalid target:") || msg.contains("path target must be absolute:") => {
             "invalid_target"
@@ -5815,6 +5726,7 @@ fn codex_asset_name_from_arg(asset: &CodexAssetArg) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cli_core::Envelope;
 
     fn temp_path(label: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -6707,10 +6619,13 @@ EOF
 
     #[test]
     fn human_error_output_is_not_json() {
-        let rendered = format_error_human(&ErrorBody {
-            code: "invalid_usage".to_string(),
-            message: "provide a skill name or --all".to_string(),
-        });
+        let rendered = format_error_human(
+            "forge",
+            &ErrorBody {
+                code: "invalid_usage".to_string(),
+                message: "provide a skill name or --all".to_string(),
+            },
+        );
 
         assert!(rendered.starts_with("forge error [invalid_usage]"));
         assert!(rendered.contains("provide a skill name or --all"));

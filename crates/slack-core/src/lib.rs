@@ -1,16 +1,76 @@
 use std::{
-    env, fs,
-    fmt::Write as _,
-    io::{self, Write},
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail};
+pub use cli_core::{
+    ErrorBody, OutputMode, emit_output, expand_path, format_error_human, print_error_json,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 pub const SLACK_API_BASE: &str = "https://slack.com/api";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackMessage {
+    #[serde(default)]
+    pub subtype: Option<String>,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub bot_id: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub text: String,
+    pub ts: String,
+    #[serde(default)]
+    pub thread_ts: Option<String>,
+    #[serde(default)]
+    pub reply_count: Option<u32>,
+    #[serde(default)]
+    pub files: Vec<SlackFile>,
+    #[serde(default)]
+    pub reactions: Vec<SlackReaction>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackFile {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub mimetype: Option<String>,
+    #[serde(default)]
+    pub filetype: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub url_private: Option<String>,
+    #[serde(default)]
+    pub url_private_download: Option<String>,
+    #[serde(default)]
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackReaction {
+    pub name: String,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default)]
+    pub users: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct SlackMessagesPage {
+    pub messages: Vec<SlackMessage>,
+    pub next_cursor: Option<String>,
+}
 
 #[derive(Debug, Default, Deserialize)]
 struct ConfigFile {
@@ -25,37 +85,15 @@ struct SlackErrorResponse {
     error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputMode {
-    Human,
-    Json,
+#[derive(Debug, Deserialize)]
+struct SlackCursor {
+    next_cursor: Option<String>,
 }
 
-impl OutputMode {
-    pub fn from_json_flag(json: bool) -> Self {
-        if json { Self::Json } else { Self::Human }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct Envelope<T>
-where
-    T: Serialize,
-{
-    ok: bool,
-    data: T,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ErrorEnvelope {
-    ok: bool,
-    error: ErrorBody,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct ErrorBody {
-    pub code: String,
-    pub message: String,
+#[derive(Debug, Deserialize)]
+struct SlackListResponse<T> {
+    messages: Option<Vec<T>>,
+    response_metadata: Option<SlackCursor>,
 }
 
 pub fn read_token(
@@ -65,54 +103,27 @@ pub fn read_token(
     use_forge_config_dir: bool,
     missing_message: &str,
 ) -> Result<String> {
-    if let Ok(token) = env::var(env_var) {
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-
-    let config_path =
-        config_file_path(config_dir_env_var, config_subdir, use_forge_config_dir)?;
+    let config_path = config_file_path(config_dir_env_var, config_subdir, use_forge_config_dir)?;
+    let mut inline_token = None;
+    let mut token_file = None;
     if config_path.exists() {
-        let contents = fs::read_to_string(&config_path).with_context(|| {
-            format!("failed to read config file at {}", config_path.display())
-        })?;
-        let config: ConfigFile = toml::from_str(&contents).with_context(|| {
-            format!("failed to parse config file at {}", config_path.display())
-        })?;
-
-        if let Some(token) = config.token {
-            let token = token.trim().to_string();
-            if !token.is_empty() {
-                return Ok(token);
-            }
-        }
-
-        if let Some(token_file) = config.token_file {
-            let token_path = expand_path(&token_file);
-            let token = fs::read_to_string(&token_path).with_context(|| {
-                format!("failed to read token file at {}", token_path.display())
-            })?;
-            let token = token.trim().to_string();
-            if !token.is_empty() {
-                return Ok(token);
-            }
-        }
+        let contents = fs::read_to_string(&config_path)
+            .with_context(|| format!("failed to read config file at {}", config_path.display()))?;
+        let config: ConfigFile = toml::from_str(&contents)
+            .with_context(|| format!("failed to parse config file at {}", config_path.display()))?;
+        inline_token = config.token;
+        token_file = config.token_file;
     }
 
-    let token_path = config_dir_path(config_dir_env_var, config_subdir, use_forge_config_dir)?
-        .join("token");
-    if token_path.exists() {
-        let token = fs::read_to_string(&token_path)
-            .with_context(|| format!("failed to read token file at {}", token_path.display()))?;
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-
-    bail!(missing_message.to_string())
+    cli_core::resolve_token(
+        env_var,
+        config_dir_env_var,
+        config_subdir,
+        use_forge_config_dir,
+        inline_token.as_deref(),
+        token_file.as_deref(),
+        missing_message,
+    )
 }
 
 pub fn config_dir_path(
@@ -120,23 +131,7 @@ pub fn config_dir_path(
     config_subdir: &str,
     use_forge_config_dir: bool,
 ) -> Result<PathBuf> {
-    if let Ok(path) = env::var(config_dir_env_var) {
-        return Ok(expand_path(&path));
-    }
-    if use_forge_config_dir {
-        if let Ok(path) = env::var("FORGE_CONFIG_DIR") {
-            return Ok(expand_path(&path).join(config_subdir));
-        }
-    }
-    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(xdg).join("forge").join(config_subdir));
-    }
-
-    let home = env::var("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("forge")
-        .join(config_subdir))
+    cli_core::resolve_config_dir(config_dir_env_var, config_subdir, use_forge_config_dir)
 }
 
 pub fn config_file_path(
@@ -144,80 +139,27 @@ pub fn config_file_path(
     config_subdir: &str,
     use_forge_config_dir: bool,
 ) -> Result<PathBuf> {
-    Ok(config_dir_path(config_dir_env_var, config_subdir, use_forge_config_dir)?.join("config.toml"))
+    cli_core::resolve_config_file(config_dir_env_var, config_subdir, use_forge_config_dir)
 }
 
 pub fn prepare_config_dir(config_dir: &Path) -> Result<()> {
-    fs::create_dir_all(config_dir)
-        .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
-    ensure_owner_only_permissions(config_dir, true)?;
-    Ok(())
+    cli_core::prepare_config_dir(config_dir)
 }
 
 pub fn write_token_file(config_dir: &Path, token: &str, force: bool) -> Result<PathBuf> {
-    let token_file = config_dir.join("token");
-    if token_file.exists() && !force {
-        bail!("token file already exists; rerun with --force to overwrite");
-    }
-    fs::write(&token_file, format!("{token}\n"))
-        .with_context(|| format!("failed to write token file at {}", token_file.display()))?;
-    ensure_owner_only_permissions(&token_file, false)?;
-    Ok(token_file)
+    cli_core::write_token_file(config_dir, token, force)
 }
 
 pub fn prompt_for_token(prompt: &str) -> Result<String> {
-    let mut stdout = io::stdout();
-    write!(stdout, "{prompt}").context("failed to write auth prompt")?;
-    stdout.flush().context("failed to flush auth prompt")?;
-
-    let mut buffer = String::new();
-    io::stdin()
-        .read_line(&mut buffer)
-        .context("failed to read Slack token from stdin")?;
-    Ok(buffer)
+    cli_core::prompt_for_secret(prompt, "failed to read Slack token from stdin")
 }
 
 pub fn normalize_token(token: String) -> Result<String> {
-    let token = token.trim().to_string();
-    if token.is_empty() {
-        bail!("empty Slack token");
-    }
-    Ok(token)
+    cli_core::normalize_secret(token, "empty Slack token")
 }
 
 pub fn ensure_owner_only_permissions(path: &Path, is_dir: bool) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mode = if is_dir { 0o700 } else { 0o600 };
-        fs::set_permissions(path, PermissionsExt::from_mode(mode))
-            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        let _ = is_dir;
-    }
-
-    Ok(())
-}
-
-pub fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home);
-        }
-    }
-
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
-    }
-
-    PathBuf::from(path)
+    cli_core::ensure_owner_only_permissions(path, is_dir)
 }
 
 pub fn slack_client(token: &str, user_agent: &str) -> Result<Client> {
@@ -243,61 +185,6 @@ pub fn slack_client(token: &str, user_agent: &str) -> Result<Client> {
         .context("failed to build HTTP client")
 }
 
-pub fn print_json<T>(value: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    println!(
-        "{}",
-        serde_json::to_string(value).context("failed to render JSON output")?
-    );
-    Ok(())
-}
-
-pub fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(&T) -> String,
-{
-    match mode {
-        OutputMode::Json => print_json(&Envelope { ok: true, data }),
-        OutputMode::Human => {
-            print_human_text(&human(&data));
-            Ok(())
-        }
-    }
-}
-
-pub fn print_human_text(text: &str) {
-    if text.ends_with('\n') {
-        print!("{text}");
-    } else {
-        println!("{text}");
-    }
-}
-
-pub fn format_error_human(tool_name: &str, error: &ErrorBody) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "{tool_name} error [{}]", error.code);
-    for line in error.message.lines() {
-        let _ = writeln!(out, "{line}");
-    }
-    out.trim_end().to_string()
-}
-
-pub fn print_error_json(error: &ErrorBody) {
-    eprintln!(
-        "{}",
-        serde_json::to_string(&ErrorEnvelope {
-            ok: false,
-            error: error.clone(),
-        })
-        .unwrap_or_else(|_| {
-            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-        })
-    );
-}
-
 pub async fn parse_slack_json_response<T>(response: reqwest::Response) -> Result<T>
 where
     T: DeserializeOwned,
@@ -308,7 +195,10 @@ where
         .get("retry-after")
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let body = response.text().await.context("failed to read Slack response body")?;
+    let body = response
+        .text()
+        .await
+        .context("failed to read Slack response body")?;
 
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         if let Some(retry_after) = retry_after {
@@ -325,7 +215,8 @@ where
         bail!(format!("Slack API request failed with HTTP {status}"));
     }
 
-    let payload = serde_json::from_str::<T>(&body).context("failed to decode Slack response body")?;
+    let payload =
+        serde_json::from_str::<T>(&body).context("failed to decode Slack response body")?;
     Ok(payload)
 }
 
@@ -341,6 +232,62 @@ where
         .await
         .with_context(|| format!("failed to call {method}"))?;
     parse_slack_api_response(response, method).await
+}
+
+pub async fn slack_get_messages<Q>(
+    client: &Client,
+    method: &str,
+    query: &Q,
+) -> Result<SlackMessagesPage>
+where
+    Q: Serialize + ?Sized,
+{
+    let payload: SlackListResponse<SlackMessage> = slack_get(client, method, query).await?;
+    Ok(SlackMessagesPage {
+        messages: payload.messages.unwrap_or_default(),
+        next_cursor: payload.response_metadata.and_then(|item| item.next_cursor),
+    })
+}
+
+pub async fn read_thread_messages(
+    client: &Client,
+    channel_id: &str,
+    thread_ts: &str,
+    limit: u32,
+) -> Result<SlackMessagesPage> {
+    slack_get_messages(
+        client,
+        "conversations.replies",
+        &[
+            ("channel".to_string(), channel_id.to_string()),
+            ("ts".to_string(), thread_ts.to_string()),
+            ("limit".to_string(), limit.to_string()),
+            ("inclusive".to_string(), "true".to_string()),
+        ],
+    )
+    .await
+}
+
+pub async fn read_history_messages(
+    client: &Client,
+    channel_id: &str,
+    oldest: Option<&str>,
+    latest: Option<&str>,
+    inclusive: bool,
+    limit: u32,
+) -> Result<SlackMessagesPage> {
+    let mut query = vec![
+        ("channel".to_string(), channel_id.to_string()),
+        ("inclusive".to_string(), inclusive.to_string()),
+        ("limit".to_string(), limit.to_string()),
+    ];
+    if let Some(oldest) = oldest {
+        query.push(("oldest".to_string(), oldest.to_string()));
+    }
+    if let Some(latest) = latest {
+        query.push(("latest".to_string(), latest.to_string()));
+    }
+    slack_get_messages(client, "conversations.history", &query).await
 }
 
 pub async fn slack_post_form<T, F>(client: &Client, method: &str, form: &F) -> Result<T>

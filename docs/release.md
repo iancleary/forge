@@ -1,6 +1,6 @@
 # Release Workflow
 
-This document defines the current release process and the intended future `forge release` workflow.
+This document defines the current Forge release process.
 
 ## Current Process
 
@@ -14,14 +14,6 @@ The underlying checked-in script remains the source of truth:
 
 ```sh
 ./scripts/cut-release.sh
-```
-
-Optional flags:
-
-```sh
-./scripts/cut-release.sh --version 20260415.0.1
-./scripts/cut-release.sh --notes-file notes.md
-./scripts/cut-release.sh --dry-run
 ```
 
 Optional flags:

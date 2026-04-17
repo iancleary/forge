@@ -5,9 +5,10 @@ use clap::{Args, Parser, Subcommand};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use slack_core::{
-    ErrorBody, OutputMode, classify_slack_error_code, config_dir_path as shared_config_dir_path,
-    emit_output, format_error_human, normalize_token, prepare_config_dir, print_error_json,
-    prompt_for_token, read_token as shared_read_token, slack_client as shared_slack_client,
+    ErrorBody, OutputMode, SlackMessage, classify_slack_error_code,
+    config_dir_path as shared_config_dir_path, emit_output, format_error_human, normalize_token,
+    prepare_config_dir, print_error_json, prompt_for_token, read_history_messages,
+    read_thread_messages, read_token as shared_read_token, slack_client as shared_slack_client,
     slack_get, write_token_file,
 };
 use url::Url;
@@ -15,7 +16,9 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[command(name = "slack-query")]
 #[command(about = "Slack query CLI for deterministic research and retrieval workflows")]
-#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
+#[command(
+    after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
+)]
 struct Cli {
     #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
@@ -60,7 +63,11 @@ struct ReadThreadArgs {
     channel_id: String,
     #[arg(help = "Thread root timestamp")]
     thread_ts: String,
-    #[arg(long, default_value_t = 15, help = "Maximum number of thread messages to return")]
+    #[arg(
+        long,
+        default_value_t = 15,
+        help = "Maximum number of thread messages to return"
+    )]
     limit: u32,
 }
 
@@ -70,9 +77,17 @@ struct ContextArgs {
     channel_id: String,
     #[arg(help = "Target message timestamp in the parent channel timeline")]
     message_ts: String,
-    #[arg(long, default_value_t = 5, help = "Number of earlier top-level channel messages")]
+    #[arg(
+        long,
+        default_value_t = 5,
+        help = "Number of earlier top-level channel messages"
+    )]
     before: u32,
-    #[arg(long, default_value_t = 5, help = "Number of later top-level channel messages")]
+    #[arg(
+        long,
+        default_value_t = 5,
+        help = "Number of later top-level channel messages"
+    )]
     after: u32,
 }
 
@@ -94,11 +109,19 @@ struct ThreadContextArgs {
 struct SearchArgs {
     #[arg(help = "Slack search query")]
     query: String,
-    #[arg(long, default_value_t = 20, help = "Maximum number of matches to request")]
+    #[arg(
+        long,
+        default_value_t = 20,
+        help = "Maximum number of matches to request"
+    )]
     limit: u32,
     #[arg(long, default_value_t = 1, help = "Search results page number")]
     page: u32,
-    #[arg(long, default_value = "timestamp", help = "Sort key, usually timestamp or score")]
+    #[arg(
+        long,
+        default_value = "timestamp",
+        help = "Sort key, usually timestamp or score"
+    )]
     sort: String,
     #[arg(long, default_value = "desc", help = "Sort direction: asc or desc")]
     sort_dir: String,
@@ -177,7 +200,7 @@ struct SearchChannel {
     name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 struct Message {
     #[serde(default)]
     subtype: Option<String>,
@@ -190,12 +213,6 @@ struct Message {
     thread_ts: Option<String>,
     #[serde(default)]
     reply_count: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackListResponse<T> {
-    messages: Option<Vec<T>>,
-    response_metadata: Option<SlackCursor>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,11 +233,6 @@ struct SlackPagination {
     page: Option<u32>,
     #[serde(default)]
     page_count: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackCursor {
-    next_cursor: Option<String>,
 }
 
 #[tokio::main]
@@ -289,7 +301,9 @@ async fn run(cli: Cli) -> Result<()> {
                 args.after,
             )
             .await?;
-            emit_output(output, data, |data| format_context_result_human("channel-context", data))?;
+            emit_output(output, data, |data| {
+                format_context_result_human("channel-context", data)
+            })?;
         }
         Command::ThreadContext(args) => {
             let token = read_token()?;
@@ -303,7 +317,9 @@ async fn run(cli: Cli) -> Result<()> {
                 args.after,
             )
             .await?;
-            emit_output(output, data, |data| format_context_result_human("thread-context", data))?;
+            emit_output(output, data, |data| {
+                format_context_result_human("thread-context", data)
+            })?;
         }
         Command::Search(args) => {
             let token = read_token()?;
@@ -325,7 +341,10 @@ async fn run(cli: Cli) -> Result<()> {
 }
 
 fn format_auth_login_human(result: &AuthLoginResult) -> String {
-    format!("slack-query auth login: wrote token file\npath: {}", result.token_file)
+    format!(
+        "slack-query auth login: wrote token file\npath: {}",
+        result.token_file
+    )
 }
 
 fn format_resolve_permalink_human(result: &ResolvedPermalink) -> String {
@@ -460,7 +479,7 @@ fn read_token() -> Result<String> {
         "FORGE_SLACK_QUERY_CONFIG_DIR",
         "slack-query",
         false,
-        "missing Slack query auth; set SLACK_QUERY_API_TOKEN or create ~/.config/forge/slack-query/config.toml or ~/.config/forge/slack-query/token"
+        "missing Slack query auth; set SLACK_QUERY_API_TOKEN or create ~/.config/forge/slack-query/config.toml or ~/.config/forge/slack-query/token",
     )
 }
 
@@ -499,7 +518,9 @@ fn resolve_permalink(permalink: &str) -> Result<ResolvedPermalink> {
         .path_segments()
         .ok_or_else(|| anyhow!("Slack permalink path is invalid"))?;
 
-    let archives = segments.next().ok_or_else(|| anyhow!("missing archives segment"))?;
+    let archives = segments
+        .next()
+        .ok_or_else(|| anyhow!("missing archives segment"))?;
     if archives != "archives" {
         bail!("unsupported Slack permalink path");
     }
@@ -546,26 +567,15 @@ async fn read_thread(
     thread_ts: &str,
     limit: u32,
 ) -> Result<ThreadResult> {
-    let payload: SlackListResponse<Message> = slack_get(
-        client,
-        "conversations.replies",
-        &[
-            ("channel".to_string(), channel_id.to_string()),
-            ("ts".to_string(), thread_ts.to_string()),
-            ("limit".to_string(), limit.to_string()),
-            ("inclusive".to_string(), "true".to_string()),
-        ],
-    )
-    .await?;
-    let messages = payload.messages.unwrap_or_default();
+    let payload = read_thread_messages(client, channel_id, thread_ts, limit).await?;
 
     Ok(ThreadResult {
         channel_id: channel_id.to_string(),
         thread_ts: thread_ts.to_string(),
-        messages,
+        messages: payload.messages.into_iter().map(Message::from).collect(),
         response_metadata: ResponseMetadata {
             rate_limited: false,
-            next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
+            next_cursor: payload.next_cursor,
         },
     })
 }
@@ -587,28 +597,12 @@ async fn read_channel_context(
     )
     .await?;
     let before_window = if before > 0 {
-        fetch_history(
-            client,
-            channel_id,
-            None,
-            Some(message_ts),
-            false,
-            before,
-        )
-        .await?
+        fetch_history(client, channel_id, None, Some(message_ts), false, before).await?
     } else {
         HistoryWindow::default()
     };
     let after_window = if after > 0 {
-        fetch_history(
-            client,
-            channel_id,
-            Some(message_ts),
-            None,
-            false,
-            after,
-        )
-        .await?
+        fetch_history(client, channel_id, Some(message_ts), None, false, after).await?
     } else {
         HistoryWindow::default()
     };
@@ -690,25 +684,13 @@ async fn fetch_history(
     inclusive: bool,
     limit: u32,
 ) -> Result<HistoryWindow> {
-    let mut query = vec![
-        ("channel".to_string(), channel_id.to_string()),
-        ("inclusive".to_string(), inclusive.to_string()),
-        ("limit".to_string(), limit.to_string()),
-    ];
-    if let Some(oldest) = oldest {
-        query.push(("oldest".to_string(), oldest.to_string()));
-    }
-    if let Some(latest) = latest {
-        query.push(("latest".to_string(), latest.to_string()));
-    }
-
-    let payload: SlackListResponse<Message> =
-        slack_get(client, "conversations.history", &query).await?;
+    let payload =
+        read_history_messages(client, channel_id, oldest, latest, inclusive, limit).await?;
 
     Ok(HistoryWindow {
-        messages: payload.messages.unwrap_or_default(),
+        messages: payload.messages.into_iter().map(Message::from).collect(),
         rate_limited: false,
-        next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
+        next_cursor: payload.next_cursor,
     })
 }
 
@@ -737,12 +719,13 @@ async fn search_messages(
         matches: Vec::new(),
         pagination: None,
     });
-    let next_cursor = messages.pagination.and_then(|pagination| {
-        match (pagination.page, pagination.page_count) {
-            (Some(current), Some(total)) if current < total => Some((current + 1).to_string()),
-            _ => None,
-        }
-    });
+    let next_cursor =
+        messages.pagination.and_then(
+            |pagination| match (pagination.page, pagination.page_count) {
+                (Some(current), Some(total)) if current < total => Some((current + 1).to_string()),
+                _ => None,
+            },
+        );
 
     Ok(SearchResult {
         query: query.to_string(),
@@ -767,6 +750,19 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     ErrorBody {
         code: code.to_string(),
         message,
+    }
+}
+
+impl From<SlackMessage> for Message {
+    fn from(value: SlackMessage) -> Self {
+        Self {
+            subtype: value.subtype,
+            user: value.user.or(value.username).or(value.bot_id),
+            text: value.text,
+            ts: value.ts,
+            thread_ts: value.thread_ts,
+            reply_count: value.reply_count,
+        }
     }
 }
 
@@ -858,10 +854,13 @@ mod tests {
 
     #[test]
     fn human_error_output_is_not_json() {
-        let rendered = format_error_human("slack-query", &ErrorBody {
-            code: "auth_missing".to_string(),
-            message: "missing Slack query auth".to_string(),
-        });
+        let rendered = format_error_human(
+            "slack-query",
+            &ErrorBody {
+                code: "auth_missing".to_string(),
+                message: "missing Slack query auth".to_string(),
+            },
+        );
 
         assert!(rendered.starts_with("slack-query error [auth_missing]"));
         assert!(rendered.contains("missing Slack query auth"));

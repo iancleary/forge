@@ -1,21 +1,34 @@
-use std::{env, fmt::Write as _, fs, path::{Path, PathBuf}};
+use std::{
+    env,
+    fmt::Write as _,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use reqwest::{Client, multipart::{Form, Part}};
+use reqwest::{
+    Client,
+    multipart::{Form, Part},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use slack_core::{
-    ErrorBody, OutputMode, classify_slack_error_code, config_dir_path as shared_config_dir_path,
-    emit_output, format_error_human, normalize_token, prepare_config_dir, print_error_json,
-    prompt_for_token, slack_client as shared_slack_client, slack_get, slack_post_form,
-    slack_post_json, write_token_file,
+    ErrorBody, OutputMode, SlackFile, SlackMessage, classify_slack_error_code,
+    config_dir_path as shared_config_dir_path, emit_output, format_error_human, normalize_token,
+    prepare_config_dir, print_error_json, prompt_for_token, read_thread_messages,
+    slack_client as shared_slack_client, slack_get, slack_post_form, slack_post_json,
+    write_token_file,
 };
 
 #[derive(Parser, Debug)]
 #[command(name = "slack-agent")]
-#[command(about = "Assistant-focused Slack CLI with explicit write actions and thread-first defaults")]
-#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
+#[command(
+    about = "Assistant-focused Slack CLI with explicit write actions and thread-first defaults"
+)]
+#[command(
+    after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
+)]
 struct Cli {
     #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
@@ -98,7 +111,11 @@ impl TokenKind {
 struct AuthLoginArgs {
     #[arg(long, help = "Slack API token to save instead of prompting")]
     token: Option<String>,
-    #[arg(long, value_enum, help = "Persist the token type for docs and diagnostics")]
+    #[arg(
+        long,
+        value_enum,
+        help = "Persist the token type for docs and diagnostics"
+    )]
     token_type: Option<TokenKind>,
     #[arg(long, help = "Overwrite an existing token file")]
     force: bool,
@@ -110,7 +127,11 @@ struct ThreadReadArgs {
     channel_id: String,
     #[arg(help = "Thread root timestamp")]
     thread_ts: String,
-    #[arg(long, default_value_t = 15, help = "Maximum number of thread messages to return")]
+    #[arg(
+        long,
+        default_value_t = 15,
+        help = "Maximum number of thread messages to return"
+    )]
     limit: u32,
 }
 
@@ -200,46 +221,15 @@ struct ResponseMetadata {
     next_cursor: Option<String>,
 }
 
+type Message = SlackMessage;
+type FileSummary = SlackFile;
+
 #[derive(Debug, Serialize)]
 struct ThreadResult {
     channel_id: String,
     thread_ts: String,
     messages: Vec<Message>,
     response_metadata: ResponseMetadata,
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct Message {
-    subtype: Option<String>,
-    user: Option<String>,
-    bot_id: Option<String>,
-    username: Option<String>,
-    text: String,
-    ts: String,
-    thread_ts: Option<String>,
-    reply_count: Option<u32>,
-    files: Vec<FileSummary>,
-    reactions: Vec<ReactionSummary>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct FileSummary {
-    id: String,
-    name: Option<String>,
-    title: Option<String>,
-    mimetype: Option<String>,
-    filetype: Option<String>,
-    size: Option<u64>,
-    url_private: Option<String>,
-    url_private_download: Option<String>,
-    permalink: Option<String>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct ReactionSummary {
-    name: String,
-    count: u32,
-    users: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -289,71 +279,6 @@ struct ChannelJoinResult {
     channel_id: String,
     name: Option<String>,
     is_member: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackCursor {
-    next_cursor: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackMessage {
-    #[serde(default)]
-    subtype: Option<String>,
-    #[serde(default)]
-    user: Option<String>,
-    #[serde(default)]
-    bot_id: Option<String>,
-    #[serde(default)]
-    username: Option<String>,
-    #[serde(default)]
-    text: String,
-    ts: String,
-    #[serde(default)]
-    thread_ts: Option<String>,
-    #[serde(default)]
-    reply_count: Option<u32>,
-    #[serde(default)]
-    files: Vec<SlackFile>,
-    #[serde(default)]
-    reactions: Vec<SlackReaction>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackFile {
-    id: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    mimetype: Option<String>,
-    #[serde(default)]
-    filetype: Option<String>,
-    #[serde(default)]
-    size: Option<u64>,
-    #[serde(default)]
-    url_private: Option<String>,
-    #[serde(default)]
-    url_private_download: Option<String>,
-    #[serde(default)]
-    permalink: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackReaction {
-    name: String,
-    #[serde(default)]
-    count: Option<u32>,
-    #[serde(default)]
-    users: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ThreadApiResponse {
-    messages: Vec<SlackMessage>,
-    #[serde(default)]
-    response_metadata: Option<SlackCursor>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -469,7 +394,8 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Reaction(ReactionCommand::Add(args)) => {
             let auth = read_auth()?;
             let client = slack_client(&auth.token)?;
-            let data = reaction_add(&client, &args.channel_id, &args.message_ts, &args.name).await?;
+            let data =
+                reaction_add(&client, &args.channel_id, &args.message_ts, &args.name).await?;
             emit_output(output, data, format_reaction_add_human)?;
         }
         Command::File(FileCommand::Upload(args)) => {
@@ -643,7 +569,12 @@ fn append_message_block(out: &mut String, message: &Message, indent: &str) {
         let files = message
             .files
             .iter()
-            .map(|file| file.name.as_deref().or(file.title.as_deref()).unwrap_or(file.id.as_str()))
+            .map(|file| {
+                file.name
+                    .as_deref()
+                    .or(file.title.as_deref())
+                    .unwrap_or(file.id.as_str())
+            })
             .collect::<Vec<_>>()
             .join(", ");
         let _ = writeln!(out, "{indent}  files: {files}");
@@ -708,9 +639,7 @@ fn read_auth() -> Result<AuthState> {
 fn infer_token_type(token: &str) -> Option<TokenKind> {
     if token.starts_with("xoxb-") {
         Some(TokenKind::Bot)
-    } else if token.starts_with("xoxp-")
-        || token.starts_with("xoxc-")
-        || token.starts_with("xoxs-")
+    } else if token.starts_with("xoxp-") || token.starts_with("xoxc-") || token.starts_with("xoxs-")
     {
         Some(TokenKind::User)
     } else {
@@ -771,25 +700,15 @@ async fn read_thread(
     thread_ts: &str,
     limit: u32,
 ) -> Result<ThreadResult> {
-    let payload: ThreadApiResponse = slack_get(
-        client,
-        "conversations.replies",
-        &[
-            ("channel".to_string(), channel_id.to_string()),
-            ("ts".to_string(), thread_ts.to_string()),
-            ("limit".to_string(), limit.to_string()),
-            ("inclusive".to_string(), "true".to_string()),
-        ],
-    )
-    .await?;
+    let payload = read_thread_messages(client, channel_id, thread_ts, limit).await?;
 
     Ok(ThreadResult {
         channel_id: channel_id.to_string(),
         thread_ts: thread_ts.to_string(),
-        messages: payload.messages.into_iter().map(Message::from).collect(),
+        messages: payload.messages,
         response_metadata: ResponseMetadata {
             rate_limited: false,
-            next_cursor: payload.response_metadata.and_then(|item| item.next_cursor),
+            next_cursor: payload.next_cursor,
         },
     })
 }
@@ -807,12 +726,7 @@ async fn reply_send(
         "text": body,
         "reply_broadcast": broadcast,
     });
-    let payload: PostMessageResponse = slack_post_json(
-        client,
-        "chat.postMessage",
-        &body,
-    )
-    .await?;
+    let payload: PostMessageResponse = slack_post_json(client, "chat.postMessage", &body).await?;
 
     Ok(ReplySendResult {
         channel_id: payload.channel,
@@ -854,7 +768,8 @@ async fn file_upload(
     title: Option<&str>,
     initial_comment: Option<&str>,
 ) -> Result<FileUploadResult> {
-    let bytes = fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
+    let bytes =
+        fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
     let metadata =
         fs::metadata(path).with_context(|| format!("failed to stat file {}", path.display()))?;
     let filename = path
@@ -887,12 +802,8 @@ async fn file_upload(
         body.insert("initial_comment".to_string(), json!(comment));
     }
 
-    let payload: CompleteUploadResponse = slack_post_json(
-        client,
-        "files.completeUploadExternal",
-        &Value::Object(body),
-    )
-    .await?;
+    let payload: CompleteUploadResponse =
+        slack_post_json(client, "files.completeUploadExternal", &Value::Object(body)).await?;
     let file = payload
         .files
         .into_iter()
@@ -902,7 +813,7 @@ async fn file_upload(
     Ok(FileUploadResult {
         channel_id: channel_id.to_string(),
         thread_ts: thread_ts.to_string(),
-        file: file.into(),
+        file,
     })
 }
 
@@ -937,9 +848,7 @@ async fn file_info(client: &Client, file_id: &str) -> Result<FileInfoResult> {
     )
     .await?;
 
-    Ok(FileInfoResult {
-        file: payload.file.into(),
-    })
+    Ok(FileInfoResult { file: payload.file })
 }
 
 async fn dm_open(client: &Client, user_id: &str) -> Result<DmOpenResult> {
@@ -960,12 +869,7 @@ async fn dm_send(client: &Client, user_id: &str, body: &str) -> Result<DmSendRes
         "channel": opened.channel_id,
         "text": body,
     });
-    let payload: PostMessageResponse = slack_post_json(
-        client,
-        "chat.postMessage",
-        &body,
-    )
-    .await?;
+    let payload: PostMessageResponse = slack_post_json(client, "chat.postMessage", &body).await?;
 
     Ok(DmSendResult {
         user_id: user_id.to_string(),
@@ -1007,49 +911,6 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     }
 }
 
-impl From<SlackMessage> for Message {
-    fn from(value: SlackMessage) -> Self {
-        Self {
-            subtype: value.subtype,
-            user: value.user,
-            bot_id: value.bot_id,
-            username: value.username,
-            text: value.text,
-            ts: value.ts,
-            thread_ts: value.thread_ts,
-            reply_count: value.reply_count,
-            files: value.files.into_iter().map(FileSummary::from).collect(),
-            reactions: value.reactions.into_iter().map(ReactionSummary::from).collect(),
-        }
-    }
-}
-
-impl From<SlackFile> for FileSummary {
-    fn from(value: SlackFile) -> Self {
-        Self {
-            id: value.id,
-            name: value.name,
-            title: value.title,
-            mimetype: value.mimetype,
-            filetype: value.filetype,
-            size: value.size,
-            url_private: value.url_private,
-            url_private_download: value.url_private_download,
-            permalink: value.permalink,
-        }
-    }
-}
-
-impl From<SlackReaction> for ReactionSummary {
-    fn from(value: SlackReaction) -> Self {
-        Self {
-            name: value.name,
-            count: value.count.unwrap_or(0),
-            users: value.users,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1073,7 +934,10 @@ mod tests {
     #[test]
     fn infer_token_type_handles_bot_and_user_prefixes() {
         assert!(matches!(infer_token_type("xoxb-123"), Some(TokenKind::Bot)));
-        assert!(matches!(infer_token_type("xoxp-123"), Some(TokenKind::User)));
+        assert!(matches!(
+            infer_token_type("xoxp-123"),
+            Some(TokenKind::User)
+        ));
         assert!(infer_token_type("test-token").is_none());
     }
 }
