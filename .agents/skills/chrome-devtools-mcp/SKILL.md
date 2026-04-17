@@ -27,7 +27,7 @@ This skill exists for the Chrome DevTools MCP server published by Chrome DevTool
 Prefer the user-scope MCP install with telemetry disabled:
 
 ```bash
-codex mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest \
+codex mcp add chrome-devtools -- pnpx chrome-devtools-mcp@latest \
   --no-usage-statistics
 ```
 
@@ -49,7 +49,7 @@ Use that env var only when the user wants the extra quiet/no-check behavior; the
 
 - Node.js 20.19+ or newer maintenance LTS
 - Google Chrome or Chrome for Testing
-- `npx` available on PATH
+- `pnpx` available on PATH
 
 ## First checks after install
 
