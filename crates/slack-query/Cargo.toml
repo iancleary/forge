@@ -1,6 +1,6 @@
 [package]
 name = "slack-query"
-version = "20260416.0.1"
+version = "20260416.0.2"
 edition = "2024"
 license = "MIT"
 
