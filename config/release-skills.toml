@@ -26,6 +26,9 @@ name = "autoresearch-finalize"
 name = "thinking-in-the-limit"
 
 [[skills]]
+name = "chrome-devtools-mcp"
+
+[[skills]]
 name = "slack-query-cli"
 legacy_names = ["slack-query-research", "slack-cli-research"]
 

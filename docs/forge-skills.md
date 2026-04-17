@@ -35,6 +35,7 @@ Initial Forge-managed skills:
 - `autoresearch-create`
 - `autoresearch-finalize`
 - `thinking-in-the-limit`
+- `chrome-devtools-mcp`
 - `slack-query-cli`
 - `slack-agent-cli`
 - `codex-threads-cli`
