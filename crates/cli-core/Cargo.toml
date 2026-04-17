@@ -1,13 +1,10 @@
 [package]
-name = "slack-core"
+name = "cli-core"
 version = "20260416.0.2"
 edition = "2024"
 license = "MIT"
 
 [dependencies]
 anyhow = "1"
-cli-core = { path = "../cli-core" }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"

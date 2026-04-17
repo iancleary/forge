@@ -175,11 +175,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "cli-core"
+version = "20260416.0.2"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codex-threads"
 version = "20260416.0.2"
 dependencies = [
  "anyhow",
  "clap",
+ "cli-core",
  "serde",
  "serde_json",
  "toml",
@@ -308,6 +318,7 @@ version = "20260416.0.2"
 dependencies = [
  "anyhow",
  "clap",
+ "cli-core",
  "flate2",
  "indicatif",
  "serde",
@@ -699,6 +710,7 @@ dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
+ "cli-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -1195,6 +1207,7 @@ name = "slack-core"
 version = "20260416.0.2"
 dependencies = [
  "anyhow",
+ "cli-core",
  "reqwest",
  "serde",
  "serde_json",

@@ -77,7 +77,6 @@ resolve_latest_tag() {
 }
 
 default_binaries() {
-  # Single source of truth for which binaries the installer manages.
   # BEGIN FORGE_BINARIES
   cat <<'EOF'
 forge

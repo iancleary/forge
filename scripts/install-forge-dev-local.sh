@@ -78,7 +78,7 @@ if [[ "$force" -eq 0 ]]; then
 fi
 
 extract_bins() {
-  # Single source of truth: binaries list embedded in scripts/install-forge-release.sh.
+  # Read binaries from scripts/install-forge-release.sh markers.
   sed -n '/^  # BEGIN FORGE_BINARIES$/,/^  # END FORGE_BINARIES$/p' "$release_installer" \
     | sed -e '1d' -e '$d' \
     | sed -e "/^  cat <<'EOF'$/d" -e '/^EOF$/d' \

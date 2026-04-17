@@ -1,8 +1,16 @@
-use std::{env, fmt::Write as _, fs, path::{Path, PathBuf}};
+use std::{
+    env,
+    fmt::Write as _,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use reqwest::{Client, multipart::{Form, Part}};
+use reqwest::{
+    Client,
+    multipart::{Form, Part},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use slack_core::{
@@ -14,8 +22,12 @@ use slack_core::{
 
 #[derive(Parser, Debug)]
 #[command(name = "slack-agent")]
-#[command(about = "Assistant-focused Slack CLI with explicit write actions and thread-first defaults")]
-#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
+#[command(
+    about = "Assistant-focused Slack CLI with explicit write actions and thread-first defaults"
+)]
+#[command(
+    after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
+)]
 struct Cli {
     #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
@@ -98,7 +110,11 @@ impl TokenKind {
 struct AuthLoginArgs {
     #[arg(long, help = "Slack API token to save instead of prompting")]
     token: Option<String>,
-    #[arg(long, value_enum, help = "Persist the token type for docs and diagnostics")]
+    #[arg(
+        long,
+        value_enum,
+        help = "Persist the token type for docs and diagnostics"
+    )]
     token_type: Option<TokenKind>,
     #[arg(long, help = "Overwrite an existing token file")]
     force: bool,
@@ -110,7 +126,11 @@ struct ThreadReadArgs {
     channel_id: String,
     #[arg(help = "Thread root timestamp")]
     thread_ts: String,
-    #[arg(long, default_value_t = 15, help = "Maximum number of thread messages to return")]
+    #[arg(
+        long,
+        default_value_t = 15,
+        help = "Maximum number of thread messages to return"
+    )]
     limit: u32,
 }
 
@@ -469,7 +489,8 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Reaction(ReactionCommand::Add(args)) => {
             let auth = read_auth()?;
             let client = slack_client(&auth.token)?;
-            let data = reaction_add(&client, &args.channel_id, &args.message_ts, &args.name).await?;
+            let data =
+                reaction_add(&client, &args.channel_id, &args.message_ts, &args.name).await?;
             emit_output(output, data, format_reaction_add_human)?;
         }
         Command::File(FileCommand::Upload(args)) => {
@@ -643,7 +664,12 @@ fn append_message_block(out: &mut String, message: &Message, indent: &str) {
         let files = message
             .files
             .iter()
-            .map(|file| file.name.as_deref().or(file.title.as_deref()).unwrap_or(file.id.as_str()))
+            .map(|file| {
+                file.name
+                    .as_deref()
+                    .or(file.title.as_deref())
+                    .unwrap_or(file.id.as_str())
+            })
             .collect::<Vec<_>>()
             .join(", ");
         let _ = writeln!(out, "{indent}  files: {files}");
@@ -708,9 +734,7 @@ fn read_auth() -> Result<AuthState> {
 fn infer_token_type(token: &str) -> Option<TokenKind> {
     if token.starts_with("xoxb-") {
         Some(TokenKind::Bot)
-    } else if token.starts_with("xoxp-")
-        || token.starts_with("xoxc-")
-        || token.starts_with("xoxs-")
+    } else if token.starts_with("xoxp-") || token.starts_with("xoxc-") || token.starts_with("xoxs-")
     {
         Some(TokenKind::User)
     } else {
@@ -807,12 +831,7 @@ async fn reply_send(
         "text": body,
         "reply_broadcast": broadcast,
     });
-    let payload: PostMessageResponse = slack_post_json(
-        client,
-        "chat.postMessage",
-        &body,
-    )
-    .await?;
+    let payload: PostMessageResponse = slack_post_json(client, "chat.postMessage", &body).await?;
 
     Ok(ReplySendResult {
         channel_id: payload.channel,
@@ -854,7 +873,8 @@ async fn file_upload(
     title: Option<&str>,
     initial_comment: Option<&str>,
 ) -> Result<FileUploadResult> {
-    let bytes = fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
+    let bytes =
+        fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
     let metadata =
         fs::metadata(path).with_context(|| format!("failed to stat file {}", path.display()))?;
     let filename = path
@@ -887,12 +907,8 @@ async fn file_upload(
         body.insert("initial_comment".to_string(), json!(comment));
     }
 
-    let payload: CompleteUploadResponse = slack_post_json(
-        client,
-        "files.completeUploadExternal",
-        &Value::Object(body),
-    )
-    .await?;
+    let payload: CompleteUploadResponse =
+        slack_post_json(client, "files.completeUploadExternal", &Value::Object(body)).await?;
     let file = payload
         .files
         .into_iter()
@@ -960,12 +976,7 @@ async fn dm_send(client: &Client, user_id: &str, body: &str) -> Result<DmSendRes
         "channel": opened.channel_id,
         "text": body,
     });
-    let payload: PostMessageResponse = slack_post_json(
-        client,
-        "chat.postMessage",
-        &body,
-    )
-    .await?;
+    let payload: PostMessageResponse = slack_post_json(client, "chat.postMessage", &body).await?;
 
     Ok(DmSendResult {
         user_id: user_id.to_string(),
@@ -1019,7 +1030,11 @@ impl From<SlackMessage> for Message {
             thread_ts: value.thread_ts,
             reply_count: value.reply_count,
             files: value.files.into_iter().map(FileSummary::from).collect(),
-            reactions: value.reactions.into_iter().map(ReactionSummary::from).collect(),
+            reactions: value
+                .reactions
+                .into_iter()
+                .map(ReactionSummary::from)
+                .collect(),
         }
     }
 }
@@ -1073,7 +1088,10 @@ mod tests {
     #[test]
     fn infer_token_type_handles_bot_and_user_prefixes() {
         assert!(matches!(infer_token_type("xoxb-123"), Some(TokenKind::Bot)));
-        assert!(matches!(infer_token_type("xoxp-123"), Some(TokenKind::User)));
+        assert!(matches!(
+            infer_token_type("xoxp-123"),
+            Some(TokenKind::User)
+        ));
         assert!(infer_token_type("test-token").is_none());
     }
 }

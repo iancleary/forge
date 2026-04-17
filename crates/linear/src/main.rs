@@ -1,41 +1,48 @@
-use std::{
-    env, fs,
-    fmt::Write as _,
-    io::{self, Write},
-    path::PathBuf,
-};
+use std::{env, fmt::Write as _, fs, path::PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
+use cli_core::{
+    ErrorBody, OutputMode, emit_output, format_error_human, normalize_secret, prepare_config_dir,
+    print_error_json, prompt_for_secret, resolve_config_dir, resolve_config_file, resolve_token,
+    write_token_file,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 const API_URL: &str = "https://api.linear.app/graphql";
+const ISSUE_FIELDS: &str = r#"
+            id
+            identifier
+            title
+            description
+            url
+            state { id name }
+            assignee { id name }
+"#;
+const PROJECT_MILESTONE_FIELDS: &str = r#"
+              id
+              name
+              description
+              targetDate
+              sortOrder
+              project { id name }
+"#;
 
 #[derive(Parser, Debug)]
 #[command(name = "linear")]
 #[command(about = "Linear GraphQL wrapper for agent-friendly issue workflows")]
 #[command(version)]
-#[command(after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json.")]
+#[command(
+    after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
+)]
 struct Cli {
     #[arg(long, global = true, help = "Emit compact machine-readable JSON")]
     json: bool,
     #[command(subcommand)]
     command: Command,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OutputMode {
-    Human,
-    Json,
-}
-
-impl OutputMode {
-    fn from_json_flag(json: bool) -> Self {
-        if json { Self::Json } else { Self::Human }
-    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -110,7 +117,11 @@ enum MilestoneCommand {
 
 #[derive(Args, Debug)]
 struct ProjectListArgs {
-    #[arg(long, default_value_t = 20, help = "Maximum number of projects to return")]
+    #[arg(
+        long,
+        default_value_t = 20,
+        help = "Maximum number of projects to return"
+    )]
     limit: usize,
 }
 
@@ -126,7 +137,11 @@ struct IssuesListArgs {
     team_id: Option<String>,
     #[arg(long, help = "Filter issues assigned to the authenticated user")]
     assigned_to_me: bool,
-    #[arg(long, default_value_t = 20, help = "Maximum number of issues to return")]
+    #[arg(
+        long,
+        default_value_t = 20,
+        help = "Maximum number of issues to return"
+    )]
     limit: usize,
 }
 
@@ -168,7 +183,11 @@ struct IssuesUpdateArgs {
 struct MilestoneListArgs {
     #[arg(long, help = "Linear project UUID")]
     project: String,
-    #[arg(long, default_value_t = 50, help = "Maximum number of milestones to return")]
+    #[arg(
+        long,
+        default_value_t = 50,
+        help = "Maximum number of milestones to return"
+    )]
     limit: usize,
 }
 
@@ -212,27 +231,6 @@ struct MilestoneDeleteArgs {
     milestone_id: String,
     #[arg(long, help = "Delete without confirmation")]
     force: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct Envelope<T>
-where
-    T: Serialize,
-{
-    ok: bool,
-    data: T,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorEnvelope {
-    ok: bool,
-    error: ErrorBody,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    code: String,
-    message: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -364,19 +362,10 @@ async fn main() {
                     let _ = err.print();
                 }
                 _ if wants_json => {
-                    let error = ErrorEnvelope {
-                        ok: false,
-                        error: ErrorBody {
-                            code: "invalid_usage".to_string(),
-                            message: err.to_string(),
-                        },
-                    };
-                    eprintln!(
-                        "{}",
-                        serde_json::to_string(&error).unwrap_or_else(|_| {
-                            "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                        })
-                    );
+                    print_error_json(&ErrorBody {
+                        code: "invalid_usage".to_string(),
+                        message: err.to_string(),
+                    });
                 }
                 _ => {
                     let _ = err.print();
@@ -388,18 +377,10 @@ async fn main() {
     let output = OutputMode::from_json_flag(cli.json);
     let result = run(cli).await;
     if let Err(err) = result {
-        let error = ErrorEnvelope {
-            ok: false,
-            error: classify_error(&err),
-        };
+        let cli_error = classify_error(&err);
         match output {
-            OutputMode::Json => eprintln!(
-                "{}",
-                serde_json::to_string(&error).unwrap_or_else(|_| {
-                    "{\"ok\":false,\"error\":{\"code\":\"internal_error\",\"message\":\"failed to serialize error\"}}".to_string()
-                })
-            ),
-            OutputMode::Human => eprintln!("{}", format_error_human(&error.error)),
+            OutputMode::Json => print_error_json(&cli_error),
+            OutputMode::Human => eprintln!("{}", format_error_human("linear", &cli_error)),
         }
         std::process::exit(1);
     }
@@ -462,8 +443,17 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Issue(IssuesCommand::Create(args)) => {
             let team_id = resolve_team_id(args.team_id, &config)?;
             let description = resolve_description(args.description, args.description_file)?;
-            let data = create_issue(&client, &team_id, &args.title, description.as_deref(), args.state_id.as_deref()).await?;
-            emit_output(output, data, |data| format_issue_mutation_human("create", data))?;
+            let data = create_issue(
+                &client,
+                &team_id,
+                &args.title,
+                description.as_deref(),
+                args.state_id.as_deref(),
+            )
+            .await?;
+            emit_output(output, data, |data| {
+                format_issue_mutation_human("create", data)
+            })?;
         }
         Command::Issue(IssuesCommand::Update(args)) => {
             let description = resolve_description(args.description, args.description_file)?;
@@ -475,7 +465,9 @@ async fn run(cli: Cli) -> Result<()> {
                 args.state_id.as_deref(),
             )
             .await?;
-            emit_output(output, data, |data| format_issue_mutation_human("update", data))?;
+            emit_output(output, data, |data| {
+                format_issue_mutation_human("update", data)
+            })?;
         }
         Command::Milestone(MilestoneCommand::List(args)) => {
             let data = list_project_milestones(&client, &args.project, args.limit).await?;
@@ -495,7 +487,9 @@ async fn run(cli: Cli) -> Result<()> {
                 args.target_date.as_deref(),
             )
             .await?;
-            emit_output(output, data, |data| format_milestone_mutation_human("create", data))?;
+            emit_output(output, data, |data| {
+                format_milestone_mutation_human("create", data)
+            })?;
         }
         Command::Milestone(MilestoneCommand::Update(args)) => {
             let description = resolve_description(args.description, args.description_file)?;
@@ -507,7 +501,9 @@ async fn run(cli: Cli) -> Result<()> {
                 args.target_date.as_deref(),
             )
             .await?;
-            emit_output(output, data, |data| format_milestone_mutation_human("update", data))?;
+            emit_output(output, data, |data| {
+                format_milestone_mutation_human("update", data)
+            })?;
         }
         Command::Milestone(MilestoneCommand::Delete(args)) => {
             let data = delete_project_milestone(&client, &args.milestone_id, args.force).await?;
@@ -516,39 +512,6 @@ async fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn print_json<T>(value: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    println!(
-        "{}",
-        serde_json::to_string(value).context("failed to render JSON output")?
-    );
-    Ok(())
-}
-
-fn emit_output<T, F>(mode: OutputMode, data: T, human: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(&T) -> String,
-{
-    match mode {
-        OutputMode::Json => print_json(&Envelope { ok: true, data }),
-        OutputMode::Human => {
-            print_human_text(&human(&data));
-            Ok(())
-        }
-    }
-}
-
-fn print_human_text(text: &str) {
-    if text.ends_with('\n') {
-        print!("{text}");
-    } else {
-        println!("{text}");
-    }
 }
 
 fn render_completions(shell: Shell) -> Result<CompletionsResult> {
@@ -560,15 +523,6 @@ fn render_completions(shell: Shell) -> Result<CompletionsResult> {
         shell: shell.to_string(),
         script,
     })
-}
-
-fn format_error_human(error: &ErrorBody) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "linear error [{}]", error.code);
-    for line in error.message.lines() {
-        let _ = writeln!(out, "{line}");
-    }
-    out.trim_end().to_string()
 }
 
 fn format_auth_login_human(result: &AuthLoginResult) -> String {
@@ -624,7 +578,11 @@ fn format_teams_human(teams: &[Team]) -> String {
 
 fn format_projects_list_human(result: &ProjectsListResult) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "linear project list: {} projects", result.projects.len());
+    let _ = writeln!(
+        out,
+        "linear project list: {} projects",
+        result.projects.len()
+    );
     for (idx, project) in result.projects.iter().enumerate() {
         let _ = writeln!(out, "{}. {} [{}]", idx + 1, project.name, project.id);
         let _ = writeln!(
@@ -645,7 +603,11 @@ fn format_projects_list_human(result: &ProjectsListResult) -> String {
 
 fn format_project_human(project: &Project) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "linear project view: {} [{}]", project.name, project.id);
+    let _ = writeln!(
+        out,
+        "linear project view: {} [{}]",
+        project.name, project.id
+    );
     let _ = writeln!(
         out,
         "start: {}  target: {}",
@@ -684,7 +646,11 @@ fn format_issues_list_human(result: &IssuesListResult) -> String {
             idx + 1,
             issue.identifier,
             issue.title,
-            issue.state.as_ref().map(|state| state.name.as_str()).unwrap_or("-"),
+            issue
+                .state
+                .as_ref()
+                .map(|state| state.name.as_str())
+                .unwrap_or("-"),
             issue
                 .assignee
                 .as_ref()
@@ -700,12 +666,20 @@ fn format_issues_list_human(result: &IssuesListResult) -> String {
 
 fn format_issue_human(command: &str, issue: &Issue) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "linear issue {command}: {} {}", issue.identifier, issue.title);
+    let _ = writeln!(
+        out,
+        "linear issue {command}: {} {}",
+        issue.identifier, issue.title
+    );
     let _ = writeln!(out, "id: {}", issue.id);
     let _ = writeln!(
         out,
         "state: {}",
-        issue.state.as_ref().map(|state| state.name.as_str()).unwrap_or("-")
+        issue
+            .state
+            .as_ref()
+            .map(|state| state.name.as_str())
+            .unwrap_or("-")
     );
     let _ = writeln!(
         out,
@@ -771,7 +745,11 @@ fn format_milestones_list_human(result: &ProjectMilestonesListResult) -> String 
 
 fn format_milestone_human(command: &str, milestone: &ProjectMilestone) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "linear milestone {command}: {} [{}]", milestone.name, milestone.id);
+    let _ = writeln!(
+        out,
+        "linear milestone {command}: {} [{}]",
+        milestone.name, milestone.id
+    );
     let _ = writeln!(
         out,
         "target: {}  sort: {}",
@@ -836,7 +814,8 @@ fn load_config() -> Result<ConfigFile> {
     }
     let body = fs::read_to_string(&path)
         .with_context(|| format!("failed to read config file at {}", path.display()))?;
-    toml::from_str(&body).with_context(|| format!("failed to parse config file at {}", path.display()))
+    toml::from_str(&body)
+        .with_context(|| format!("failed to parse config file at {}", path.display()))
 }
 
 #[derive(Debug, Serialize)]
@@ -870,9 +849,7 @@ fn write_config_template(force: bool) -> Result<ConfigInitResult> {
     let config_file = config_file_path()?;
     let token_file = config_dir.join("token");
 
-    fs::create_dir_all(&config_dir)
-        .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
-    ensure_owner_only_permissions(&config_dir, true)?;
+    prepare_config_dir(&config_dir)?;
 
     if config_file.exists() && !force {
         return Ok(ConfigInitResult {
@@ -884,12 +861,12 @@ fn write_config_template(force: bool) -> Result<ConfigInitResult> {
     }
 
     let body = format!(
-        "token_file = \"{}\"\n# team_id = \"YOUR_TEAM_ID\"\n",
+        "token_file = \"{}\"\n# team_id = \"TEAM_UUID\"\n",
         token_file.display()
     );
     fs::write(&config_file, body)
         .with_context(|| format!("failed to write config file at {}", config_file.display()))?;
-    ensure_owner_only_permissions(&config_file, false)?;
+    cli_core::ensure_owner_only_permissions(&config_file, false)?;
 
     Ok(ConfigInitResult {
         config_dir: config_dir.display().to_string(),
@@ -901,28 +878,14 @@ fn write_config_template(force: bool) -> Result<ConfigInitResult> {
 
 fn login(args: AuthLoginArgs) -> Result<AuthLoginResult> {
     let config_dir = config_dir_path()?;
-    let token_file = config_dir.join("token");
-
-    fs::create_dir_all(&config_dir)
-        .with_context(|| format!("failed to create config dir at {}", config_dir.display()))?;
-    ensure_owner_only_permissions(&config_dir, true)?;
-
-    if token_file.exists() && !args.force {
-        bail!("token file already exists; rerun with --force to overwrite");
-    }
+    prepare_config_dir(&config_dir)?;
 
     let api_key = match args.api_key {
         Some(key) => key,
         None => prompt_for_api_key()?,
     };
-    let api_key = api_key.trim().to_string();
-    if api_key.is_empty() {
-        bail!("empty API key");
-    }
-
-    fs::write(&token_file, format!("{api_key}\n"))
-        .with_context(|| format!("failed to write token file at {}", token_file.display()))?;
-    ensure_owner_only_permissions(&token_file, false)?;
+    let api_key = normalize_secret(api_key, "empty API key")?;
+    let token_file = write_token_file(&config_dir, &api_key, args.force)?;
 
     Ok(AuthLoginResult {
         token_file: token_file.display().to_string(),
@@ -931,65 +894,44 @@ fn login(args: AuthLoginArgs) -> Result<AuthLoginResult> {
 }
 
 fn prompt_for_api_key() -> Result<String> {
-    let mut stdout = io::stdout();
-    write!(stdout, "Paste Linear API key: ").context("failed to write auth prompt")?;
-    stdout.flush().context("failed to flush auth prompt")?;
-
-    let mut buffer = String::new();
-    io::stdin()
-        .read_line(&mut buffer)
-        .context("failed to read API key from stdin")?;
-    Ok(buffer)
+    prompt_for_secret(
+        "Paste Linear API key: ",
+        "failed to read API key from stdin",
+    )
 }
 
 fn read_token(config: &ConfigFile) -> Result<String> {
-    if let Ok(token) = env::var("LINEAR_API_KEY") {
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-    if let Some(token) = config.token.as_ref() {
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-    if let Some(token_file) = config.token_file.as_ref() {
-        let path = expand_path(token_file);
-        let token = fs::read_to_string(&path)
-            .with_context(|| format!("failed to read token file at {}", path.display()))?;
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-    let token_path = config_dir_path()?.join("token");
-    if token_path.exists() {
-        let token = fs::read_to_string(&token_path)
-            .with_context(|| format!("failed to read token file at {}", token_path.display()))?;
-        let token = token.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
-        }
-    }
-    bail!("missing Linear auth; set LINEAR_API_KEY or create ~/.config/forge/linear/config.toml or ~/.config/forge/linear/token")
+    resolve_token(
+        "LINEAR_API_KEY",
+        "FORGE_LINEAR_CLI_CONFIG_DIR",
+        "linear",
+        false,
+        config.token.as_deref(),
+        config.token_file.as_deref(),
+        "missing Linear auth; set LINEAR_API_KEY or create ~/.config/forge/linear/config.toml or ~/.config/forge/linear/token",
+    )
 }
 
 fn resolve_team_id(team_id: Option<String>, config: &ConfigFile) -> Result<String> {
     match team_id.or_else(|| config.team_id.clone()) {
         Some(id) if !id.trim().is_empty() => Ok(id),
-        _ => bail!("missing team_id; pass --team-id or configure team_id in ~/.config/forge/linear/config.toml"),
+        _ => bail!(
+            "missing team_id; pass --team-id or configure team_id in ~/.config/forge/linear/config.toml"
+        ),
     }
 }
 
-fn resolve_description(description: Option<String>, description_file: Option<PathBuf>) -> Result<Option<String>> {
+fn resolve_description(
+    description: Option<String>,
+    description_file: Option<PathBuf>,
+) -> Result<Option<String>> {
     match (description, description_file) {
         (Some(_), Some(_)) => bail!("pass either --description or --description-file, not both"),
         (Some(description), None) => Ok(Some(description)),
         (None, Some(path)) => {
-            let body = fs::read_to_string(&path)
-                .with_context(|| format!("failed to read description file at {}", path.display()))?;
+            let body = fs::read_to_string(&path).with_context(|| {
+                format!("failed to read description file at {}", path.display())
+            })?;
             Ok(Some(body))
         }
         (None, None) => Ok(None),
@@ -1003,7 +945,9 @@ fn linear_client(token: &str) -> Result<Client> {
             let mut headers = reqwest::header::HeaderMap::new();
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                token.parse().context("invalid Linear API key for Authorization header")?,
+                token
+                    .parse()
+                    .context("invalid Linear API key for Authorization header")?,
             );
             headers.insert(
                 reqwest::header::CONTENT_TYPE,
@@ -1067,24 +1011,24 @@ async fn read_project(client: &Client, project_id: &str) -> Result<Project> {
     serde_json::from_value(data["project"].clone()).context("failed to decode project")
 }
 
-async fn list_issues(client: &Client, team_id: &str, assigned_to_me: bool, limit: usize) -> Result<IssuesListResult> {
+async fn list_issues(
+    client: &Client,
+    team_id: &str,
+    assigned_to_me: bool,
+    limit: usize,
+) -> Result<IssuesListResult> {
     let query = r#"
         query TeamIssues($teamId: String!, $limit: Int!) {
           team(id: $teamId) {
             issues(first: $limit) {
               nodes {
-                id
-                identifier
-                title
-                description
-                url
-                state { id name }
-                assignee { id name }
+__ISSUE_FIELDS__
               }
             }
           }
         }
-    "#;
+    "#
+    .replace("__ISSUE_FIELDS__", ISSUE_FIELDS);
     let fetch_limit = if assigned_to_me {
         (limit.saturating_mul(5)).max(limit)
     } else {
@@ -1094,7 +1038,7 @@ async fn list_issues(client: &Client, team_id: &str, assigned_to_me: bool, limit
         "teamId": team_id,
         "limit": fetch_limit as i64,
     });
-    let data = graphql(client, query, Some(variables)).await?;
+    let data = graphql(client, &query, Some(variables)).await?;
     let mut issues: Vec<Issue> = serde_json::from_value(data["team"]["issues"]["nodes"].clone())
         .context("failed to decode issues list")?;
     if assigned_to_me {
@@ -1119,18 +1063,13 @@ async fn read_issue(client: &Client, issue_id: &str) -> Result<Issue> {
     let query = r#"
         query Issue($id: String!) {
           issue(id: $id) {
-            id
-            identifier
-            title
-            description
-            url
-            state { id name }
-            assignee { id name }
+__ISSUE_FIELDS__
           }
         }
-    "#;
+    "#
+    .replace("__ISSUE_FIELDS__", ISSUE_FIELDS);
     let variables = json!({ "id": issue_id });
-    let data = graphql(client, query, Some(variables)).await?;
+    let data = graphql(client, &query, Some(variables)).await?;
     serde_json::from_value(data["issue"].clone()).context("failed to decode issue")
 }
 
@@ -1146,17 +1085,12 @@ async fn create_issue(
           issueCreate(input: $input) {
             success
             issue {
-              id
-              identifier
-              title
-              description
-              url
-              state { id name }
-              assignee { id name }
+__ISSUE_FIELDS__
             }
           }
         }
-    "#;
+    "#
+    .replace("__ISSUE_FIELDS__", ISSUE_FIELDS);
     let mut input = json!({
         "teamId": team_id,
         "title": title,
@@ -1167,7 +1101,7 @@ async fn create_issue(
     if let Some(state_id) = state_id {
         input["stateId"] = Value::String(state_id.to_string());
     }
-    let data = graphql(client, query, Some(json!({ "input": input }))).await?;
+    let data = graphql(client, &query, Some(json!({ "input": input }))).await?;
     serde_json::from_value(data["issueCreate"].clone()).context("failed to decode issueCreate")
 }
 
@@ -1179,24 +1113,21 @@ async fn update_issue(
     state_id: Option<&str>,
 ) -> Result<MutationResult> {
     if title.is_none() && description.is_none() && state_id.is_none() {
-        bail!("issues update requires at least one of --title, --description/--description-file, or --state-id");
+        bail!(
+            "issues update requires at least one of --title, --description/--description-file, or --state-id"
+        );
     }
     let query = r#"
         mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
           issueUpdate(id: $id, input: $input) {
             success
             issue {
-              id
-              identifier
-              title
-              description
-              url
-              state { id name }
-              assignee { id name }
+__ISSUE_FIELDS__
             }
           }
         }
-    "#;
+    "#
+    .replace("__ISSUE_FIELDS__", ISSUE_FIELDS);
     let mut input = json!({});
     if let Some(title) = title {
         input["title"] = Value::String(title.to_string());
@@ -1207,7 +1138,12 @@ async fn update_issue(
     if let Some(state_id) = state_id {
         input["stateId"] = Value::String(state_id.to_string());
     }
-    let data = graphql(client, query, Some(json!({ "id": issue_id, "input": input }))).await?;
+    let data = graphql(
+        client,
+        &query,
+        Some(json!({ "id": issue_id, "input": input })),
+    )
+    .await?;
     serde_json::from_value(data["issueUpdate"].clone()).context("failed to decode issueUpdate")
 }
 
@@ -1221,22 +1157,18 @@ async fn list_project_milestones(
           project(id: $projectId) {
             projectMilestones(first: $limit) {
               nodes {
-                id
-                name
-                description
-                targetDate
-                sortOrder
-                project { id name }
+__PROJECT_MILESTONE_FIELDS__
               }
             }
           }
         }
-    "#;
+    "#
+    .replace("__PROJECT_MILESTONE_FIELDS__", PROJECT_MILESTONE_FIELDS);
     let variables = json!({
         "projectId": project_id,
         "limit": limit as i64,
     });
-    let data = graphql(client, query, Some(variables)).await?;
+    let data = graphql(client, &query, Some(variables)).await?;
     let milestones = serde_json::from_value(data["project"]["projectMilestones"]["nodes"].clone())
         .context("failed to decode project milestones list")?;
     Ok(ProjectMilestonesListResult {
@@ -1249,17 +1181,13 @@ async fn read_project_milestone(client: &Client, milestone_id: &str) -> Result<P
     let query = r#"
         query ProjectMilestone($id: String!) {
           projectMilestone(id: $id) {
-            id
-            name
-            description
-            targetDate
-            sortOrder
-            project { id name }
+__PROJECT_MILESTONE_FIELDS__
           }
         }
-    "#;
+    "#
+    .replace("__PROJECT_MILESTONE_FIELDS__", PROJECT_MILESTONE_FIELDS);
     let variables = json!({ "id": milestone_id });
-    let data = graphql(client, query, Some(variables)).await?;
+    let data = graphql(client, &query, Some(variables)).await?;
     serde_json::from_value(data["projectMilestone"].clone())
         .context("failed to decode project milestone")
 }
@@ -1276,16 +1204,12 @@ async fn create_project_milestone(
           projectMilestoneCreate(input: $input) {
             success
             projectMilestone {
-              id
-              name
-              description
-              targetDate
-              sortOrder
-              project { id name }
+__PROJECT_MILESTONE_FIELDS__
             }
           }
         }
-    "#;
+    "#
+    .replace("__PROJECT_MILESTONE_FIELDS__", PROJECT_MILESTONE_FIELDS);
     let mut input = json!({
         "projectId": project_id,
         "name": name,
@@ -1296,7 +1220,7 @@ async fn create_project_milestone(
     if let Some(target_date) = target_date {
         input["targetDate"] = Value::String(target_date.to_string());
     }
-    let data = graphql(client, query, Some(json!({ "input": input }))).await?;
+    let data = graphql(client, &query, Some(json!({ "input": input }))).await?;
     serde_json::from_value(data["projectMilestoneCreate"].clone())
         .context("failed to decode projectMilestoneCreate")
 }
@@ -1318,16 +1242,12 @@ async fn update_project_milestone(
           projectMilestoneUpdate(id: $id, input: $input) {
             success
             projectMilestone {
-              id
-              name
-              description
-              targetDate
-              sortOrder
-              project { id name }
+__PROJECT_MILESTONE_FIELDS__
             }
           }
         }
-    "#;
+    "#
+    .replace("__PROJECT_MILESTONE_FIELDS__", PROJECT_MILESTONE_FIELDS);
     let mut input = json!({});
     if let Some(name) = name {
         input["name"] = Value::String(name.to_string());
@@ -1340,7 +1260,7 @@ async fn update_project_milestone(
     }
     let data = graphql(
         client,
-        query,
+        &query,
         Some(json!({ "id": milestone_id, "input": input })),
     )
     .await?;
@@ -1384,7 +1304,10 @@ async fn graphql(client: &Client, query: &str, variables: Option<Value>) -> Resu
         .await
         .context("failed to call Linear GraphQL API")?;
     let status = response.status();
-    let body: Value = response.json().await.context("failed to decode Linear response body")?;
+    let body: Value = response
+        .json()
+        .await
+        .context("failed to decode Linear response body")?;
 
     if !status.is_success() {
         bail!("Linear API request failed with HTTP {}", status);
@@ -1404,54 +1327,11 @@ async fn graphql(client: &Client, query: &str, variables: Option<Value>) -> Resu
 }
 
 fn config_dir_path() -> Result<PathBuf> {
-    if let Ok(path) = env::var("FORGE_LINEAR_CLI_CONFIG_DIR") {
-        return Ok(expand_path(&path));
-    }
-    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(xdg).join("forge").join("linear"));
-    }
-    let home = env::var("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("forge")
-        .join("linear"))
+    resolve_config_dir("FORGE_LINEAR_CLI_CONFIG_DIR", "linear", false)
 }
 
 fn config_file_path() -> Result<PathBuf> {
-    Ok(config_dir_path()?.join("config.toml"))
-}
-
-fn ensure_owner_only_permissions(path: &PathBuf, is_dir: bool) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mode = if is_dir { 0o700 } else { 0o600 };
-        fs::set_permissions(path, PermissionsExt::from_mode(mode))
-            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        let _ = is_dir;
-    }
-
-    Ok(())
-}
-
-fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home);
-        }
-    }
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
-    }
-    PathBuf::from(path)
+    resolve_config_file("FORGE_LINEAR_CLI_CONFIG_DIR", "linear", false)
 }
 
 fn classify_error(error: &anyhow::Error) -> ErrorBody {
@@ -1462,7 +1342,9 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         msg if msg.contains("missing team_id") => "validation_error",
         msg if msg.contains("requires at least one") => "validation_error",
         msg if msg.contains("milestone delete requires --force") => "validation_error",
-        msg if msg.contains("pass either --description or --description-file") => "validation_error",
+        msg if msg.contains("pass either --description or --description-file") => {
+            "validation_error"
+        }
         msg if msg.contains("token file already exists") => "validation_error",
         msg if msg.contains("empty API key") => "validation_error",
         _ => "internal_error",
@@ -1520,7 +1402,9 @@ mod tests {
             }],
         });
 
-        assert!(rendered.contains("linear issue list: 1 issues for team team_123 (assigned to me)"));
+        assert!(
+            rendered.contains("linear issue list: 1 issues for team team_123 (assigned to me)")
+        );
         assert!(rendered.contains("1. ENG-123 Ship output contract [In Progress] Ian"));
         assert!(rendered.contains("url: https://linear.app/issue/ENG-123"));
     }
@@ -1537,10 +1421,13 @@ mod tests {
 
     #[test]
     fn human_error_output_is_not_json() {
-        let rendered = format_error_human(&ErrorBody {
-            code: "validation_error".to_string(),
-            message: "missing team_id".to_string(),
-        });
+        let rendered = format_error_human(
+            "linear",
+            &ErrorBody {
+                code: "validation_error".to_string(),
+                message: "missing team_id".to_string(),
+            },
+        );
 
         assert!(rendered.starts_with("linear error [validation_error]"));
         assert!(rendered.contains("missing team_id"));

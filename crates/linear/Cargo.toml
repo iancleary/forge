@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
+cli-core = { path = "../cli-core" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
