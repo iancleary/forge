@@ -44,6 +44,30 @@ macro_rules! embedded_skill {
                 $name,
                 "/SKILL.md"
             )),
+            files: &[],
+        }
+    };
+    ($name:literal, files = [$($relative_path:literal),+ $(,)?]) => {
+        EmbeddedSkill {
+            name: $name,
+            skill_md: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../.agents/skills/",
+                $name,
+                "/SKILL.md"
+            )),
+            files: &[
+                $(EmbeddedSkillFile {
+                    relative_path: $relative_path,
+                    contents: include_bytes!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../../.agents/skills/",
+                        $name,
+                        "/",
+                        $relative_path
+                    )),
+                }),+
+            ],
         }
     };
 }
@@ -902,9 +926,16 @@ struct SkillDefinition {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct EmbeddedSkillFile {
+    relative_path: &'static str,
+    contents: &'static [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
 struct EmbeddedSkill {
     name: &'static str,
     skill_md: &'static str,
+    files: &'static [EmbeddedSkillFile],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1607,6 +1638,8 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "slack-agent-cli",
                 "codex-threads-cli",
                 "forge-cli",
+                "autoresearch-create",
+                "autoresearch-finalize",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -5003,6 +5036,8 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!("learning-systems"),
+        embedded_skill!("autoresearch-create"),
+        embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
         embedded_skill!("thinking-in-the-limit"),
         embedded_skill!("slack-query-cli"),
         embedded_skill!("slack-agent-cli"),
@@ -5017,6 +5052,9 @@ fn load_release_skills() -> Vec<SkillDefinition> {
         .map(|skill| {
             let mut files = BTreeMap::new();
             files.insert("SKILL.md".to_string(), skill.skill_md.as_bytes().to_vec());
+            for file in skill.files {
+                files.insert(file.relative_path.to_string(), file.contents.to_vec());
+            }
             SkillDefinition {
                 name: skill.name.to_string(),
                 source_kind: SkillSourceKind::Release,
@@ -5035,20 +5073,22 @@ fn release_skill_definitions(
 ) -> Vec<SkillDefinition> {
     let mut embedded_by_name = BTreeMap::new();
     for skill in release_skills() {
-        embedded_by_name.insert(skill.name, skill.skill_md);
+        embedded_by_name.insert(skill.name, skill);
     }
     let mut definitions = Vec::new();
     for skill in &skills_contract.skills {
         let mut files = BTreeMap::new();
-        files.insert(
-            "SKILL.md".to_string(),
-            embedded_by_name
-                .get(skill.name.as_str())
-                .copied()
-                .unwrap_or("")
-                .as_bytes()
-                .to_vec(),
-        );
+        if let Some(embedded_skill) = embedded_by_name.get(skill.name.as_str()).copied() {
+            files.insert(
+                "SKILL.md".to_string(),
+                embedded_skill.skill_md.as_bytes().to_vec(),
+            );
+            for file in embedded_skill.files {
+                files.insert(file.relative_path.to_string(), file.contents.to_vec());
+            }
+        } else {
+            files.insert("SKILL.md".to_string(), Vec::new());
+        }
         definitions.push(SkillDefinition {
             name: skill.name.clone(),
             source_kind: SkillSourceKind::Release,
@@ -6320,6 +6360,18 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "slack-agent-cli")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "autoresearch-create")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "autoresearch-finalize")
         );
         assert!(
             contract

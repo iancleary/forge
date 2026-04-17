@@ -16,6 +16,13 @@ name = "linear-cli"
 name = "learning-systems"
 
 [[skills]]
+name = "autoresearch-create"
+legacy_names = ["pi-autoresearch"]
+
+[[skills]]
+name = "autoresearch-finalize"
+
+[[skills]]
 name = "thinking-in-the-limit"
 
 [[skills]]

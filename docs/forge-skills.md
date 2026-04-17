@@ -32,6 +32,8 @@ Initial Forge-managed skills:
 - `forge-tools`
 - `linear-cli`
 - `learning-systems`
+- `autoresearch-create`
+- `autoresearch-finalize`
 - `thinking-in-the-limit`
 - `slack-query-cli`
 - `slack-agent-cli`
