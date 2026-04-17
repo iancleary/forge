@@ -1,17 +1,26 @@
 ---
 name: learning-systems
-description: Use Boole's three-prompt framework to map a topic into foundations, falsifiers, and logical dependencies before study.
+description: Use George Boole's three-prompt framework to map how a subject thinks before deep study by identifying foundations, falsifiers, and logical dependencies. Use this when the user wants to learn a domain quickly from first principles rather than collecting disconnected facts; do not use it for simple factual retrieval or short definitions.
 ---
 
 # Learning Systems
 
-This skill applies George Boole's 3-prompt workflow to any target subject.
+Use this skill before diving into course material, textbooks, or long explainers. The goal is to draw the picture of the subject before filling in details.
 
-## When to use
+This skill applies George Boole's three-prompt workflow to any target subject.
 
-- The user says they want to learn a new domain, topic, system, field, or course content quickly.
-- The user asks for a first-principles map of a subject before deep study.
-- The user asks for a way to stress-test assumptions in a subject.
+## Use this when
+
+- the user wants to learn a new domain, topic, system, field, or course quickly
+- the user asks for a first-principles map before deep study
+- the user wants to stress-test assumptions in a body of knowledge
+- the user wants to know how a subject thinks, not just what facts it contains
+
+## Do not use this when
+
+- the task is simple factual retrieval or a short definition
+- the user already knows the structure and only wants detailed examples or exercises
+- the subject boundary is too vague to identify five core propositions yet
 
 ## Inputs
 
@@ -20,7 +29,7 @@ This skill applies George Boole's 3-prompt workflow to any target subject.
 
 ## Prompt chain to execute
 
-The workflow is exactly the three prompts from issue 41, executed in order, then synthesized into a study map.
+The workflow is exactly these three prompts, executed in order, then synthesized into a study map. By the end, the user should have a model of the subject's load-bearing walls rather than a loose summary.
 
 1. Foundations prompt
 
@@ -48,11 +57,13 @@ The workflow is exactly the three prompts from issue 41, executed in order, then
 
 1. `Core map`
    - A table with five rows: proposition, reason foundational, best falsifier, and confidence note.
-2. `Dependency model`
+2. `How the subject thinks`
+   - A short paragraph explaining the overall logic of the field in plain language.
+3. `Dependency model`
    - Textual graph (A -> B) plus bullet classification for each node.
-3. `Edge cases to test`
+4. `Edge cases to test`
    - 2–4 concrete questions or mini-experiments that would validate the map.
-4. `Learning path`
+5. `Learning path`
    - 3–6 checkpoints that should be filled after this map is built.
 
 ## Safety and style
