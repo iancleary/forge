@@ -1,6 +1,6 @@
 [package]
 name = "slack-core"
-version = "20260415.0.6"
+version = "20260416.0.0"
 edition = "2024"
 license = "MIT"
 
