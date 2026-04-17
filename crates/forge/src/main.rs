@@ -2769,6 +2769,20 @@ fn format_unmanaged_collision_error(collisions: &[&SkillStatusEntry]) -> String 
 
 fn format_update_human(result: &UpdateResult) -> String {
     let mut out = String::new();
+    let use_color = io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none();
+    enum UpdateColor {
+        Success,
+        Mismatch,
+        Warning,
+    }
+    let colorize = |value: &str, color: UpdateColor| -> String {
+        let code = match color {
+            UpdateColor::Success => "32",
+            UpdateColor::Mismatch => "31",
+            UpdateColor::Warning => "33",
+        };
+        doctor_status_style(value, use_color, code)
+    };
     let _ = writeln!(
         out,
         "forge self update: {}",
@@ -2778,61 +2792,109 @@ fn format_update_human(result: &UpdateResult) -> String {
             "already up to date"
         }
     );
-    let _ = writeln!(out, "source: {}", result.source_kind);
+
+    let mut rows: Vec<(&str, String)> = Vec::new();
+    rows.push(("source", result.source_kind.to_string()));
     if let Some(path) = result.repo_path.as_ref() {
-        let _ = writeln!(out, "repo: {path}");
+        rows.push(("repo", path.to_string()));
     }
     if let Some(branch) = result.branch.as_ref() {
-        let _ = writeln!(out, "branch: {branch}");
+        rows.push(("branch", branch.to_string()));
     }
     if let Some(head) = result.before_head.as_ref() {
-        let _ = writeln!(out, "before head: {}", shorten_hash(head));
+        rows.push(("before head", shorten_hash(head)));
     }
     if let Some(head) = result.after_head.as_ref() {
-        let _ = writeln!(out, "after head: {}", shorten_hash(head));
+        rows.push(("after head", shorten_hash(head)));
     }
     if let Some(version) = result.before_version.as_ref() {
-        let _ = writeln!(out, "before version: {version}");
+        rows.push(("before version", version.to_string()));
     }
     if let Some(version) = result.after_version.as_ref() {
-        let _ = writeln!(out, "after version: {version}");
+        rows.push(("after version", version.to_string()));
     }
     if let Some(method) = result.install_method.as_ref() {
-        let _ = writeln!(out, "install method: {method}");
+        rows.push(("install method", method.to_string()));
     }
     if let Some(target) = result.artifact_target.as_ref() {
-        let _ = writeln!(out, "artifact target: {target}");
+        rows.push(("artifact target", target.to_string()));
     }
     if let Some(attested) = result.attestation_verified {
-        let _ = writeln!(out, "attestation verified: {attested}");
+        rows.push(("attestation verified", attested.to_string()));
     }
     if let Some(name) = result.artifact_name.as_ref() {
-        let _ = writeln!(out, "artifact name: {name}");
+        rows.push(("artifact name", name.to_string()));
     }
     if let (Some(expected), Some(actual)) = (
         result.artifact_sha256_expected.as_ref(),
         result.artifact_sha256_downloaded.as_ref(),
     ) {
-        let _ = writeln!(out, "artifact sha256: expected={expected} actual={actual}");
+        let match_ok = expected == actual;
+        let match_label = if match_ok { "true" } else { "false" };
+        let match_value = if match_ok {
+            colorize(match_label, UpdateColor::Success)
+        } else {
+            colorize(match_label, UpdateColor::Mismatch)
+        };
+        rows.push(("artifact sha256 match", match_value));
+        let expected_value = colorize(expected, UpdateColor::Success);
+        let actual_value = if actual == expected {
+            colorize(actual, UpdateColor::Success)
+        } else {
+            colorize(actual, UpdateColor::Mismatch)
+        };
+        rows.push(("artifact sha256 expected", expected_value));
+        rows.push(("artifact sha256 actual", actual_value));
+    } else {
+        let match_value = colorize("n/a", UpdateColor::Warning);
+        rows.push(("artifact sha256 match", match_value));
+        if let Some(expected) = result.artifact_sha256_expected.as_ref() {
+            let expected_value = colorize(expected, UpdateColor::Success);
+            rows.push(("artifact sha256 expected", expected_value));
+        }
+        if let Some(actual) = result.artifact_sha256_downloaded.as_ref() {
+            let actual_value = colorize(actual, UpdateColor::Success);
+            rows.push(("artifact sha256 actual", actual_value));
+        }
     }
-    let _ = writeln!(out, "skills reconciled: {}", result.skills_reconciled);
-    let _ = writeln!(out, "codex reconciled: {}", result.codex_reconciled);
-    let _ = writeln!(out, "config dirs migrated: {}", result.config_dirs_migrated);
+    rows.push(("skills reconciled", result.skills_reconciled.to_string()));
+    rows.push(("codex reconciled", result.codex_reconciled.to_string()));
+    rows.push((
+        "config dirs migrated",
+        result.config_dirs_migrated.to_string(),
+    ));
+    rows.push((
+        "legacy binaries removed",
+        result.legacy_binaries_removed.to_string(),
+    ));
+    rows.push((
+        "obsolete root files removed",
+        result.obsolete_root_files_removed.to_string(),
+    ));
+    rows.push((
+        "legacy skill installs migrated",
+        result.legacy_skill_installs_migrated.to_string(),
+    ));
+
+    let label_width = rows
+        .iter()
+        .map(|(label, _)| label.len())
+        .max()
+        .unwrap_or(0);
+    let _ = writeln!(out, "{:<width$} | {}", "FIELD", "VALUE", width = label_width);
+    let value_width = "VALUE".len();
     let _ = writeln!(
         out,
-        "legacy binaries removed: {}",
-        result.legacy_binaries_removed
+        "{:-<width$}-+-{:-<value_width$}",
+        "",
+        "",
+        width = label_width,
+        value_width = value_width
     );
-    let _ = writeln!(
-        out,
-        "obsolete root files removed: {}",
-        result.obsolete_root_files_removed
-    );
-    let _ = writeln!(
-        out,
-        "legacy skill installs migrated: {}",
-        result.legacy_skill_installs_migrated
-    );
+    for (label, value) in rows {
+        let _ = writeln!(out, "{:<width$} | {}", label, value, width = label_width);
+    }
+
     out.trim_end().to_string()
 }
 
