@@ -5039,6 +5039,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("autoresearch-create"),
         embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
         embedded_skill!("thinking-in-the-limit"),
+        embedded_skill!("chrome-devtools-mcp"),
         embedded_skill!("slack-query-cli"),
         embedded_skill!("slack-agent-cli"),
         embedded_skill!("codex-threads-cli"),
@@ -6378,6 +6379,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "thinking-in-the-limit")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "chrome-devtools-mcp")
         );
     }
 

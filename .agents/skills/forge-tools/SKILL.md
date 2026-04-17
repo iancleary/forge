@@ -16,6 +16,7 @@ Pick the narrowest CLI skill that matches the job:
 - `forge-cli`: local Forge config, permission checks, self-update commands, and managed-surface deployment.
 - `autoresearch-create`: start an autonomous experiment loop for measurable optimization work.
 - `autoresearch-finalize`: turn an autoresearch branch into clean, reviewable branches.
+- `chrome-devtools-mcp`: Codex MCP setup and live Chrome debugging with console/network/DOM/trace inspection.
 - `design-algorithm`: shaping and scope-reduction workflow for deciding what should exist before building or automating it.
 
 Default operating rules:
