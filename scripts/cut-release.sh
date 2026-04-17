@@ -7,6 +7,8 @@ DEFAULT_BRANCH="main"
 PHOENIX_TZ="America/Phoenix"
 DRY_RUN=0
 LATEST=1
+PRINT_CURRENT_VERSION=0
+PRINT_NEXT_VERSION=0
 VERSION=""
 NOTES_FILE=""
 
@@ -16,12 +18,16 @@ Cut a Forge GitHub release from main.
 
 Usage:
   cut-release.sh [--version <version>] [--notes-file <path>] [--not-latest] [--dry-run]
+  cut-release.sh --print-current-version
+  cut-release.sh --print-next-version
 
 Examples:
   cut-release.sh
   cut-release.sh --version 20260415.0.1
   cut-release.sh --notes-file notes.md
   cut-release.sh --dry-run
+  cut-release.sh --print-current-version
+  cut-release.sh --print-next-version
 EOF
 }
 
@@ -102,6 +108,14 @@ while [ "$#" -gt 0 ]; do
       DRY_RUN=1
       shift
       ;;
+    --print-current-version)
+      PRINT_CURRENT_VERSION=1
+      shift
+      ;;
+    --print-next-version)
+      PRINT_NEXT_VERSION=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -113,6 +127,35 @@ while [ "$#" -gt 0 ]; do
 done
 
 require_cmd git
+
+if [ "$PRINT_CURRENT_VERSION" -eq 1 ]; then
+  [ -z "$VERSION" ] || die "--print-current-version cannot be combined with --version"
+  [ -z "$NOTES_FILE" ] || die "--print-current-version cannot be combined with --notes-file"
+  [ "$LATEST" -eq 1 ] || die "--print-current-version cannot be combined with --not-latest"
+  [ "$DRY_RUN" -eq 0 ] || die "--print-current-version cannot be combined with --dry-run"
+  [ "$PRINT_NEXT_VERSION" -eq 0 ] || die "--print-current-version cannot be combined with --print-next-version"
+
+  current_release_version
+  exit 0
+fi
+
+if [ "$PRINT_NEXT_VERSION" -eq 1 ]; then
+  [ -z "$VERSION" ] || die "--print-next-version cannot be combined with --version"
+  [ -z "$NOTES_FILE" ] || die "--print-next-version cannot be combined with --notes-file"
+  [ "$LATEST" -eq 1 ] || die "--print-next-version cannot be combined with --not-latest"
+  [ "$DRY_RUN" -eq 0 ] || die "--print-next-version cannot be combined with --dry-run"
+  [ "$PRINT_CURRENT_VERSION" -eq 0 ] || die "--print-next-version cannot be combined with --print-current-version"
+
+  echo "+ git -C $ROOT fetch origin $DEFAULT_BRANCH --tags" >&2
+  git -C "$ROOT" fetch origin "$DEFAULT_BRANCH" --tags >&2
+
+  git -C "$ROOT" rev-parse --verify "origin/$DEFAULT_BRANCH" >/dev/null 2>&1 ||
+    die "missing origin/$DEFAULT_BRANCH tracking ref"
+
+  resolve_next_version
+  exit 0
+fi
+
 require_cmd just
 require_cmd cargo
 require_cmd gh
@@ -124,8 +167,8 @@ fi
 branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
 [ "$branch" = "$DEFAULT_BRANCH" ] || die "releases must be cut from $DEFAULT_BRANCH, got $branch"
 
-echo "+ git -C $ROOT fetch origin $DEFAULT_BRANCH"
-git -C "$ROOT" fetch origin "$DEFAULT_BRANCH"
+echo "+ git -C $ROOT fetch origin $DEFAULT_BRANCH --tags"
+git -C "$ROOT" fetch origin "$DEFAULT_BRANCH" --tags
 
 git -C "$ROOT" rev-parse --verify "origin/$DEFAULT_BRANCH" >/dev/null 2>&1 ||
   die "missing origin/$DEFAULT_BRANCH tracking ref"
@@ -145,6 +188,8 @@ case "$VERSION" in
     die "version must match YYYYMMDD.0.N"
     ;;
 esac
+
+echo "resolved release version: $VERSION"
 
 [ "$VERSION" != "$(current_release_version)" ] ||
   die "version $VERSION already matches the current crate version"

@@ -11,9 +11,21 @@ Primary commands:
 
 - `just cut-release`
 - `just cut-release --dry-run`
+- `just cut-release --print-current-version`
+- `just cut-release --print-next-version`
 - `./scripts/cut-release.sh --version <repo-version>`
 
 In Forge itself, read [docs/release.md](../../../docs/release.md) when you need the full release contract or need to update the documented workflow.
+
+Forge-specific contract today:
+
+- prefer `just cut-release` as the default entrypoint
+- use `just cut-release --print-current-version` for a read-only current-version query
+- use `just cut-release --print-next-version` for a read-only next-version query
+- use `just cut-release --dry-run` before the real release when validating the next version or sequence
+- the script owns `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
+- omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
+- the final publish step is `gh release create`
 
 ## Pattern
 

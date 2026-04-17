@@ -68,7 +68,10 @@ Before committing:
 
 - use the repo-local `cut-release` skill for Forge release work
 - that skill establishes and maintains the repo-local release process, then routes release mutations through `just cut-release` / `scripts/cut-release.sh`
+- use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
+- use `just cut-release --print-next-version` when you need the inferred next release version without starting the release flow
 - prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
+- the release script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
 - keep `cut-release` repo-local; do not promote it to a Forge-managed user skill unless the workflow is generalized beyond this Cargo workspace
 - if the release flow changes, update the script, [docs/release.md](docs/release.md), and the skill together
 
@@ -93,7 +96,14 @@ When adding a new Forge-managed skill, update these three locations together:
 - use semver-compatible CalVer: `YYYYMMDD.0.N`
 - for this repo specifically, releases use Phoenix-date CalVer such as `20260415.0.0`
 - keep crate versions aligned across the workspace
+- omitted `--version` can be inferred safely from fetched git tags for the current Phoenix calendar day
 - current release flow is:
+  - `just cut-release`
+- read-only version queries are:
+  - `just cut-release --print-current-version`
+  - `just cut-release --print-next-version`
+- normal validation path is:
+  - `just cut-release --dry-run`
   - `just cut-release`
 - use the repo-local release script instead of reconstructing release commands by hand
 - for agent work, route release requests through the `cut-release` skill first

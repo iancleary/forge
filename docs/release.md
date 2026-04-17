@@ -4,7 +4,13 @@ This document defines the current release process and the intended future `forge
 
 ## Current Process
 
-Use the repo script directly for now:
+Prefer the `just` entrypoint for normal release work:
+
+```sh
+just cut-release
+```
+
+The underlying checked-in script remains the source of truth:
 
 ```sh
 ./scripts/cut-release.sh
@@ -18,14 +24,40 @@ Optional flags:
 ./scripts/cut-release.sh --dry-run
 ```
 
-There is also a matching `just` entrypoint:
+Optional flags:
 
 ```sh
-just cut-release
+just cut-release --version 20260415.0.1
 just cut-release --dry-run
+just cut-release --print-current-version
+just cut-release --print-next-version
+./scripts/cut-release.sh --version 20260415.0.1
+./scripts/cut-release.sh --notes-file notes.md
+./scripts/cut-release.sh --dry-run
+./scripts/cut-release.sh --print-current-version
+./scripts/cut-release.sh --print-next-version
 ```
 
+Read-only version query:
+
+```sh
+just cut-release --print-current-version
+just cut-release --print-next-version
+```
+
+- `--print-current-version` prints the current workspace release version from `crates/forge/Cargo.toml` and exits.
+- `--print-next-version` fetches `main` and tags from `origin`, prints the next Phoenix-date CalVer, and exits.
+
+Both read-only modes skip the clean-tree check and do not run the release steps.
+
 For agent work in this repo, use the repo-local `cut-release` skill and route release requests through `just cut-release` unless you are explicitly correcting an already-published release.
+
+Recommended sequence:
+
+```sh
+just cut-release --dry-run
+just cut-release
+```
 
 The script currently enforces:
 
@@ -33,21 +65,17 @@ The script currently enforces:
 - working tree must be clean
 - local `main` must include `origin/main`
 - version format must match `YYYYMMDD.0.N`
-- omitted `--version` resolves the next Phoenix-date CalVer automatically
+- `--print-current-version` prints the current workspace release version and exits without mutating the repo
+- omitted `--version` resolves the next Phoenix-date CalVer automatically after fetching `main` and tags from `origin`
+- `--print-next-version` prints that inferred next version and exits without mutating the repo
 - version bumping happens through `just bump-version`
-- `cargo check` must pass and `Cargo.lock` is included in the release commit
-- release diff must be limited to `Cargo.lock` and crate manifests
+- `cargo check` must pass and the release commit must include `Cargo.lock`
+- release diff must be limited to `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
 - the script commits, pushes `main`, and creates the GitHub release
 
 After the release is published, GitHub Actions builds and uploads the supported release artifacts plus verification metadata.
 
 The underlying GitHub release step still uses GitHub CLI.
-
-Recommended sequence:
-
-```sh
-./scripts/cut-release.sh
-```
 
 Shell note:
 
@@ -67,13 +95,7 @@ Release tags should match the crate version policy:
 - example: `20260410.0.0`
 - release dates are based on `America/Phoenix`
 
-The release tag should match the versions in:
-
-- `crates/forge/Cargo.toml`
-- `crates/codex-threads/Cargo.toml`
-- `crates/linear/Cargo.toml`
-- `crates/slack-agent/Cargo.toml`
-- `crates/slack-query/Cargo.toml`
+The release tag should match the versions in all workspace crate manifests under `crates/*/Cargo.toml`, including `crates/slack-core/Cargo.toml`.
 
 ## Future `forge release cut`
 
@@ -241,6 +263,8 @@ gh release create <version> --target main --title <version> --generate-notes --l
 ## Suggested Flags
 
 - `--version <v>`
+- `--print-current-version`
+- `--print-next-version`
 - `--dry-run`
 - `--notes-file <path>`
 - `--no-check`
