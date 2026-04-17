@@ -13,6 +13,65 @@ use serde_json::Value;
 
 pub const SLACK_API_BASE: &str = "https://slack.com/api";
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackMessage {
+    #[serde(default)]
+    pub subtype: Option<String>,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub bot_id: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub text: String,
+    pub ts: String,
+    #[serde(default)]
+    pub thread_ts: Option<String>,
+    #[serde(default)]
+    pub reply_count: Option<u32>,
+    #[serde(default)]
+    pub files: Vec<SlackFile>,
+    #[serde(default)]
+    pub reactions: Vec<SlackReaction>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackFile {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub mimetype: Option<String>,
+    #[serde(default)]
+    pub filetype: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub url_private: Option<String>,
+    #[serde(default)]
+    pub url_private_download: Option<String>,
+    #[serde(default)]
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SlackReaction {
+    pub name: String,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default)]
+    pub users: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct SlackMessagesPage {
+    pub messages: Vec<SlackMessage>,
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ConfigFile {
     #[serde(default)]
@@ -24,6 +83,17 @@ struct ConfigFile {
 #[derive(Debug, Deserialize)]
 struct SlackErrorResponse {
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackCursor {
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackListResponse<T> {
+    messages: Option<Vec<T>>,
+    response_metadata: Option<SlackCursor>,
 }
 
 pub fn read_token(
@@ -162,6 +232,62 @@ where
         .await
         .with_context(|| format!("failed to call {method}"))?;
     parse_slack_api_response(response, method).await
+}
+
+pub async fn slack_get_messages<Q>(
+    client: &Client,
+    method: &str,
+    query: &Q,
+) -> Result<SlackMessagesPage>
+where
+    Q: Serialize + ?Sized,
+{
+    let payload: SlackListResponse<SlackMessage> = slack_get(client, method, query).await?;
+    Ok(SlackMessagesPage {
+        messages: payload.messages.unwrap_or_default(),
+        next_cursor: payload.response_metadata.and_then(|item| item.next_cursor),
+    })
+}
+
+pub async fn read_thread_messages(
+    client: &Client,
+    channel_id: &str,
+    thread_ts: &str,
+    limit: u32,
+) -> Result<SlackMessagesPage> {
+    slack_get_messages(
+        client,
+        "conversations.replies",
+        &[
+            ("channel".to_string(), channel_id.to_string()),
+            ("ts".to_string(), thread_ts.to_string()),
+            ("limit".to_string(), limit.to_string()),
+            ("inclusive".to_string(), "true".to_string()),
+        ],
+    )
+    .await
+}
+
+pub async fn read_history_messages(
+    client: &Client,
+    channel_id: &str,
+    oldest: Option<&str>,
+    latest: Option<&str>,
+    inclusive: bool,
+    limit: u32,
+) -> Result<SlackMessagesPage> {
+    let mut query = vec![
+        ("channel".to_string(), channel_id.to_string()),
+        ("inclusive".to_string(), inclusive.to_string()),
+        ("limit".to_string(), limit.to_string()),
+    ];
+    if let Some(oldest) = oldest {
+        query.push(("oldest".to_string(), oldest.to_string()));
+    }
+    if let Some(latest) = latest {
+        query.push(("latest".to_string(), latest.to_string()));
+    }
+    slack_get_messages(client, "conversations.history", &query).await
 }
 
 pub async fn slack_post_form<T, F>(client: &Client, method: &str, form: &F) -> Result<T>

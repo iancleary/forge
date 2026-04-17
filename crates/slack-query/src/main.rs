@@ -5,9 +5,10 @@ use clap::{Args, Parser, Subcommand};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use slack_core::{
-    ErrorBody, OutputMode, classify_slack_error_code, config_dir_path as shared_config_dir_path,
-    emit_output, format_error_human, normalize_token, prepare_config_dir, print_error_json,
-    prompt_for_token, read_token as shared_read_token, slack_client as shared_slack_client,
+    ErrorBody, OutputMode, SlackMessage, classify_slack_error_code,
+    config_dir_path as shared_config_dir_path, emit_output, format_error_human, normalize_token,
+    prepare_config_dir, print_error_json, prompt_for_token, read_history_messages,
+    read_thread_messages, read_token as shared_read_token, slack_client as shared_slack_client,
     slack_get, write_token_file,
 };
 use url::Url;
@@ -199,7 +200,7 @@ struct SearchChannel {
     name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 struct Message {
     #[serde(default)]
     subtype: Option<String>,
@@ -212,12 +213,6 @@ struct Message {
     thread_ts: Option<String>,
     #[serde(default)]
     reply_count: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackListResponse<T> {
-    messages: Option<Vec<T>>,
-    response_metadata: Option<SlackCursor>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,11 +233,6 @@ struct SlackPagination {
     page: Option<u32>,
     #[serde(default)]
     page_count: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SlackCursor {
-    next_cursor: Option<String>,
 }
 
 #[tokio::main]
@@ -577,26 +567,15 @@ async fn read_thread(
     thread_ts: &str,
     limit: u32,
 ) -> Result<ThreadResult> {
-    let payload: SlackListResponse<Message> = slack_get(
-        client,
-        "conversations.replies",
-        &[
-            ("channel".to_string(), channel_id.to_string()),
-            ("ts".to_string(), thread_ts.to_string()),
-            ("limit".to_string(), limit.to_string()),
-            ("inclusive".to_string(), "true".to_string()),
-        ],
-    )
-    .await?;
-    let messages = payload.messages.unwrap_or_default();
+    let payload = read_thread_messages(client, channel_id, thread_ts, limit).await?;
 
     Ok(ThreadResult {
         channel_id: channel_id.to_string(),
         thread_ts: thread_ts.to_string(),
-        messages,
+        messages: payload.messages.into_iter().map(Message::from).collect(),
         response_metadata: ResponseMetadata {
             rate_limited: false,
-            next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
+            next_cursor: payload.next_cursor,
         },
     })
 }
@@ -705,25 +684,13 @@ async fn fetch_history(
     inclusive: bool,
     limit: u32,
 ) -> Result<HistoryWindow> {
-    let mut query = vec![
-        ("channel".to_string(), channel_id.to_string()),
-        ("inclusive".to_string(), inclusive.to_string()),
-        ("limit".to_string(), limit.to_string()),
-    ];
-    if let Some(oldest) = oldest {
-        query.push(("oldest".to_string(), oldest.to_string()));
-    }
-    if let Some(latest) = latest {
-        query.push(("latest".to_string(), latest.to_string()));
-    }
-
-    let payload: SlackListResponse<Message> =
-        slack_get(client, "conversations.history", &query).await?;
+    let payload =
+        read_history_messages(client, channel_id, oldest, latest, inclusive, limit).await?;
 
     Ok(HistoryWindow {
-        messages: payload.messages.unwrap_or_default(),
+        messages: payload.messages.into_iter().map(Message::from).collect(),
         rate_limited: false,
-        next_cursor: payload.response_metadata.and_then(|m| m.next_cursor),
+        next_cursor: payload.next_cursor,
     })
 }
 
@@ -783,6 +750,19 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     ErrorBody {
         code: code.to_string(),
         message,
+    }
+}
+
+impl From<SlackMessage> for Message {
+    fn from(value: SlackMessage) -> Self {
+        Self {
+            subtype: value.subtype,
+            user: value.user.or(value.username).or(value.bot_id),
+            text: value.text,
+            ts: value.ts,
+            thread_ts: value.thread_ts,
+            reply_count: value.reply_count,
+        }
     }
 }
 
