@@ -16,6 +16,9 @@ name = "linear-cli"
 name = "learning-systems"
 
 [[skills]]
+name = "thinking-in-the-limit"
+
+[[skills]]
 name = "slack-query-cli"
 legacy_names = ["slack-query-research", "slack-cli-research"]
 
