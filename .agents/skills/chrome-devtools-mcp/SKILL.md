@@ -24,13 +24,26 @@ This skill exists for the Chrome DevTools MCP server published by Chrome DevTool
 
 ## Install for Codex
 
-Prefer the user-scope MCP install from the issue:
+Prefer the user-scope MCP install with telemetry disabled:
 
 ```bash
-codex mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest --no-usage-statistics
+codex mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest \
+  --no-usage-statistics
 ```
 
 That keeps Codex on the latest release and disables usage-statistics collection.
+
+## Privacy / telemetry default
+
+When you recommend or configure this MCP server for Codex, include `--no-usage-statistics` by default.
+
+If the user also wants to suppress periodic npm update-check notices from the server, set:
+
+```bash
+CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1
+```
+
+Use that env var only when the user wants the extra quiet/no-check behavior; the required no-telemetry default is `--no-usage-statistics`.
 
 ## Requirements
 
