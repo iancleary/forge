@@ -42,7 +42,28 @@ just cut-release --print-next-version
 
 Both read-only modes skip the clean-tree check and do not run the release steps.
 
-For agent work in this repo, use the repo-local `cut-release` skill and route release requests through `just cut-release` unless you are explicitly correcting an already-published release.
+For agent work in this repo, distinguish between maintaining the workflow and executing it:
+
+- use the repo-local `create-release-process` skill when you are establishing, auditing, or changing the release process itself
+- use the repo-local `cut-release` skill for an ordinary request to publish the next Forge release
+- the `cut-release` skill should execute `just cut-release` (often after `just cut-release --dry-run`) rather than reconstructing the release by hand
+- only reconstruct the flow manually when you are explicitly correcting an already-published release
+
+Decision rule:
+
+```mermaid
+stateDiagram-v2
+    [*] --> ReleaseRequest
+    ReleaseRequest --> MaintainWorkflow: asked to create/fix/change
+    ReleaseRequest --> PublishRelease: asked to cut/publish
+    MaintainWorkflow --> UseCreateReleaseProcessSkill: update skill/script/docs
+    PublishRelease --> UseCutReleaseSkill: ordinary release request
+    UseCutReleaseSkill --> DryRun: verify version or sequence
+    UseCutReleaseSkill --> RunTaskRunner: direct execution
+    DryRun --> RunTaskRunner
+    RunTaskRunner --> [*]
+    UseCreateReleaseProcessSkill --> [*]
+```
 
 Recommended sequence:
 
@@ -69,6 +90,23 @@ After the release is published, GitHub Actions builds and uploads the supported 
 
 The underlying GitHub release step still uses GitHub CLI.
 
+<<<<<<< HEAD
+||||||| parent of 4ffdb81 (docs: clarify release routing vs skill maintenance)
+Recommended sequence:
+
+```sh
+./scripts/cut-release.sh
+```
+
+=======
+Recommended sequence:
+
+```sh
+just cut-release --dry-run
+just cut-release
+```
+
+>>>>>>> 4ffdb81 (docs: clarify release routing vs skill maintenance)
 Shell note:
 
 - the script keeps the `gh release create` invocation on one command line, which avoids the zsh split-command footgun
