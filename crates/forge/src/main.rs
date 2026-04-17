@@ -5003,6 +5003,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!("learning-systems"),
+        embedded_skill!("thinking-in-the-limit"),
         embedded_skill!("slack-query-cli"),
         embedded_skill!("slack-agent-cli"),
         embedded_skill!("codex-threads-cli"),
@@ -6319,6 +6320,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "slack-agent-cli")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "thinking-in-the-limit")
         );
     }
 

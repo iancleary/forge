@@ -32,6 +32,7 @@ Initial Forge-managed skills:
 - `forge-tools`
 - `linear-cli`
 - `learning-systems`
+- `thinking-in-the-limit`
 - `slack-query-cli`
 - `slack-agent-cli`
 - `codex-threads-cli`
