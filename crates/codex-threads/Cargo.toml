@@ -1,6 +1,6 @@
 [package]
 name = "codex-threads"
-version = "20260416.0.3"
+version = "20260417.0.0"
 edition = "2024"
 license = "MIT"
 
