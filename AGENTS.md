@@ -66,8 +66,8 @@ Before committing:
 
 ## Repo Skills
 
-- use the repo-local `cut-release` skill for Forge release work
-- that skill establishes and maintains the repo-local release process, then routes release mutations through `just cut-release` / `scripts/cut-release.sh`
+- use the repo-local `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
+- use the repo-local `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
 - use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
 - use `just cut-release --print-next-version` when you need the inferred next release version without starting the release flow
 - prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
@@ -106,7 +106,7 @@ When adding a new Forge-managed skill, update these three locations together:
   - `just cut-release --dry-run`
   - `just cut-release`
 - use the repo-local release script instead of reconstructing release commands by hand
-- for agent work, route release requests through the `cut-release` skill first
+- use the `create-release-process` skill to maintain the release process; use the `cut-release` skill to execute the release through `just cut-release`
 
 ## Scope Discipline
 

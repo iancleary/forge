@@ -96,6 +96,8 @@ Ask first:
 - Use router skills first when the right narrow skill is not obvious.
 - Prefer user-scoped skills installed under `~/.agents/skills` for portable cross-repo behavior.
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
+- Distinguish workflow-maintenance skills from executable repo commands: if a repo already has a documented task runner or checked-in script for the actual job, use that command for ordinary execution and use the skill only when creating, auditing, or changing the workflow.
+- In repos like Forge, that means `create-release-process` maintains the release workflow, while the `cut-release` skill executes the workflow by calling `just cut-release`.
 
 ## Notes
 

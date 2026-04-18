@@ -101,6 +101,36 @@ Router skills should:
 - stay short
 - avoid duplicating the full body of the skills they route to
 
+## Workflow Maintenance vs. Workflow Execution
+
+Forge should distinguish between skills that maintain a workflow and skills or commands that execute the workflow.
+
+Examples:
+
+- a repo-local skill such as `create-release-process` exists to define, audit, and repair the release process
+- a repo-local skill such as `cut-release` can exist to execute the ordinary release by calling the checked-in runner
+- the checked-in repo command `just cut-release` remains the deterministic runner that the execution skill should call
+
+That distinction matters because Codex can otherwise misread a maintenance skill as the thing to run, or mis-handle an execution skill by reconstructing the shell flow instead of calling the deterministic repo task runner.
+
+Decision rule:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Request
+    Request --> MaintainWorkflow: create/fix/change workflow
+    Request --> ExecuteWorkflow: ordinary repo task
+    MaintainWorkflow --> UseSkill
+    ExecuteWorkflow --> RunRepoCommand
+    UseSkill --> [*]
+    RunRepoCommand --> [*]
+```
+
+For Forge releases, the intended mapping is:
+
+- "change the release flow" -> use the repo-local `create-release-process` skill
+- "cut the next release" -> use the repo-local `cut-release` skill, which should run `just cut-release` (often after `just cut-release --dry-run`)
+
 ## Trigger Contract For Forge Skills
 
 Forge-managed skills should follow this trigger contract:
