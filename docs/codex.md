@@ -108,15 +108,8 @@ Forge should distinguish between skills that maintain a workflow and skills or c
 Examples:
 
 - a repo-local skill such as `create-release-process` exists to define, audit, and repair the release process
-<<<<<<< HEAD
 - a repo-local skill such as `cut-release` can exist to execute the ordinary release by calling the checked-in runner
 - the checked-in repo command `just cut-release` remains the deterministic runner that the execution skill should call
-||||||| parent of 7d92b23 (docs: rename release process skill)
-- a repo-local skill such as `cut-release` exists to define, audit, and repair the release process
-- a repo command such as `just cut-release` exists to perform the ordinary release itself
-=======
-- a repo command such as `just cut-release` exists to perform the ordinary release itself
->>>>>>> 7d92b23 (docs: rename release process skill)
 
 That distinction matters because Codex can otherwise misread a maintenance skill as the thing to run, or mis-handle an execution skill by reconstructing the shell flow instead of calling the deterministic repo task runner.
 

@@ -90,23 +90,12 @@ After the release is published, GitHub Actions builds and uploads the supported 
 
 The underlying GitHub release step still uses GitHub CLI.
 
-<<<<<<< HEAD
-||||||| parent of 4ffdb81 (docs: clarify release routing vs skill maintenance)
-Recommended sequence:
-
-```sh
-./scripts/cut-release.sh
-```
-
-=======
 Recommended sequence:
 
 ```sh
 just cut-release --dry-run
 just cut-release
 ```
-
->>>>>>> 4ffdb81 (docs: clarify release routing vs skill maintenance)
 Shell note:
 
 - the script keeps the `gh release create` invocation on one command line, which avoids the zsh split-command footgun
