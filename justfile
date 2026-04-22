@@ -42,6 +42,9 @@ run-forge *args:
 run-linear *args:
   cargo run -p linear -- {{args}}
 
+run-mermaid *args:
+  cargo run -p mermaid -- {{args}}
+
 run-slack-query *args:
   cargo run -p slack-query -- {{args}}
 

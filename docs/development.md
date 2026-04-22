@@ -14,6 +14,7 @@ cargo run -p slack-query -- --help
 cargo run -p codex-threads -- --json sync
 cargo run -p linear -- auth login
 cargo run -p linear -- --json viewer
+cargo run -p mermaid -- --json doctor
 ```
 
 ## Install Locally From Checkout

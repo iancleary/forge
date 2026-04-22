@@ -31,6 +31,7 @@ Initial Forge-managed skills:
 - `gh-body-file`
 - `forge-tools`
 - `linear-cli`
+- `mermaid-diagrams`
 - `learning-systems`
 - `autoresearch-create`
 - `autoresearch-finalize`
