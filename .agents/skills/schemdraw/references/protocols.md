@@ -18,6 +18,9 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 - `examples/swd_programming.py`: 2-wire debug/programming plus reset, reference voltage, and ground
 - `examples/jtag_fpga.py`: 4-wire FPGA JTAG plus reference and ground
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
+- `examples/uart_serial.py`: simple UART serial plus power and ground
+- `examples/rs422_link.py`: full-duplex differential serial with shield policy
+- `examples/rs485_bus.py`: 2-wire differential bus segment with shield policy
 - `examples/spacewire_link.py`: bidirectional data/strobe differential pairs and ground
 - `examples/ethernet_link.py`: RJ45 T568B logical link
 - `examples/pps_sync.py`: PPS timing link plus power and ground
@@ -69,6 +72,48 @@ Use this for:
 
 - microcontroller peripheral links
 - sensor/control buses represented as one controller to one device
+
+## UART
+
+The local helper uses:
+
+- `VCC`
+- `TX`
+- `RX`
+- `GND`
+
+Use this for:
+
+- point-to-point serial debug or console links
+- simple ICDs where logical serial naming matters more than exact board header layout
+
+## RS-422
+
+The local helper uses a full-duplex differential model:
+
+- `TX_P`, `TX_N`
+- `RX_P`, `RX_N`
+- `GND`
+- `SHIELD`
+
+Design rule:
+
+- validate the crossover explicitly: local transmit must land on remote receive
+- keep shield handling explicit in the contract instead of leaving it to assembly notes
+
+## RS-485
+
+The local helper uses a 2-wire differential model:
+
+- `A`
+- `B`
+- `GND`
+- `SHIELD`
+
+Design rule:
+
+- treat shield policy and reference ground as part of the interface contract
+- the bundled example models one validated bus segment, not full multidrop termination policy
 
 ## SpaceWire
 

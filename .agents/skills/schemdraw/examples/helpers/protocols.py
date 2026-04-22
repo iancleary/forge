@@ -101,6 +101,41 @@ def uart_schema() -> HarnessSchema:
     return passthrough_schema("UART serial link", "UART header", UART_SIGNALS)
 
 
+RS422_SIGNALS = ("TX_P", "TX_N", "RX_P", "RX_N", "GND", "SHIELD")
+
+
+def rs422_endpoint(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
+    return header_1x(label, list(RS422_SIGNALS), at=at, side=side)
+
+
+def rs422_schema() -> HarnessSchema:
+    endpoint_schema = exact_endpoint_schema("RS-422 endpoint", RS422_SIGNALS)
+    return HarnessSchema(
+        name="RS-422 full-duplex link",
+        left=endpoint_schema,
+        right=endpoint_schema,
+        required_connections=(
+            ("TX_P", "RX_P"),
+            ("TX_N", "RX_N"),
+            ("RX_P", "TX_P"),
+            ("RX_N", "TX_N"),
+            ("GND", "GND"),
+            ("SHIELD", "SHIELD"),
+        ),
+    )
+
+
+RS485_2W_SIGNALS = ("A", "B", "GND", "SHIELD")
+
+
+def rs485_2w_endpoint(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
+    return header_1x(label, list(RS485_2W_SIGNALS), at=at, side=side)
+
+
+def rs485_2w_schema() -> HarnessSchema:
+    return passthrough_schema("RS-485 2-wire bus segment", "RS-485 2-wire endpoint", RS485_2W_SIGNALS)
+
+
 SPACEWIRE_SIGNALS = (
     "TXD_P",
     "TXD_N",
