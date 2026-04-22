@@ -9,6 +9,7 @@ Use this skill as the lightweight entry point for the Forge CLI bundle.
 
 Pick the narrowest CLI skill that matches the job:
 
+- `bytefield-diagrams`: author and render bytefield, packet-layout, and memory-layout SVG diagrams through `forge bytefield`.
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
 - `mermaid-diagrams`: text-first Mermaid authoring, diagram-type selection, and rendering through the Forge `mermaid` CLI.
 - `slack-query-cli`: Slack permalink resolution, search, thread reads, and nearby message context.
@@ -26,6 +27,7 @@ Default operating rules:
 - Prefer the crate-specific skill once the target CLI is clear.
 - Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.
+- For bytefield diagram work, keep authoring in the upstream DSL and execution in `forge bytefield` rather than teaching every session a new shell wrapper.
 - Treat write commands as explicit actions; do not infer a mutation from a read request.
 - Keep work inside the CLI contract instead of reconstructing external API calls yourself.
 - Use `jq` only for one-off local reshaping after the CLI has already returned the right record set.

@@ -34,6 +34,8 @@ const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
 const RELEASE_ARTIFACT_VERIFICATION_WORKFLOW: &str = ".github/workflows/release-artifacts.yml";
 const RELEASE_ATTESTATION_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
 const RELEASE_ATTESTATION_SOURCE_REF_PREFIX: &str = "refs/tags/";
+const BYTEFIELD_DEFAULT_PACKAGE_SPEC: &str = "bytefield-svg@1.11.0";
+const BYTEFIELD_EXECUTABLE: &str = "bytefield-svg";
 
 macro_rules! embedded_skill {
     ($name:literal) => {
@@ -169,6 +171,11 @@ enum Command {
         subcommand
     )]
     Codex(CodexCommand),
+    #[command(
+        about = "Install and render bytefield-svg diagrams through a Forge-owned contract",
+        subcommand
+    )]
+    Bytefield(BytefieldCommand),
 }
 
 #[derive(Args, Debug)]
@@ -228,6 +235,14 @@ enum CodexCommand {
     Diff(CodexDiffArgs),
     #[command(about = "Install Forge-managed Codex assets to the selected target")]
     Install(CodexInstallArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum BytefieldCommand {
+    #[command(about = "Verify and prefetch the pinned bytefield-svg runner with pnpm dlx")]
+    Install(BytefieldInstallArgs),
+    #[command(about = "Render a bytefield-svg source file to SVG")]
+    Render(BytefieldRenderArgs),
 }
 
 #[derive(Args, Debug)]
@@ -479,6 +494,33 @@ struct CodexInstallArgs {
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct BytefieldInstallArgs {
+    #[arg(
+        long,
+        help = "Override the default bytefield-svg package spec (advanced use)"
+    )]
+    package: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct BytefieldRenderArgs {
+    #[arg(long, help = "Path to the bytefield source file")]
+    source: PathBuf,
+    #[arg(long, help = "Path to the SVG file to write")]
+    output: PathBuf,
+    #[arg(
+        long,
+        help = "Emit an embeddable <svg> tag instead of a full SVG document"
+    )]
+    embedded: bool,
+    #[arg(
+        long,
+        help = "Override the default bytefield-svg package spec (advanced use)"
+    )]
+    package: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -869,6 +911,25 @@ struct CodexInstallEntry {
 }
 
 #[derive(Debug, Serialize)]
+struct BytefieldInstallResult {
+    runner: String,
+    package_spec: String,
+    command: Vec<String>,
+    ready: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BytefieldRenderResult {
+    runner: String,
+    package_spec: String,
+    source_path: String,
+    output_path: String,
+    embedded: bool,
+    bytes_written: u64,
+    command: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct SkillStatusEntry {
     name: String,
     target_kind: String,
@@ -1089,6 +1150,14 @@ fn run(cli: Cli) -> Result<()> {
         Command::Codex(CodexCommand::Install(args)) => {
             let data = codex_install(args)?;
             emit_output(output, data, format_codex_install_human)?;
+        }
+        Command::Bytefield(BytefieldCommand::Install(args)) => {
+            let data = bytefield_install(args)?;
+            emit_output(output, data, format_bytefield_install_human)?;
+        }
+        Command::Bytefield(BytefieldCommand::Render(args)) => {
+            let data = bytefield_render(args)?;
+            emit_output(output, data, format_bytefield_render_human)?;
         }
     }
 
@@ -3101,6 +3170,29 @@ fn format_codex_install_human(result: &CodexInstallResult) -> String {
     out.trim_end().to_string()
 }
 
+fn format_bytefield_install_human(result: &BytefieldInstallResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge bytefield install: {}",
+        if result.ready { "ready" } else { "not ready" }
+    );
+    let _ = writeln!(out, "runner: {}", result.runner);
+    let _ = writeln!(out, "package: {}", result.package_spec);
+    let _ = writeln!(out, "command: {}", result.command.join(" "));
+    out.trim_end().to_string()
+}
+
+fn format_bytefield_render_human(result: &BytefieldRenderResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "forge bytefield render: wrote {}", result.output_path);
+    let _ = writeln!(out, "source: {}", result.source_path);
+    let _ = writeln!(out, "embedded: {}", result.embedded);
+    let _ = writeln!(out, "bytes: {}", result.bytes_written);
+    let _ = writeln!(out, "package: {}", result.package_spec);
+    out.trim_end().to_string()
+}
+
 fn summarize_counts<'a, I>(values: I) -> String
 where
     I: IntoIterator<Item = &'a str>,
@@ -4920,6 +5012,12 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         msg if msg.contains("unmanaged") => "unmanaged_collision",
         msg if msg.contains("frontmatter") => "validation_error",
         msg if msg.contains("codex asset not found") => "codex_asset_not_found",
+        msg if msg.contains("bytefield source not found:") => "bytefield_source_not_found",
+        msg if msg.contains("forge bytefield install failed:")
+            || msg.contains("forge bytefield render failed:") =>
+        {
+            "bytefield_execution_failed"
+        }
         _ => "internal_error",
     };
 
@@ -5007,6 +5105,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
     &[
         embedded_skill!("forge-tools"),
         embedded_skill!("design-algorithm"),
+        embedded_skill!("bytefield-diagrams"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!(
@@ -5051,6 +5150,138 @@ fn load_release_skills() -> Vec<SkillDefinition> {
             }
         })
         .collect()
+}
+
+fn bytefield_install(args: BytefieldInstallArgs) -> Result<BytefieldInstallResult> {
+    let runner = bytefield_runner_program();
+    let package_spec = bytefield_package_spec(args.package.as_deref());
+    let cwd = env::current_dir().context("failed to read current directory")?;
+    let output = run_bytefield_command(&runner, &package_spec, &["--help".to_string()], &cwd)?;
+    if !output.status.success() {
+        let detail =
+            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+        bail!("forge bytefield install failed: {detail}");
+    }
+
+    Ok(BytefieldInstallResult {
+        runner: runner.clone(),
+        package_spec: package_spec.clone(),
+        command: bytefield_command_for_display(&runner, &package_spec, &["--help".to_string()]),
+        ready: true,
+    })
+}
+
+fn bytefield_render(args: BytefieldRenderArgs) -> Result<BytefieldRenderResult> {
+    let current_dir = env::current_dir().context("failed to read current directory")?;
+    let source_path = if args.source.is_absolute() {
+        args.source.clone()
+    } else {
+        current_dir.join(&args.source)
+    };
+    let output_path = if args.output.is_absolute() {
+        args.output.clone()
+    } else {
+        current_dir.join(&args.output)
+    };
+
+    if !source_path.exists() {
+        bail!("bytefield source not found: {}", source_path.display());
+    }
+
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    let runner = bytefield_runner_program();
+    let package_spec = bytefield_package_spec(args.package.as_deref());
+    let cwd = source_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or(current_dir);
+
+    let mut extra_args = vec![
+        "-s".to_string(),
+        source_path.display().to_string(),
+        "-o".to_string(),
+        output_path.display().to_string(),
+    ];
+    if args.embedded {
+        extra_args.push("-e".to_string());
+    }
+
+    let output = run_bytefield_command(&runner, &package_spec, &extra_args, &cwd)?;
+    if !output.status.success() {
+        let detail =
+            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+        bail!("forge bytefield render failed: {detail}");
+    }
+
+    let metadata = fs::metadata(&output_path).with_context(|| {
+        format!(
+            "bytefield render completed but {} was not written",
+            output_path.display()
+        )
+    })?;
+
+    Ok(BytefieldRenderResult {
+        runner: runner.clone(),
+        package_spec: package_spec.clone(),
+        source_path: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        embedded: args.embedded,
+        bytes_written: metadata.len(),
+        command: bytefield_command_for_display(&runner, &package_spec, &extra_args),
+    })
+}
+
+fn bytefield_runner_program() -> String {
+    env::var("FORGE_BYTEFIELD_PNPM_BIN").unwrap_or_else(|_| "pnpm".to_string())
+}
+
+fn bytefield_package_spec(override_spec: Option<&str>) -> String {
+    override_spec
+        .map(ToOwned::to_owned)
+        .or_else(|| env::var("FORGE_BYTEFIELD_PACKAGE_SPEC").ok())
+        .unwrap_or_else(|| BYTEFIELD_DEFAULT_PACKAGE_SPEC.to_string())
+}
+
+fn bytefield_command_for_display(
+    runner: &str,
+    package_spec: &str,
+    extra_args: &[String],
+) -> Vec<String> {
+    let mut command = vec![runner.to_string()];
+    command.extend(bytefield_command_args(package_spec, extra_args));
+    command
+}
+
+fn bytefield_command_args(package_spec: &str, extra_args: &[String]) -> Vec<String> {
+    let mut args = vec![
+        format!("--package={package_spec}"),
+        "dlx".to_string(),
+        BYTEFIELD_EXECUTABLE.to_string(),
+    ];
+    args.extend(extra_args.iter().cloned());
+    args
+}
+
+fn run_bytefield_command(
+    runner: &str,
+    package_spec: &str,
+    extra_args: &[String],
+    cwd: &Path,
+) -> Result<std::process::Output> {
+    let args = bytefield_command_args(package_spec, extra_args);
+    ProcessCommand::new(runner)
+        .args(&args)
+        .current_dir(cwd)
+        .output()
+        .with_context(|| format!("failed to run {} {}", runner, args.join(" ")))
 }
 
 fn release_skill_definitions(

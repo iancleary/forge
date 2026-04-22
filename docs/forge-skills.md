@@ -28,6 +28,7 @@ That skill lifecycle is separate from `forge codex render|diff|install`, which m
 Initial Forge-managed skills:
 
 - `design-algorithm`
+- `bytefield-diagrams`
 - `gh-body-file`
 - `forge-tools`
 - `linear-cli`

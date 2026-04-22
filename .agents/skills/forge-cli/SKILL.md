@@ -18,12 +18,15 @@ Use these commands first:
 - `forge self update --json`
 - `forge skills status --json`
 - `forge codex diff --json`
+- `forge bytefield install --json`
+- `forge bytefield render --source <file> --output <file> --json`
 
 Working rules:
 
 - Prefer `--json` for agent reads because it is the deterministic, low-token contract.
 - Apply `design-algorithm` before expanding Forge commands or skill policy for a new workflow.
 - Prefer `forge doctor --json` when you need an environment snapshot before using other Forge CLIs.
+- Route to `bytefield-diagrams` when the request is specifically about authoring packet or memory-layout diagrams rather than general Forge administration.
 - Prefer `permissions check` before `permissions fix`.
 - Prefer `self update-check` before `self update`.
 - `skills status` defaults to `mainline` targets; use `--scope all` when debugging development installs.

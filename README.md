@@ -129,6 +129,15 @@ The most common commands and their intent:
   checks whether the local Mermaid render toolchain is ready.
 - `mermaid render --input diagram.mmd --output diagram.svg`
   renders a Mermaid definition through the Forge-managed wrapper.
+- `forge bytefield install`
+  verifies and prefetches the pinned `bytefield-svg` runner through Forge.
+- `forge bytefield render --source <file> --output <file>`
+  renders a bytefield source file to SVG through the Forge wrapper.
+
+Bytefield note:
+
+- `forge bytefield` is the SVG-first contract
+- web sizing and the planned Typst-facing wrapper belong above that layer rather than inside the raw renderer
 
 Quick reference:
 
@@ -140,6 +149,7 @@ forge version
 forge skills status
 forge codex diff
 mermaid doctor
+forge bytefield install
 ```
 
 Common maintenance commands:
