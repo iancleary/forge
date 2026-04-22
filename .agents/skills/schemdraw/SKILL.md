@@ -13,6 +13,7 @@ This skill ships a small local `uv` tool, local references, and bundled examples
 - `references/sdl.md`: optional Forge Schemdraw Definition Language (SDL) shorthand for simple symbolic schematics
 - `references/categories.md`: local map of the main Schemdraw element families and when to use them
 - `references/timing.md`: local timing-diagram and bitfield guidance for JSON-first rendering
+- `references/protocols.md`: local protocol-harness patterns for SWD, JTAG, SPI, SpaceWire, Ethernet, and PPS
 - `examples/`: repo-installable example sources for common diagram families
 
 ## Use This When
@@ -57,9 +58,10 @@ uv tool install --editable ./tool
 2. Read `references/schemdraw.md` for the Schemdraw API patterns you need.
 3. If you need category-specific elements, read `references/categories.md`.
 4. If the job is a timing diagram or bitfield/register view, read `references/timing.md`.
-5. Start from `examples/` when an existing pattern is close enough to adapt.
-6. Use the optional SDL path only for small symbolic schematics that benefit from a shorter text format.
-7. Prefer SVG output unless the user explicitly needs another backend path.
+5. If the job is a protocol, debug/programming header, or serialized harness, read `references/protocols.md`.
+6. Start from `examples/` when an existing pattern is close enough to adapt.
+7. Use the optional SDL path only for small symbolic schematics that benefit from a shorter text format.
+8. Prefer SVG output unless the user explicitly needs another backend path.
 
 ## Repo Placement
 
@@ -87,6 +89,12 @@ Use the bundled examples as local-first starting points:
 - `examples/state_machine_acceptor.py`: state-diagram pattern based on flow arcs and loopbacks
 - `examples/door_controller.py`: multi-state controller example with curved transitions
 - `examples/flow_block.py`: flowchart / block-diagram composition
+- `examples/swd_programming.py`: SWD debug/programming harness pattern
+- `examples/jtag_fpga.py`: JTAG FPGA/programming harness pattern
+- `examples/spi_peripheral.py`: SPI controller-to-peripheral pattern
+- `examples/spacewire_link.py`: SpaceWire data/strobe full-duplex pattern
+- `examples/ethernet_link.py`: Ethernet logical-link pattern
+- `examples/pps_sync.py`: PPS timing-link pattern
 - `examples/timing_sram_rw.json`: timing example using extended edge annotations
 - `examples/timing_jk_flipflop.json`: timing example using async transitions and colored outputs
 - `examples/timing_bus.json`: timing diagram input
@@ -94,6 +102,7 @@ Use the bundled examples as local-first starting points:
 - `examples/helpers/pinmap.py`: shared helpers for endpoint and pin definitions
 - `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and RJ45 T568B
 - `examples/helpers/schema.py`: schema validators for endpoint families, required signals, and required mappings
+- `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, SPI, SpaceWire, Ethernet, UART, and PPS
 
 Prefer adapting one of these before browsing external docs.
 
