@@ -1578,6 +1578,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             for required in [
                 "design-algorithm",
                 "linear-cli",
+                "mermaid-diagrams",
                 "slack-query-cli",
                 "slack-agent-cli",
                 "codex-threads-cli",
@@ -5008,6 +5009,17 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("design-algorithm"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
+        embedded_skill!(
+            "mermaid-diagrams",
+            files = [
+                "references/foundations.md",
+                "references/rendering.md",
+                "references/diagram-selection.md",
+                "references/business-diagrams.md",
+                "references/technical-diagrams.md",
+                "references/authoring-models.md",
+            ]
+        ),
         embedded_skill!("learning-systems"),
         embedded_skill!("autoresearch-create"),
         embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),

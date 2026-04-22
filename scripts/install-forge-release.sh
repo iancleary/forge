@@ -82,6 +82,7 @@ default_binaries() {
 forge
 codex-threads
 linear
+mermaid
 slack-agent
 slack-query
 EOF

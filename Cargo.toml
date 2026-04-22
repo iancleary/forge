@@ -4,6 +4,7 @@ members = [
     "crates/codex-threads",
     "crates/forge",
     "crates/linear",
+    "crates/mermaid",
     "crates/slack-agent",
     "crates/slack-core",
     "crates/slack-query",

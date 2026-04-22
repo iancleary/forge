@@ -125,6 +125,10 @@ The most common commands and their intent:
   compares managed `~/.codex` files with installed versions.
 - `forge codex render`  
   applies templated policy artifacts from managed files into local state.
+- `mermaid doctor`
+  checks whether the local Mermaid render toolchain is ready.
+- `mermaid render --input diagram.mmd --output diagram.svg`
+  renders a Mermaid definition through the Forge-managed wrapper.
 
 Quick reference:
 
@@ -135,6 +139,7 @@ forge self update
 forge version
 forge skills status
 forge codex diff
+mermaid doctor
 ```
 
 Common maintenance commands:
@@ -225,6 +230,7 @@ Current CLIs:
 - `slack-agent` for stricter assistant Slack workflows
 - `slack-query` for Slack research workflows
 - `linear` for Linear issue, project, and milestone workflows
+- `mermaid` for Mermaid diagram rendering and tool bootstrap
 
 Internal support crates:
 

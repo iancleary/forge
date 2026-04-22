@@ -16,6 +16,11 @@ binary = "linear"
 config_dir = "linear"
 
 [[tools]]
+id = "mermaid"
+binary = "mermaid"
+config_dir = "mermaid"
+
+[[tools]]
 id = "slack_agent"
 binary = "slack-agent"
 config_dir = "slack-agent"
