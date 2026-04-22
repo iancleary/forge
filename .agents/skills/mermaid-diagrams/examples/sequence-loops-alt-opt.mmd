@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant Client
+  participant API
+  participant Cache
+  participant DB
+
+  loop Every 5 minutes
+    Client->>API: Refresh dashboard
+    alt Cache hit
+      API->>Cache: Read cached summary
+      Cache-->>API: Cached payload
+    else Cache miss
+      API->>DB: Query fresh summary
+      DB-->>API: Fresh rows
+      API->>Cache: Store summary
+    end
+    opt User expanded details
+      API-->>Client: Include drill-down section
+    end
+    API-->>Client: Return dashboard
+  end

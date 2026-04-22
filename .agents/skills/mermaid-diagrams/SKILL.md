@@ -20,6 +20,8 @@ Load only the reference file that matches the task:
 
 - syntax, frontmatter, themes, layout, accessibility, and diagram breakers:
   `references/foundations.md`
+- copyable starting points and example inventory:
+  `references/examples.md`
 - Forge render/install flow and upstream CLI notes:
   `references/rendering.md`
 - choosing the right diagram family for the job:
@@ -37,6 +39,7 @@ Working rules:
 - Prefer reviewable `.mmd` or Markdown fenced Mermaid blocks over opaque binary slides.
 - Use Mermaid frontmatter for theme, look, and layout before reaching for custom CSS.
 - Add accessible title and description when the diagram will be published or reused.
+- When the user asks for examples or a starting point, prefer adapting a checked-in file from `examples/` over inventing syntax from scratch.
 - When the user asks for a new diagram language, use `design-algorithm` thinking first and keep the output compiling down to Mermaid text.
 
 Do not use this skill when:

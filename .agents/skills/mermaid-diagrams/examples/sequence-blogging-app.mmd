@@ -1,0 +1,18 @@
+sequenceDiagram
+  actor Author
+  participant WebApp
+  participant AuthService
+  participant BlogAPI
+  participant PostStore
+  participant SearchIndexer
+
+  Author->>WebApp: Publish draft
+  WebApp->>AuthService: Validate session
+  AuthService-->>WebApp: Session OK
+  WebApp->>+BlogAPI: POST /posts/publish
+  BlogAPI->>PostStore: Persist published post
+  PostStore-->>BlogAPI: Saved
+  BlogAPI-)SearchIndexer: Reindex post
+  SearchIndexer-->>BlogAPI: Accepted
+  BlogAPI-->>-WebApp: 200 Published
+  WebApp-->>Author: Post is live

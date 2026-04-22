@@ -1,0 +1,33 @@
+sequenceDiagram
+  participant Client
+  participant CheckoutAPI
+  participant Payment
+  participant Inventory
+  participant Email
+
+  Client->>CheckoutAPI: Submit order
+  CheckoutAPI->>Payment: Authorize charge
+
+  alt Authorized
+    par Reserve stock
+      CheckoutAPI->>Inventory: Reserve items
+      Inventory-->>CheckoutAPI: Reserved
+    and Queue receipt
+      CheckoutAPI-)Email: Send confirmation
+    end
+
+    critical Persist committed order
+      CheckoutAPI->>CheckoutAPI: Write order record
+      option DB write failed
+        CheckoutAPI->>Payment: Void authorization
+        CheckoutAPI->>Inventory: Release reservation
+      option Success
+        CheckoutAPI-->>Client: 201 Order created
+      end
+    end
+  else Declined
+    break Payment declined
+      Payment-->>CheckoutAPI: Declined
+      CheckoutAPI-->>Client: 402 Payment Required
+    end
+  end

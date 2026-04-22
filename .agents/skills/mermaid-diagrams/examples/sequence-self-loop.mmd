@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant Browser
+  participant JobsAPI
+  participant Worker
+
+  Browser->>JobsAPI: POST /jobs
+  JobsAPI->>JobsAPI: Validate payload
+  JobsAPI->>Worker: Enqueue work
+  Worker-->>JobsAPI: Job accepted
+  JobsAPI-->>Browser: 202 Accepted + job id
+
+  loop Poll until complete
+    Browser->>JobsAPI: GET /jobs/123
+    JobsAPI->>JobsAPI: Recompute aggregate status
+    JobsAPI-->>Browser: queued | running | complete
+  end

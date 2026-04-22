@@ -1,0 +1,10 @@
+C4Context
+  title System Context diagram for Forge CLI
+  Person(user, "Developer", "Runs agent-friendly CLIs locally.")
+  System(forge, "Forge", "Installs and runs managed CLIs and skills.")
+  System_Ext(github, "GitHub", "Hosts releases, issues, and attestations.")
+  System_Ext(codex, "Codex", "Consumes installed skills and local CLIs.")
+
+  Rel(user, forge, "Uses")
+  Rel(forge, github, "Fetches releases and repo state from")
+  Rel(codex, forge, "Uses installed skills and binaries from")

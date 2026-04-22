@@ -1,0 +1,20 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#d9f0ff"
+    primaryTextColor: "#102a43"
+    primaryBorderColor: "#486581"
+    lineColor: "#486581"
+    secondaryColor: "#fef3c7"
+---
+flowchart LR
+  accTitle: Release validation flow
+  accDescr: CI checks, review, and release approval before deployment.
+
+  Commit[Commit pushed] --> CI{Checks green?}
+  CI -->|No| Fix[Fix failing build]
+  Fix --> Commit
+  CI -->|Yes| Review[Review and approve]
+  Review --> Release[Cut release]
+  Release --> Deploy[Deploy artifact]
