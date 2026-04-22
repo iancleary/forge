@@ -93,6 +93,9 @@ Use the bundled examples as local-first starting points:
 - `examples/jtag_fpga.py`: JTAG FPGA/programming harness pattern
 - `examples/spi_peripheral.py`: SPI controller-to-peripheral pattern
 - `examples/uart_serial.py`: UART point-to-point serial pattern
+- `examples/i2c_sensor.py`: I2C short-reach digital pattern
+- `examples/onewire_sensor.py`: 1-Wire short-reach digital pattern
+- `examples/mdio_link.py`: MDIO management-link pattern
 - `examples/rs422_link.py`: RS-422 full-duplex differential serial pattern
 - `examples/rs485_bus.py`: RS-485 2-wire bus-segment pattern
 - `examples/spacewire_link.py`: SpaceWire data/strobe full-duplex pattern

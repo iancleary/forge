@@ -101,6 +101,39 @@ def uart_schema() -> HarnessSchema:
     return passthrough_schema("UART serial link", "UART header", UART_SIGNALS)
 
 
+I2C_SIGNALS = ("VCC", "SCL", "SDA", "GND")
+
+
+def i2c_header(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
+    return header_1x(label, list(I2C_SIGNALS), at=at, side=side)
+
+
+def i2c_schema() -> HarnessSchema:
+    return passthrough_schema("I2C low-speed link", "I2C header", I2C_SIGNALS)
+
+
+ONEWIRE_SIGNALS = ("VCC", "DQ", "GND")
+
+
+def onewire_header(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
+    return header_1x(label, list(ONEWIRE_SIGNALS), at=at, side=side)
+
+
+def onewire_schema() -> HarnessSchema:
+    return passthrough_schema("1-Wire short-reach link", "1-Wire header", ONEWIRE_SIGNALS)
+
+
+MDIO_SIGNALS = ("VCC", "MDC", "MDIO", "GND")
+
+
+def mdio_header(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
+    return header_1x(label, list(MDIO_SIGNALS), at=at, side=side)
+
+
+def mdio_schema() -> HarnessSchema:
+    return passthrough_schema("MDIO management link", "MDIO header", MDIO_SIGNALS)
+
+
 RS422_SIGNALS = ("TX_P", "TX_N", "RX_P", "RX_N", "GND", "SHIELD")
 
 

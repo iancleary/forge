@@ -19,6 +19,9 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 - `examples/jtag_fpga.py`: 4-wire FPGA JTAG plus reference and ground
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
 - `examples/uart_serial.py`: simple UART serial plus power and ground
+- `examples/i2c_sensor.py`: short-reach I2C bus pattern
+- `examples/onewire_sensor.py`: 1-Wire device link pattern
+- `examples/mdio_link.py`: MDIO management link pattern
 - `examples/rs422_link.py`: full-duplex differential serial with shield policy
 - `examples/rs485_bus.py`: 2-wire differential bus segment with shield policy
 - `examples/spacewire_link.py`: bidirectional data/strobe differential pairs and ground
@@ -86,6 +89,51 @@ Use this for:
 
 - point-to-point serial debug or console links
 - simple ICDs where logical serial naming matters more than exact board header layout
+
+## I2C
+
+The local helper uses:
+
+- `VCC`
+- `SCL`
+- `SDA`
+- `GND`
+
+Use this for:
+
+- short-reach controller-to-sensor links
+- ICDs where the important contract is that the shared clock/data pair and reference supply are explicit
+
+Design rule:
+
+- the local example models the logical bus segment, not pull-up placement or multi-drop address policy
+
+## 1-Wire
+
+The local helper uses:
+
+- `VCC`
+- `DQ`
+- `GND`
+
+Use this for:
+
+- simple low-speed device links
+- deterministic interface drawings where a single bidirectional data line matters more than the exact board connector
+
+## MDIO
+
+The local helper uses:
+
+- `VCC`
+- `MDC`
+- `MDIO`
+- `GND`
+
+Use this for:
+
+- MAC-to-PHY management links
+- low-distance board or backplane control interfaces
 
 ## RS-422
 
