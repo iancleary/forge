@@ -23,12 +23,15 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
 - `examples/uart_serial.py`: simple UART serial plus power and ground
 - `examples/i2c_sensor.py`: short-reach I2C bus pattern
+- `examples/i2c_multidrop.py`: controller-plus-multiple-target I2C bus pattern with explicit pull-up ownership
 - `examples/onewire_sensor.py`: 1-Wire device link pattern
 - `examples/mdio_link.py`: MDIO management link pattern
 - `examples/rs422_link.py`: full-duplex differential serial with shield policy
 - `examples/rs485_bus.py`: 2-wire differential bus segment with shield policy
+- `examples/rs485_multidrop.py`: multidrop RS-485 bus with explicit end/drop roles, bias, and termination policy
 - `examples/spacewire_link.py`: bidirectional data/strobe differential pairs and ground
 - `examples/ethernet_link.py`: RJ45 T568B logical link
+- `examples/ethernet_poe_link.py`: shielded PoE-aware Ethernet logical link
 - `examples/pps_sync.py`: PPS timing link plus power and ground
 
 ## SWD
@@ -127,6 +130,11 @@ Design rule:
 
 - the local example models the logical bus segment, not pull-up placement or multi-drop address policy
 
+Multidrop rule:
+
+- use `examples/i2c_multidrop.py` when the important contract is bus ownership, not just one controller-to-one-target wiring segment
+- make one controller own pull-ups in the schema instead of leaving pull-up location implicit
+
 ## 1-Wire
 
 The local helper uses:
@@ -167,6 +175,7 @@ Design rule:
 
 - validate the crossover explicitly: local transmit must land on remote receive
 - keep shield handling explicit in the contract instead of leaving it to assembly notes
+- for the local policy schema, make drain-bond ownership explicit on one end and require paired receiver termination at both nodes
 
 ## RS-485
 
@@ -181,6 +190,11 @@ Design rule:
 
 - treat shield policy and reference ground as part of the interface contract
 - the bundled example models one validated bus segment, not full multidrop termination policy
+
+Multidrop rule:
+
+- use `examples/rs485_multidrop.py` when you need one biased controller end, one terminated far end, and zero-or-more unterminated drops
+- make drain handling explicit as `bonded`, `pass`, or `floating` instead of burying it in cable notes
 
 ## SpaceWire
 
@@ -211,6 +225,12 @@ The local helper uses the existing T568B logical ordering:
 
 Use this when the drawing needs a deterministic logical link or breakout, not a full PHY or magnetics schematic.
 
+Variant rule:
+
+- use the base Ethernet example for unshielded, non-PoE logical links
+- use `examples/ethernet_poe_link.py` when shield bonding and PSE/PD role assignment are part of the contract
+- model PoE role explicitly in the schema even when the drawing stays at the logical pair level
+
 ## PPS
 
 The local helper uses:
@@ -237,3 +257,5 @@ For protocol diagrams, the smallest useful contract is:
 If a connector is known but the protocol is not, start from the connector helper.
 
 If the protocol is known but the physical connector may vary, start from the protocol helper.
+
+If the interface is multidrop or policy-heavy, start from the policy-backed example rather than forcing it into a point-to-point harness template.

@@ -1,8 +1,8 @@
 import schemdraw
 
 from helpers.pinmap import ConnectionDef, connect_by_signal
-from helpers.protocols import RS422_SIGNALS, rs422_endpoint, rs422_schema, signal_pin_defs
-from helpers.schema import validate_harness_schema
+from helpers.protocols import RS422_SIGNALS, rs422_endpoint, rs422_policy_schema, rs422_schema, signal_pin_defs
+from helpers.schema import BusParticipant, validate_bus_schema, validate_harness_schema
 
 
 CONNECTIONS = [
@@ -21,6 +21,27 @@ def build():
     d.config(unit=1.8, fontsize=9)
     left_pins = signal_pin_defs(RS422_SIGNALS, side="right")
     right_pins = signal_pin_defs(RS422_SIGNALS, side="left")
+    validate_bus_schema(
+        [
+            BusParticipant(
+                label="A",
+                role="node_a",
+                pins=tuple(left_pins),
+                shield_policy="continuous",
+                drain_policy="bonded",
+                termination_policy="paired_rx",
+            ),
+            BusParticipant(
+                label="B",
+                role="node_b",
+                pins=tuple(right_pins),
+                shield_policy="continuous",
+                drain_policy="floating",
+                termination_policy="paired_rx",
+            ),
+        ],
+        rs422_policy_schema(),
+    )
     validate_harness_schema("A", left_pins, "B", right_pins, CONNECTIONS, rs422_schema())
     with d:
         a = rs422_endpoint("A", side="right")

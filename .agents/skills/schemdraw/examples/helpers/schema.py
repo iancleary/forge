@@ -26,6 +26,35 @@ class HarnessSchema:
     aliases: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class BusParticipant:
+    label: str
+    role: str
+    pins: tuple[PinDef, ...]
+    shield_policy: str = "none"
+    drain_policy: str = "none"
+    termination_policy: str = "none"
+    bias_policy: str = "none"
+    pullup_policy: str = "none"
+    poe_policy: str = "none"
+
+
+@dataclass(frozen=True)
+class BusSchema:
+    name: str
+    roles: dict[str, EndpointSchema]
+    min_role_counts: dict[str, int] = field(default_factory=dict)
+    max_role_counts: dict[str, int | None] = field(default_factory=dict)
+    shield_values: tuple[str, ...] = ("none",)
+    drain_values: tuple[str, ...] = ("none",)
+    termination_values: tuple[str, ...] = ("none",)
+    bias_values: tuple[str, ...] = ("none",)
+    pullup_values: tuple[str, ...] = ("none",)
+    poe_values: tuple[str, ...] = ("none",)
+    required_role_policies: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
+    forbidden_role_policies: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
+
+
 def normalize_signal_name(signal: str, aliases: dict[str, str] | None = None) -> str:
     value = signal.strip().upper().replace(" ", "").replace("-", "")
     if aliases:
@@ -149,3 +178,78 @@ def validate_harness_schema(
             if unconnected_right:
                 detail.append(f"right unconnected: {', '.join(unconnected_right)}")
             raise ValueError(f"{schema.name}: unconnected required signals ({'; '.join(detail)})")
+
+
+def validate_bus_schema(participants: list[BusParticipant], schema: BusSchema) -> None:
+    role_counts = {role: 0 for role in schema.roles}
+
+    for participant in participants:
+        endpoint_schema = schema.roles.get(participant.role)
+        if endpoint_schema is None:
+            allowed = ", ".join(sorted(schema.roles))
+            raise ValueError(f"{schema.name}: unknown role {participant.role} for {participant.label} (allowed: {allowed})")
+
+        validate_endpoint_schema(participant.label, list(participant.pins), endpoint_schema)
+        role_counts[participant.role] = role_counts.get(participant.role, 0) + 1
+
+        _validate_policy_value(schema.name, participant.label, "shield_policy", participant.shield_policy, schema.shield_values)
+        _validate_policy_value(schema.name, participant.label, "drain_policy", participant.drain_policy, schema.drain_values)
+        _validate_policy_value(
+            schema.name,
+            participant.label,
+            "termination_policy",
+            participant.termination_policy,
+            schema.termination_values,
+        )
+        _validate_policy_value(schema.name, participant.label, "bias_policy", participant.bias_policy, schema.bias_values)
+        _validate_policy_value(schema.name, participant.label, "pullup_policy", participant.pullup_policy, schema.pullup_values)
+        _validate_policy_value(schema.name, participant.label, "poe_policy", participant.poe_policy, schema.poe_values)
+
+        required = schema.required_role_policies.get(participant.role, {})
+        forbidden = schema.forbidden_role_policies.get(participant.role, {})
+        _validate_policy_requirements(schema.name, participant, required, forbidden)
+
+    for role, minimum in schema.min_role_counts.items():
+        count = role_counts.get(role, 0)
+        if count < minimum:
+            raise ValueError(f"{schema.name}: role {role} requires at least {minimum} participant(s), got {count}")
+
+    for role, maximum in schema.max_role_counts.items():
+        count = role_counts.get(role, 0)
+        if maximum is not None and count > maximum:
+            raise ValueError(f"{schema.name}: role {role} allows at most {maximum} participant(s), got {count}")
+
+
+def _validate_policy_value(
+    schema_name: str,
+    label: str,
+    field_name: str,
+    value: str,
+    allowed_values: tuple[str, ...],
+) -> None:
+    if value not in allowed_values:
+        allowed = ", ".join(allowed_values)
+        raise ValueError(f"{schema_name}: {label} uses unsupported {field_name}={value} (allowed: {allowed})")
+
+
+def _validate_policy_requirements(
+    schema_name: str,
+    participant: BusParticipant,
+    required: dict[str, tuple[str, ...]],
+    forbidden: dict[str, tuple[str, ...]],
+) -> None:
+    for field_name, allowed_values in required.items():
+        value = getattr(participant, field_name)
+        if value not in allowed_values:
+            allowed = ", ".join(allowed_values)
+            raise ValueError(
+                f"{schema_name}: {participant.label} role {participant.role} requires {field_name} in {{{allowed}}}, got {value}"
+            )
+
+    for field_name, banned_values in forbidden.items():
+        value = getattr(participant, field_name)
+        if value in banned_values:
+            banned = ", ".join(banned_values)
+            raise ValueError(
+                f"{schema_name}: {participant.label} role {participant.role} forbids {field_name} in {{{banned}}}"
+            )

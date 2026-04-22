@@ -97,12 +97,15 @@ Use the bundled examples as local-first starting points:
 - `examples/spi_peripheral.py`: SPI controller-to-peripheral pattern
 - `examples/uart_serial.py`: UART point-to-point serial pattern
 - `examples/i2c_sensor.py`: I2C short-reach digital pattern
+- `examples/i2c_multidrop.py`: I2C multidrop pattern with explicit pull-up ownership
 - `examples/onewire_sensor.py`: 1-Wire short-reach digital pattern
 - `examples/mdio_link.py`: MDIO management-link pattern
 - `examples/rs422_link.py`: RS-422 full-duplex differential serial pattern
 - `examples/rs485_bus.py`: RS-485 2-wire bus-segment pattern
+- `examples/rs485_multidrop.py`: RS-485 multidrop bus with explicit end/drop policy
 - `examples/spacewire_link.py`: SpaceWire data/strobe full-duplex pattern
 - `examples/ethernet_link.py`: Ethernet logical-link pattern
+- `examples/ethernet_poe_link.py`: shielded PoE-aware Ethernet logical-link pattern
 - `examples/pps_sync.py`: PPS timing-link pattern
 - `examples/timing_sram_rw.json`: timing example using extended edge annotations
 - `examples/timing_jk_flipflop.json`: timing example using async transitions and colored outputs
@@ -110,8 +113,8 @@ Use the bundled examples as local-first starting points:
 - `examples/register_map.json`: bitfield / register-map input
 - `examples/helpers/pinmap.py`: shared helpers for endpoint and pin definitions
 - `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and RJ45 T568B
-- `examples/helpers/schema.py`: schema validators for endpoint families, required signals, and required mappings
-- `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, SPI, SpaceWire, Ethernet, UART, and PPS
+- `examples/helpers/schema.py`: schema validators for endpoint families, required signals, required mappings, and policy-aware bus participants
+- `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, SPI, SpaceWire, Ethernet, UART, PPS, multidrop I2C, and multidrop RS-485
 - for named debug headers, prefer the pin-map-backed examples over logical-only signal bundles when physical pin numbering matters
 
 Prefer adapting one of these before browsing external docs.

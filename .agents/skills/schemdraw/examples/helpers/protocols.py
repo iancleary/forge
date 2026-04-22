@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from helpers.connectors import header_1x, header_2x, rj45_t568b
 from helpers.pinmap import PinDef, endpoint
-from helpers.schema import EndpointSchema, HarnessSchema
+from helpers.schema import BusSchema, EndpointSchema, HarnessSchema
 
 
 def signal_pin_defs(signals: tuple[str, ...], *, side: str = "left") -> list[PinDef]:
@@ -230,6 +230,29 @@ def i2c_schema() -> HarnessSchema:
     return passthrough_schema("I2C low-speed link", "I2C header", I2C_SIGNALS)
 
 
+def i2c_multidrop_schema() -> BusSchema:
+    endpoint_schema = exact_endpoint_schema("I2C header", I2C_SIGNALS)
+    return BusSchema(
+        name="I2C multidrop bus",
+        roles={
+            "controller": endpoint_schema,
+            "target": endpoint_schema,
+        },
+        min_role_counts={
+            "controller": 1,
+            "target": 1,
+        },
+        max_role_counts={
+            "controller": 1,
+        },
+        pullup_values=("present", "absent"),
+        required_role_policies={
+            "controller": {"pullup_policy": ("present",)},
+            "target": {"pullup_policy": ("absent",)},
+        },
+    )
+
+
 ONEWIRE_SIGNALS = ("VCC", "DQ", "GND")
 
 
@@ -276,6 +299,40 @@ def rs422_schema() -> HarnessSchema:
     )
 
 
+def rs422_policy_schema() -> BusSchema:
+    endpoint_schema = exact_endpoint_schema("RS-422 endpoint", RS422_SIGNALS)
+    return BusSchema(
+        name="RS-422 full-duplex link policy",
+        roles={
+            "node_a": endpoint_schema,
+            "node_b": endpoint_schema,
+        },
+        min_role_counts={
+            "node_a": 1,
+            "node_b": 1,
+        },
+        max_role_counts={
+            "node_a": 1,
+            "node_b": 1,
+        },
+        shield_values=("continuous",),
+        drain_values=("bonded", "floating"),
+        termination_values=("paired_rx",),
+        required_role_policies={
+            "node_a": {
+                "shield_policy": ("continuous",),
+                "drain_policy": ("bonded",),
+                "termination_policy": ("paired_rx",),
+            },
+            "node_b": {
+                "shield_policy": ("continuous",),
+                "drain_policy": ("floating",),
+                "termination_policy": ("paired_rx",),
+            },
+        },
+    )
+
+
 RS485_2W_SIGNALS = ("A", "B", "GND", "SHIELD")
 
 
@@ -285,6 +342,50 @@ def rs485_2w_endpoint(label: str, *, at: tuple[float, float] | None = None, side
 
 def rs485_2w_schema() -> HarnessSchema:
     return passthrough_schema("RS-485 2-wire bus segment", "RS-485 2-wire endpoint", RS485_2W_SIGNALS)
+
+
+def rs485_multidrop_schema() -> BusSchema:
+    endpoint_schema = exact_endpoint_schema("RS-485 2-wire endpoint", RS485_2W_SIGNALS)
+    return BusSchema(
+        name="RS-485 multidrop bus",
+        roles={
+            "controller_end": endpoint_schema,
+            "far_end": endpoint_schema,
+            "drop": endpoint_schema,
+        },
+        min_role_counts={
+            "controller_end": 1,
+            "far_end": 1,
+        },
+        max_role_counts={
+            "controller_end": 1,
+            "far_end": 1,
+        },
+        shield_values=("continuous",),
+        drain_values=("bonded", "floating", "pass"),
+        termination_values=("present", "absent"),
+        bias_values=("present", "absent"),
+        required_role_policies={
+            "controller_end": {
+                "shield_policy": ("continuous",),
+                "drain_policy": ("bonded",),
+                "termination_policy": ("present",),
+                "bias_policy": ("present",),
+            },
+            "far_end": {
+                "shield_policy": ("continuous",),
+                "drain_policy": ("floating",),
+                "termination_policy": ("present",),
+                "bias_policy": ("absent",),
+            },
+            "drop": {
+                "shield_policy": ("continuous",),
+                "drain_policy": ("pass",),
+                "termination_policy": ("absent",),
+                "bias_policy": ("absent",),
+            },
+        },
+    )
 
 
 SPACEWIRE_SIGNALS = (
@@ -342,6 +443,102 @@ def ethernet_rj45(label: str, *, at: tuple[float, float] | None = None, side: st
 
 def ethernet_schema() -> HarnessSchema:
     return passthrough_schema("Ethernet T568B link", "RJ45 T568B", ETHERNET_T568B_SIGNALS)
+
+
+def ethernet_variant_schema(*, shielded: bool = False, poe_mode: str = "none") -> BusSchema:
+    endpoint_schema = exact_endpoint_schema("RJ45 T568B", ETHERNET_T568B_SIGNALS)
+    shield_policy = "chassis" if shielded else "none"
+    shield_values = ("none", "chassis")
+    poe_values = ("none", "pse_alt_a", "pd_alt_a", "pse_alt_b", "pd_alt_b")
+
+    if poe_mode == "none":
+        return BusSchema(
+            name="Ethernet link policy",
+            roles={
+                "left": endpoint_schema,
+                "right": endpoint_schema,
+            },
+            min_role_counts={
+                "left": 1,
+                "right": 1,
+            },
+            max_role_counts={
+                "left": 1,
+                "right": 1,
+            },
+            shield_values=shield_values,
+            poe_values=poe_values,
+            required_role_policies={
+                "left": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("none",),
+                },
+                "right": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("none",),
+                },
+            },
+        )
+
+    if poe_mode == "alt_a":
+        return BusSchema(
+            name="Ethernet PoE Alt-A link policy",
+            roles={
+                "pse": endpoint_schema,
+                "pd": endpoint_schema,
+            },
+            min_role_counts={
+                "pse": 1,
+                "pd": 1,
+            },
+            max_role_counts={
+                "pse": 1,
+                "pd": 1,
+            },
+            shield_values=shield_values,
+            poe_values=poe_values,
+            required_role_policies={
+                "pse": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("pse_alt_a",),
+                },
+                "pd": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("pd_alt_a",),
+                },
+            },
+        )
+
+    if poe_mode == "alt_b":
+        return BusSchema(
+            name="Ethernet PoE Alt-B link policy",
+            roles={
+                "pse": endpoint_schema,
+                "pd": endpoint_schema,
+            },
+            min_role_counts={
+                "pse": 1,
+                "pd": 1,
+            },
+            max_role_counts={
+                "pse": 1,
+                "pd": 1,
+            },
+            shield_values=shield_values,
+            poe_values=poe_values,
+            required_role_policies={
+                "pse": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("pse_alt_b",),
+                },
+                "pd": {
+                    "shield_policy": (shield_policy,),
+                    "poe_policy": ("pd_alt_b",),
+                },
+            },
+        )
+
+    raise ValueError(f"unsupported Ethernet PoE mode: {poe_mode}")
 
 
 PPS_SIGNALS = ("VCC", "PPS", "GND")

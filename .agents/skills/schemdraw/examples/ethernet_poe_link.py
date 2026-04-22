@@ -26,29 +26,29 @@ def build():
     validate_bus_schema(
         [
             BusParticipant(
-                label="ETH A",
-                role="left",
+                label="PSE",
+                role="pse",
                 pins=tuple(left_pins),
-                shield_policy="none",
-                poe_policy="none",
+                shield_policy="chassis",
+                poe_policy="pse_alt_a",
             ),
             BusParticipant(
-                label="ETH B",
-                role="right",
+                label="PD",
+                role="pd",
                 pins=tuple(right_pins),
-                shield_policy="none",
-                poe_policy="none",
+                shield_policy="chassis",
+                poe_policy="pd_alt_a",
             ),
         ],
-        ethernet_variant_schema(),
+        ethernet_variant_schema(shielded=True, poe_mode="alt_a"),
     )
-    validate_harness_schema("ETH A", left_pins, "ETH B", right_pins, CONNECTIONS, ethernet_schema())
+    validate_harness_schema("PSE", left_pins, "PD", right_pins, CONNECTIONS, ethernet_schema())
     with d:
-        a = ethernet_rj45("ETH A", side="right")
-        b = ethernet_rj45("ETH B", at=(10, 0), side="left")
-        connect_by_signal(a, b, CONNECTIONS)
+        pse = ethernet_rj45("PSE", side="right")
+        pd = ethernet_rj45("PD", at=(10, 0), side="left")
+        connect_by_signal(pse, pd, CONNECTIONS)
     return d
 
 
 if __name__ == "__main__":
-    build().save("ethernet_link.svg")
+    build().save("ethernet_poe_link.svg")
