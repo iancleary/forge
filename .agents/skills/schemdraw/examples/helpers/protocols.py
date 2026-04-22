@@ -9,11 +9,44 @@ def signal_pin_defs(signals: tuple[str, ...], *, side: str = "left") -> list[Pin
     return [PinDef(signal, str(index + 1), side=side) for index, signal in enumerate(signals)]
 
 
+def pin_map_pin_defs(
+    pin_map: tuple[tuple[str, str], ...],
+    *,
+    odd_side: str = "left",
+    even_side: str = "right",
+) -> list[PinDef]:
+    pins: list[PinDef] = []
+    for pin, signal in pin_map:
+        pin_number = int(str(pin))
+        side = odd_side if pin_number % 2 else even_side
+        pins.append(PinDef(signal, str(pin), side=side))
+    return pins
+
+
+def pin_map_endpoint(
+    label: str,
+    pin_map: tuple[tuple[str, str], ...],
+    *,
+    at: tuple[float, float] | None = None,
+    odd_side: str = "left",
+    even_side: str = "right",
+):
+    return endpoint(label, pin_map_pin_defs(pin_map, odd_side=odd_side, even_side=even_side), at=at)
+
+
 def exact_endpoint_schema(family: str, signals: tuple[str, ...]) -> EndpointSchema:
     return EndpointSchema(
         family=family,
         pin_count=len(signals),
         exact_signals=signals,
+    )
+
+
+def pin_map_endpoint_schema(family: str, pin_map: tuple[tuple[str, str], ...]) -> EndpointSchema:
+    return EndpointSchema(
+        family=family,
+        pin_count=len(pin_map),
+        pin_map=pin_map,
     )
 
 
@@ -53,6 +86,38 @@ def swd_schema(*, include_reset: bool = True, include_swo: bool = False) -> Harn
     return passthrough_schema("SWD programming link", "SWD header", signals)
 
 
+ARM_20PIN_SWD_PIN_MAP = (
+    ("1", "VTREF"),
+    ("2", "VSUPPLY"),
+    ("3", "NC_TRST"),
+    ("4", "GND"),
+    ("5", "NC_TDI"),
+    ("6", "GND"),
+    ("7", "SWDIO"),
+    ("8", "GND"),
+    ("9", "SWCLK"),
+    ("10", "GND"),
+    ("11", "NC_RTCK"),
+    ("12", "GND"),
+    ("13", "SWO"),
+    ("14", "RESERVED"),
+    ("15", "NRESET"),
+    ("16", "RESERVED"),
+    ("17", "NC"),
+    ("18", "RESERVED"),
+    ("19", "P5V_TARGET"),
+    ("20", "RESERVED"),
+)
+
+
+def arm_20pin_swd_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, ARM_20PIN_SWD_PIN_MAP, at=at)
+
+
+def arm_20pin_swd_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("ARM 20-pin SWD", ARM_20PIN_SWD_PIN_MAP)
+
+
 def jtag_signals(*, include_trst: bool = False, include_srst: bool = False) -> tuple[str, ...]:
     signals = ["VTREF", "TMS", "TCK", "TDI", "TDO"]
     if include_trst:
@@ -77,6 +142,59 @@ def jtag_header(
 def jtag_schema(*, include_trst: bool = False, include_srst: bool = False) -> HarnessSchema:
     signals = jtag_signals(include_trst=include_trst, include_srst=include_srst)
     return passthrough_schema("JTAG programming link", "JTAG header", signals)
+
+
+ARM_20PIN_JTAG_PIN_MAP = (
+    ("1", "VTREF"),
+    ("2", "NC"),
+    ("3", "NTRST"),
+    ("4", "GND"),
+    ("5", "TDI"),
+    ("6", "GND"),
+    ("7", "TMS"),
+    ("8", "GND"),
+    ("9", "TCK"),
+    ("10", "GND"),
+    ("11", "RTCK"),
+    ("12", "GND"),
+    ("13", "TDO"),
+    ("14", "RESERVED"),
+    ("15", "NRESET"),
+    ("16", "RESERVED"),
+    ("17", "DBGRQ"),
+    ("18", "RESERVED"),
+    ("19", "P5V_TARGET"),
+    ("20", "RESERVED"),
+)
+
+
+def arm_20pin_jtag_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, ARM_20PIN_JTAG_PIN_MAP, at=at)
+
+
+def arm_20pin_jtag_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("ARM 20-pin JTAG", ARM_20PIN_JTAG_PIN_MAP)
+
+
+CORTEX_9PIN_SWD_PIN_MAP = (
+    ("1", "VTREF"),
+    ("2", "SWDIO_TMS"),
+    ("3", "GND"),
+    ("4", "SWCLK_TCK"),
+    ("5", "GND"),
+    ("6", "SWO_TDO"),
+    ("8", "NC_TDI"),
+    ("9", "NC_TRST"),
+    ("10", "NRESET"),
+)
+
+
+def cortex_9pin_swd_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, CORTEX_9PIN_SWD_PIN_MAP, at=at)
+
+
+def cortex_9pin_swd_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("Cortex 9-pin SWD/JTAG", CORTEX_9PIN_SWD_PIN_MAP)
 
 
 SPI_SIGNALS = ("VCC", "CS_N", "SCLK", "MOSI", "MISO", "GND")

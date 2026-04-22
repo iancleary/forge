@@ -12,6 +12,7 @@ class EndpointSchema:
     required_signals: tuple[str, ...] = ()
     allowed_signals: tuple[str, ...] | None = None
     exact_signals: tuple[str, ...] | None = None
+    pin_map: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,27 @@ def validate_endpoint_schema(label: str, pins: list[PinDef], schema: EndpointSch
             if missing_exact:
                 detail.append(f"missing: {', '.join(missing_exact)}")
             raise ValueError(f"{label}: signal set mismatch for {schema.family} ({'; '.join(detail)})")
+
+    if schema.pin_map is not None:
+        actual_by_pin = {str(pin.pin): normalize_signal_name(pin.signal) for pin in pins}
+        expected_by_pin = {str(pin): normalize_signal_name(signal) for pin, signal in schema.pin_map}
+
+        missing_pins = [pin for pin in expected_by_pin if pin not in actual_by_pin]
+        extra_pins = [pin for pin in actual_by_pin if pin not in expected_by_pin]
+        mismatches = [
+            f"{pin}: expected {expected_by_pin[pin]}, got {actual_by_pin[pin]}"
+            for pin in expected_by_pin
+            if pin in actual_by_pin and expected_by_pin[pin] != actual_by_pin[pin]
+        ]
+        if missing_pins or extra_pins or mismatches:
+            detail = []
+            if missing_pins:
+                detail.append(f"missing pins: {', '.join(sorted(missing_pins, key=str))}")
+            if extra_pins:
+                detail.append(f"extra pins: {', '.join(sorted(extra_pins, key=str))}")
+            if mismatches:
+                detail.append(f"mismatches: {'; '.join(mismatches)}")
+            raise ValueError(f"{label}: pin map mismatch for {schema.family} ({'; '.join(detail)})")
 
 
 def validate_harness_schema(

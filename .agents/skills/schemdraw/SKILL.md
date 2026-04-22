@@ -91,6 +91,9 @@ Use the bundled examples as local-first starting points:
 - `examples/flow_block.py`: flowchart / block-diagram composition
 - `examples/swd_programming.py`: SWD debug/programming harness pattern
 - `examples/jtag_fpga.py`: JTAG FPGA/programming harness pattern
+- `examples/arm20_swd_header.py`: ARM 20-pin SWD physical-header pattern
+- `examples/arm20_jtag_header.py`: ARM 20-pin JTAG physical-header pattern
+- `examples/cortex9_swd_header.py`: Cortex 9-pin SWD/JTAG physical-header pattern
 - `examples/spi_peripheral.py`: SPI controller-to-peripheral pattern
 - `examples/uart_serial.py`: UART point-to-point serial pattern
 - `examples/i2c_sensor.py`: I2C short-reach digital pattern
@@ -109,6 +112,7 @@ Use the bundled examples as local-first starting points:
 - `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and RJ45 T568B
 - `examples/helpers/schema.py`: schema validators for endpoint families, required signals, and required mappings
 - `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, SPI, SpaceWire, Ethernet, UART, and PPS
+- for named debug headers, prefer the pin-map-backed examples over logical-only signal bundles when physical pin numbering matters
 
 Prefer adapting one of these before browsing external docs.
 

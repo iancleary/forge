@@ -17,6 +17,9 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 
 - `examples/swd_programming.py`: 2-wire debug/programming plus reset, reference voltage, and ground
 - `examples/jtag_fpga.py`: 4-wire FPGA JTAG plus reference and ground
+- `examples/arm20_swd_header.py`: named ARM 20-pin SWD physical header pattern
+- `examples/arm20_jtag_header.py`: named ARM 20-pin JTAG physical header pattern
+- `examples/cortex9_swd_header.py`: named Cortex 9-pin SWD/JTAG physical header pattern
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
 - `examples/uart_serial.py`: simple UART serial plus power and ground
 - `examples/i2c_sensor.py`: short-reach I2C bus pattern
@@ -42,6 +45,7 @@ Typical logical signals for the local helper path:
 Primary source used for the local defaults:
 
 - ARM DSTREAM-ST SWD reference material describing `SWDIO` as bidirectional and showing `VTREF`, `SWDIO`, `SWCLK`, optional `SWO`, `nSRST`, and `GND`
+- SEGGER 20-pin and 9-pin debug connector knowledge-base pinouts for the named physical header examples
 
 ## JTAG
 
@@ -59,6 +63,21 @@ Typical logical signals for the local helper path:
 Primary source used for the local defaults:
 
 - vendor JTAG references describing mandatory `TMS`, `TCK`, `TDI`, and `TDO`, with reset signals varying by target family
+- SEGGER 20-pin JTAG connector pinout for the named ARM-standard physical header example
+
+## Named Physical Standards
+
+The local helper layer now includes exact pin-map patterns for:
+
+- ARM 20-pin SWD
+- ARM 20-pin JTAG
+- Cortex 9-pin SWD/JTAG
+
+Use these when:
+
+- the connector itself is part of the interface contract
+- pin numbering matters as much as signal naming
+- you want schema validation to catch physical pin-map drift, not just logical signal drift
 
 ## SPI
 
