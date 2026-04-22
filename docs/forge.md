@@ -239,6 +239,51 @@ Behavior:
 - returns `installed`, `updated`, or `unchanged` per managed asset
 - keeps `~/.codex/config.toml`, auth state, session history, and plugin caches out of scope
 
+### `forge bytefield install`
+
+```sh
+forge bytefield install [--package <spec>] [--json]
+```
+
+Verifies and prefetches the pinned `bytefield-svg` runner through `pnpm dlx`.
+
+Behavior:
+
+- keeps the external tool behind the Forge CLI contract
+- defaults to the pinned package spec `bytefield-svg@1.11.0`
+- allows `--package <spec>` only for advanced override and testing flows
+- requires local `pnpm` and Node.js availability
+- downloads package contents into pnpm-managed cache state when needed
+
+### `forge bytefield render`
+
+```sh
+forge bytefield render --source <path> --output <path> [--embedded] [--package <spec>] [--json]
+```
+
+Renders a checked-in `bytefield-svg` source file to SVG.
+
+Behavior:
+
+- uses `pnpm dlx` under the hood but keeps `forge bytefield` as the stable contract
+- writes the SVG to `--output`
+- creates parent directories for the output when needed
+- runs from the source file's directory so relative helper files can resolve predictably
+- `--embedded` maps to the upstream embedded-SVG mode
+- prefers the upstream DSL directly instead of introducing a second Forge-specific diagram language
+
+Current boundary:
+
+- `forge bytefield render` is the SVG-first execution contract
+- render concerns such as theme selection, legend emission, abbreviation maps, and optional metadata may belong on this wrapper over time
+- consumer layout concerns such as `normal|wide|full` should not be treated as intrinsic SVG semantics
+
+Planned follow-up:
+
+- a future Typst-facing wrapper is expected to sit above `forge bytefield render`
+- that wrapper should own page-layout decisions such as figure width, column fit, and pipeline-specific size labels
+- Typst wrapper work is intentionally out of scope for this change, but it is an explicit planned task
+
 ## Config
 
 Root Forge config is intentionally narrow.
