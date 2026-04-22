@@ -116,6 +116,40 @@ What it does not enforce yet:
 - project-specific signal schemas
 - connector-family standards beyond the helper contracts and schemas you define locally
 
+## ICD / Harness Shaping
+
+For interface-control drawings, cable drawings, and harness work, apply the `design-algorithm` sequence before adding diagram detail:
+
+1. Question every requirement.
+2. Delete any part or process you can.
+3. Simplify and optimize what remains.
+4. Accelerate cycle time.
+5. Automate last.
+
+Use that sequence concretely:
+
+- question whether the drawing is actually the source of truth or only a rendered view of a contract that should exist as validated data
+- delete duplicated signal lists, manual redraw steps, and ad hoc connector-specific anchor logic
+- simplify interfaces into reusable endpoint builders, normalized signal names, and schema-checked mappings
+- accelerate the loop for regenerating diagrams after interface changes
+- automate only stable parts such as connector families, pin maps, schema checks, and deterministic rendering
+
+Reject these anti-patterns:
+
+- polished drawings backed by ambiguous signal contracts
+- ICDs that differ only because each author hand-placed anchors differently
+- temporary EGSE or lab adapters that escape the same schema discipline as flight interfaces
+- workflow automation that hides unresolved interface ambiguity
+
+Prefer these patterns:
+
+- define the interface as data or validated helper calls first
+- render the drawing second
+- treat test, ground, and operations harnesses as first-class interfaces
+- fail generation when required signals or mappings are incomplete
+
+If you are working inside the Forge repo, see `docs/aerospace-antipatterns.md` for the longer rationale and source-backed aerospace context behind these rules.
+
 ## Python Vs SDL
 
 Prefer Python by default.
