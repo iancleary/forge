@@ -1,0 +1,187 @@
+---
+name: schemdraw
+description: Use when the user wants circuit, timing, ICD, cable, or signal/block diagrams rendered with Schemdraw from repo-local Python sources. Prefer this skill for diagram generation and editing workflows, and use `uv` / `uvx` for setup and execution instead of `pip`.
+---
+
+# Schemdraw
+
+Use this skill when Codex needs to create or revise a diagram as code, not as hand-drawn SVG edits.
+
+This skill ships a small local `uv` tool, local references, and bundled examples:
+
+- `references/schemdraw.md`: condensed Schemdraw usage guidance from the official docs
+- `references/sdl.md`: optional Forge Schemdraw Definition Language (SDL) shorthand for simple symbolic schematics
+- `references/categories.md`: local map of the main Schemdraw element families and when to use them
+- `references/timing.md`: local timing-diagram and bitfield guidance for JSON-first rendering
+- `examples/`: repo-installable example sources for common diagram families
+
+## Use This When
+
+- the user wants a circuit, analog, digital, or block schematic generated as code
+- the output should be reproducible from repo-local Python sources
+- the task maps cleanly onto Schemdraw element placement, labels, styling, and SVG export
+
+## Do Not Use This When
+
+- the user wants freeform illustration rather than schematic notation
+- the task is best solved by editing an existing SVG manually
+- the task needs a full PCB or EDA workflow rather than diagram rendering
+
+## Install And Run
+
+All setup in this skill uses `uv` and `uvx`, not `pip`.
+
+From this skill directory:
+
+```bash
+uv tool install ./tool
+```
+
+That installs the `schemdraw-tool` executable persistently.
+
+For one-shot use without installation:
+
+```bash
+uvx --from ./tool schemdraw-tool render --input ./example.sdl --output ./example.svg
+```
+
+When iterating on the local tool during development, use editable install:
+
+```bash
+uv tool install --editable ./tool
+```
+
+## Default Workflow
+
+1. Prefer repo-local Python as the source of truth.
+2. Read `references/schemdraw.md` for the Schemdraw API patterns you need.
+3. If you need category-specific elements, read `references/categories.md`.
+4. If the job is a timing diagram or bitfield/register view, read `references/timing.md`.
+5. Start from `examples/` when an existing pattern is close enough to adapt.
+6. Use the optional SDL path only for small symbolic schematics that benefit from a shorter text format.
+7. Prefer SVG output unless the user explicitly needs another backend path.
+
+## Repo Placement
+
+Choose a path that matches the artifact’s audience:
+
+- `docs/diagrams/` for rendered figures and source files tied to published docs
+- `docs/icd/` or `docs/cable/` for interface-control, connector, or cable-drawing content
+- `schematics/` for project-owned diagram source files used repeatedly
+- `tools/schemdraw/` or `scripts/schemdraw/` for generator-style Python modules
+
+Practical rule:
+
+- if the diagram is a maintained project artifact, keep the Python source near the docs or spec it supports
+- if the diagram is generated from reusable helpers or inventories, keep the generator in a tooling directory and emit outputs into `docs/` or another checked-in artifact path
+
+## Bundled Examples
+
+Use the bundled examples as local-first starting points:
+
+- `examples/basic_rc.py`: small symbolic schematic
+- `examples/opamp_feedback.py`: anchor-based analog block
+- `examples/icd_connector.py`: IC / connector / ICD-style drawing
+- `examples/harness_bundle.py`: reusable endpoint-definition pattern for harness / cable drawings
+- `examples/dsub_breakout.py`: D-sub-to-breakout deterministic connector-family pattern
+- `examples/state_machine_acceptor.py`: state-diagram pattern based on flow arcs and loopbacks
+- `examples/door_controller.py`: multi-state controller example with curved transitions
+- `examples/flow_block.py`: flowchart / block-diagram composition
+- `examples/timing_sram_rw.json`: timing example using extended edge annotations
+- `examples/timing_jk_flipflop.json`: timing example using async transitions and colored outputs
+- `examples/timing_bus.json`: timing diagram input
+- `examples/register_map.json`: bitfield / register-map input
+- `examples/helpers/pinmap.py`: shared helpers for endpoint and pin definitions
+- `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and RJ45 T568B
+- `examples/helpers/schema.py`: schema validators for endpoint families, required signals, and required mappings
+
+Prefer adapting one of these before browsing external docs.
+
+## Determinism
+
+This wrapper improves determinism by narrowing diagram construction into stable Python helpers instead of free-form drawing logic.
+
+Current deterministic levers:
+
+- frozen `PinDef` / `ConnectionDef` records define endpoint and wire intent explicitly
+- endpoint builders validate duplicate pins and duplicate anchor names before drawing
+- anchor names are normalized from signal names by one shared function
+- connector-family helpers such as D-sub and terminal blocks build from ordered signal lists
+- connection helpers route by declared signal mapping rather than ad hoc anchor access spread through the file
+- schema validators reject missing required signals, extra unknown signals, duplicate connections, and required-but-unwired mappings before render
+
+What it does not enforce yet:
+
+- electrical correctness
+- project-specific signal schemas
+- connector-family standards beyond the helper contracts and schemas you define locally
+
+## Python Vs SDL
+
+Prefer Python by default.
+
+Prefer SDL only when:
+
+- the drawing is mostly linear or anchor-based
+- one label per element is enough
+- you want a compact textual spec that can be reviewed quickly
+
+Prefer Python when:
+
+- you need loops, helper functions, or generated structure
+- you need multiple labels or richer annotations
+- you need direct access to the full Schemdraw API surface
+- you need features not covered by the local SDL subset
+- you are building interface-control drawings, cable drawings, or other richer harness-style documents where reusable helpers will matter
+
+## Python Rules
+
+- Prefer `schemdraw.use('svg')` unless Matplotlib-specific behavior is required.
+- Use `import schemdraw` and `import schemdraw.elements as elm` as the default import pattern.
+- Use chained methods such as `.down()`, `.label(...)`, `.at(...)`, `.tox(...)`, and `.color(...)`.
+- Use anchors from placed elements, such as `R.start`, `Q.base`, or `OP.out`, instead of hard-coded coordinates when possible.
+- Put element-shape parameters in the constructor, but styling in chained methods.
+
+When using the bundled tool to render Python, prefer a file that exposes one of:
+
+- `build() -> schemdraw.Drawing`
+- `drawing = <Drawing>`
+- `d = <Drawing>`
+
+When you need exact local class names without browsing, use the bundled introspection command:
+
+```bash
+uvx --from ./tool schemdraw-tool list --module elements
+uvx --from ./tool schemdraw-tool list --module logic
+uvx --from ./tool schemdraw-tool list --module intcircuits
+```
+
+Minimal project-local render pattern:
+
+```bash
+uvx --from ./tool schemdraw-tool render --input ./docs/diagrams/example.py --output ./docs/diagrams/example.svg
+```
+
+## SDL Rules
+
+- One statement per line.
+- Use `let NAME = Element ...` when later anchor references are needed.
+- Use `NAME.anchor` references instead of raw coordinates when practical.
+- Keep SDL declarative; if you start fighting the grammar, switch to Python.
+- SDL is optional shorthand for schematic-style drawings, not the main path.
+- Use timing JSON instead of SDL for timing diagrams.
+
+## Output Contract
+
+Return:
+
+1. the source file you created or edited
+2. the render command used
+3. the output asset path
+4. any known limitation that would justify moving from SDL to Python
+
+## Notes
+
+- Schemdraw’s SVG backend is the default choice here because it avoids a Matplotlib dependency and is faster for ordinary schematic export.
+- For searchable SVG text or richer math behavior, read `references/schemdraw.md` before choosing SVG text settings.
+- For ICD, cable, and harness-like work, prefer Python modules with reusable endpoint or pin-map helpers over ad hoc one-off diagram files.
