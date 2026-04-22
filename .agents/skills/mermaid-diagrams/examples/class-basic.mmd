@@ -1,0 +1,22 @@
+classDiagram
+  class Order {
+    +String id
+    +OrderStatus status
+    +money total()
+    +markPaid()
+  }
+
+  class LineItem {
+    +String sku
+    +int quantity
+    +money subtotal()
+  }
+
+  class Payment {
+    +String providerRef
+    +money amount
+    +capture()
+  }
+
+  Order "1" *-- "many" LineItem : contains
+  Order "1" --> "0..1" Payment : settles with

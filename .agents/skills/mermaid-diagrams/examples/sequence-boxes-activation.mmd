@@ -1,0 +1,24 @@
+sequenceDiagram
+  box rgba(229, 241, 255, 0.8) Edge
+    actor User
+    participant SPA
+  end
+  box rgba(236, 245, 233, 0.8) Platform
+    participant API
+    participant Queue
+    participant Worker
+  end
+
+  User->>+SPA: Upload CSV
+  SPA->>+API: POST /imports
+  API->>API: Parse metadata
+  API-)Queue: Enqueue import job
+  Queue-->>-API: Ack
+  API-->>-SPA: 202 Accepted
+  SPA-->>User: Show import tracking id
+
+  Note over Queue,Worker: Async processing continues off the request path
+
+  Queue->>+Worker: Deliver import job
+  Worker->>Worker: Normalize rows
+  Worker-->>-Queue: Complete

@@ -1,0 +1,15 @@
+gantt
+  title Release cutover plan
+  dateFormat  YYYY-MM-DD
+  axisFormat  %b %d
+
+  section Prep
+  Freeze release branch     :done, prep1, 2026-04-20, 1d
+  Draft notes              :active, prep2, 2026-04-21, 2d
+
+  section Validation
+  Smoke test               :test1, after prep2, 1d
+  Sign-off                 :test2, after test1, 1d
+
+  section Ship
+  Publish release          :ship1, after test2, 1d

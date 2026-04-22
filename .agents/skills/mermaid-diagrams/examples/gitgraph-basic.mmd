@@ -1,0 +1,14 @@
+gitGraph
+  commit id: "bootstrap"
+  branch develop
+  checkout develop
+  commit id: "feature-a"
+  commit id: "feature-b"
+  checkout main
+  merge develop
+  commit id: "release"
+  branch hotfix
+  checkout hotfix
+  commit id: "patch-1"
+  checkout main
+  merge hotfix
