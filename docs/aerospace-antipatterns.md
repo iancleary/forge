@@ -347,3 +347,106 @@ The lesson for tools like Forge is straightforward:
 - treat the surrounding system, not just the visible output, as the product
 
 That is the same reason the `schemdraw` skill in this repo is moving toward local examples, deterministic helpers, and schema validation for harness and interface drawings.
+
+## ICD / Harness / Interface-Control Implications
+
+These aerospace anti-patterns become very concrete once the artifact is an interface control drawing, cable drawing, or harness specification.
+
+### 1. The Drawing Cannot Be The Source Of Truth By Itself
+
+Bad pattern:
+
+- a diagram is treated as authoritative even though the real pin map, signal inventory, connector family, or mating assumptions live in email, tribal knowledge, or spreadsheet fragments
+
+Why it fails expensively:
+
+- the visible document looks complete while the actual interface contract is not
+- connector and signal ambiguities are discovered during integration, bring-up, or test
+- updates become manual synchronization exercises across multiple artifacts
+
+Better pattern:
+
+- keep the drawing generated from a schema-checked source or helper layer
+- make connector family, pin count, required signals, and required mappings machine-checkable
+
+### 2. Cosmetic Consistency Is Not Interface Determinism
+
+Bad pattern:
+
+- every ICD page looks polished, but each one is authored ad hoc with hand-placed anchors, inconsistent signal names, and connector-specific assumptions embedded in drawing code
+
+Why it fails expensively:
+
+- repeated diagrams conceal repeated mistakes
+- signal-name drift creates false mismatches during integration
+- reviewing the document does not reliably review the contract
+
+Better pattern:
+
+- use normalized signal names
+- define connector builders once
+- validate endpoint families and mappings before rendering
+
+### 3. “Flexible” Harness Specs Usually Mean Hidden Ambiguity
+
+Bad pattern:
+
+- connector pinouts, shield handling, drain wires, power rails, and NC pins are left intentionally vague so teams can “adapt in implementation”
+
+Why it fails expensively:
+
+- ambiguity moves into procurement, assembly, or field integration
+- each downstream team resolves uncertainty differently
+- the final system inherits undocumented local decisions that are hard to reverse
+
+Better pattern:
+
+- make ambiguity explicit and force it into named schema choices
+- distinguish required signals, optional signals, ignored pins, and forbidden mappings
+- fail generation when the contract is incomplete instead of drawing a plausible-looking figure
+
+### 4. Ground And Test Interfaces Need The Same Discipline As Flight Interfaces
+
+Bad pattern:
+
+- production or flight harnesses get disciplined interface control, but EGSE, test breakouts, lab adapters, and debug headers are treated as temporary exceptions
+
+Why it fails expensively:
+
+- the test path becomes the least trustworthy part of the system
+- debug-time adapters create undocumented polarity, pinout, or shielding differences
+- flight-like verification gets polluted by ad hoc lab infrastructure
+
+Better pattern:
+
+- treat test and operations harnesses as first-class interfaces
+- generate their drawings from the same schema and connector families
+- make deviations from flight wiring explicit and reviewable
+
+### 5. Interface Drawings Should Shorten Integration Loops, Not Lengthen Them
+
+Bad pattern:
+
+- updating an ICD or cable drawing requires manual redraws, bespoke notation, or a specialist who understands the local style but not necessarily the system contract
+
+Why it fails expensively:
+
+- changes are delayed
+- review focuses on the picture rather than the interface
+- the drawing becomes stale because regeneration is expensive
+
+Better pattern:
+
+- use deterministic local source files
+- encode the contract in reusable helpers
+- regenerate drawings quickly after every interface change
+- keep the review surface close to the actual declared pins, signals, and mappings
+
+### Smallest Useful Rule For Interface Artifacts
+
+For ICDs, harnesses, and cable drawings, the smallest useful rule is:
+
+- define the interface as data or validated helper calls first
+- render the drawing second
+
+If the picture is easy to update but the contract is hard to validate, the workflow is backwards.
