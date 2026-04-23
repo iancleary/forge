@@ -23,6 +23,9 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 - `examples/cortex9_swd_header.py`: named Cortex 9-pin SWD/JTAG physical header pattern
 - `examples/amd_xilinx_14pin_jtag_harness.py`: exact AMD/Xilinx 14-pin FPGA programming-pod harness
 - `examples/intel_fpga_10pin_jtag_harness.py`: exact Intel FPGA Download Cable II 10-pin harness
+- `examples/msp430_fet_to_microd15_adapter.py`: mock MSP430 pod to Micro-D service-adapter pattern
+- `examples/amd_xilinx_to_shrouded_header_adapter.py`: mock AMD/Xilinx pod to shrouded-header service-adapter pattern
+- `examples/intel_fpga_to_circular10_adapter.py`: mock Intel FPGA pod to circular-service adapter pattern
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
 - `examples/uart_serial.py`: simple UART serial plus power and ground
 - `examples/i2c_sensor.py`: short-reach I2C bus pattern
@@ -108,6 +111,22 @@ Source note:
 
 - the AMD/Xilinx active-signal assignments come from the current 14-pin target-interface guidance; the inactive/ground pin treatment is aligned to older Xilinx 14-pin cable documentation, so the full local pin map is partly an inference from those combined sources
 - the Intel 10-pin pin map comes from the Intel FPGA Download Cable II pin table
+
+## Adapter Mockups
+
+The local example set also includes mock service-adapter patterns that terminate the programming-pod standards into more deployment-oriented connector families:
+
+- Micro-D
+- keyed shrouded headers
+- circular service connectors
+
+Use these when:
+
+- you want a repo-local starting point for an EGSE or field-service adapter
+- the target-side connector family is project-specific rather than vendor-defined
+- you want the pod standard kept exact while the far-side connector remains an intentional mock or house pattern
+
+Do not treat these adapter examples as formal industry standards. They are illustrative local patterns meant to be replaced or tightened to project-specific connector contracts.
 
 ## Named Physical Standards
 

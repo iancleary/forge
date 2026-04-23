@@ -97,6 +97,9 @@ Use the bundled examples as local-first starting points:
 - `examples/cortex9_swd_header.py`: Cortex 9-pin SWD/JTAG physical-header pattern
 - `examples/amd_xilinx_14pin_jtag_harness.py`: AMD/Xilinx 14-pin FPGA programming-pod harness pattern
 - `examples/intel_fpga_10pin_jtag_harness.py`: Intel FPGA 10-pin download-cable harness pattern
+- `examples/msp430_fet_to_microd15_adapter.py`: mock MSP430 pod to Micro-D service-adapter pattern
+- `examples/amd_xilinx_to_shrouded_header_adapter.py`: mock AMD/Xilinx pod to shrouded-header adapter pattern
+- `examples/intel_fpga_to_circular10_adapter.py`: mock Intel FPGA pod to circular-service adapter pattern
 - `examples/spi_peripheral.py`: SPI controller-to-peripheral pattern
 - `examples/uart_serial.py`: UART point-to-point serial pattern
 - `examples/i2c_sensor.py`: I2C short-reach digital pattern
@@ -115,7 +118,7 @@ Use the bundled examples as local-first starting points:
 - `examples/timing_bus.json`: timing diagram input
 - `examples/register_map.json`: bitfield / register-map input
 - `examples/helpers/pinmap.py`: shared helpers for endpoint and pin definitions
-- `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and exact-pin RJ45 T568B
+- `examples/helpers/connectors.py`: standard connector-builder helpers such as D-sub, Micro-D, shrouded headers, circular connectors, terminal blocks, and exact-pin RJ45 T568B
 - `examples/helpers/schema.py`: schema validators for endpoint families, required signals, required mappings, and policy-aware bus participants
 - `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, MSP430 pods, FPGA programming pods, SPI, SpaceWire, Ethernet, UART, PPS, multidrop I2C, and multidrop RS-485
 - for named debug headers, prefer the pin-map-backed examples over logical-only signal bundles when physical pin numbering matters
