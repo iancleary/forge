@@ -17,9 +17,12 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 
 - `examples/swd_programming.py`: 2-wire debug/programming plus reset, reference voltage, and ground
 - `examples/jtag_fpga.py`: 4-wire FPGA JTAG plus reference and ground
+- `examples/msp430_fet_jtag_harness.py`: exact TI MSP430 14-pin programming-pod harness
 - `examples/arm20_swd_header.py`: named ARM 20-pin SWD physical header pattern
 - `examples/arm20_jtag_header.py`: named ARM 20-pin JTAG physical header pattern
 - `examples/cortex9_swd_header.py`: named Cortex 9-pin SWD/JTAG physical header pattern
+- `examples/amd_xilinx_14pin_jtag_harness.py`: exact AMD/Xilinx 14-pin FPGA programming-pod harness
+- `examples/intel_fpga_10pin_jtag_harness.py`: exact Intel FPGA Download Cable II 10-pin harness
 - `examples/spi_peripheral.py`: clock, chip-enable, MOSI, MISO, power, and ground
 - `examples/uart_serial.py`: simple UART serial plus power and ground
 - `examples/i2c_sensor.py`: short-reach I2C bus pattern
@@ -68,6 +71,44 @@ Primary source used for the local defaults:
 - vendor JTAG references describing mandatory `TMS`, `TCK`, `TDI`, and `TDO`, with reset signals varying by target family
 - SEGGER 20-pin JTAG connector pinout for the named ARM-standard physical header example
 
+Programming-pod rule:
+
+- when the user names a vendor programming pod or exact FPGA download cable, prefer the named physical-standard examples over the generic `jtag_fpga.py` pattern
+- use the generic JTAG example only when the logical bus matters more than the pod/header contract
+
+## TI MSP430 Pod
+
+The local helper includes an exact TI MSP430 14-pin FET header pattern with tool-voltage, target-voltage, JTAG/SBW, reset, and auxiliary UART/SPI/I2C lines called out explicitly.
+
+Use this when:
+
+- the harness is defined against the MSP-FET or compatible 14-pin pod/header
+- the cable or target header itself is part of the ICD
+- you need the multiplexed auxiliary pins documented rather than collapsed into generic labels
+
+Primary sources used for the local defaults:
+
+- TI debug-probe connector guidance for MSP430 and XDS adapters
+- TI MSP430 Hardware Tools User's Guide Table B-47 for the 14-pin target connector
+
+## FPGA Programming Pods
+
+The local helper includes exact programming-pod header patterns for:
+
+- AMD/Xilinx 14-pin JTAG
+- Intel FPGA Download Cable II 10-pin JTAG
+
+Use these when:
+
+- the programming cable family itself is known
+- the target board is expected to mate to a standard vendor pod/header
+- you want to validate exact pin numbering rather than only the logical JTAG subset
+
+Source note:
+
+- the AMD/Xilinx active-signal assignments come from the current 14-pin target-interface guidance; the inactive/ground pin treatment is aligned to older Xilinx 14-pin cable documentation, so the full local pin map is partly an inference from those combined sources
+- the Intel 10-pin pin map comes from the Intel FPGA Download Cable II pin table
+
 ## Named Physical Standards
 
 The local helper layer now includes exact pin-map patterns for:
@@ -75,6 +116,9 @@ The local helper layer now includes exact pin-map patterns for:
 - ARM 20-pin SWD
 - ARM 20-pin JTAG
 - Cortex 9-pin SWD/JTAG
+- TI MSP430 14-pin FET
+- AMD/Xilinx 14-pin JTAG
+- Intel FPGA Download Cable II 10-pin JTAG
 - DE-9 RS-232
 - RJ45 T568B
 

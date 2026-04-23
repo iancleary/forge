@@ -50,6 +50,16 @@ def pin_map_endpoint_schema(family: str, pin_map: tuple[tuple[str, str], ...]) -
     )
 
 
+def pin_map_passthrough_schema(name: str, family: str, pin_map: tuple[tuple[str, str], ...]) -> HarnessSchema:
+    endpoint_schema = pin_map_endpoint_schema(family, pin_map)
+    return HarnessSchema(
+        name=name,
+        left=endpoint_schema,
+        right=endpoint_schema,
+        required_connections=tuple((signal, signal) for _, signal in pin_map),
+    )
+
+
 def passthrough_schema(name: str, family: str, signals: tuple[str, ...]) -> HarnessSchema:
     endpoint_schema = exact_endpoint_schema(family, signals)
     return HarnessSchema(
@@ -195,6 +205,100 @@ def cortex_9pin_swd_header(label: str, *, at: tuple[float, float] | None = None)
 
 def cortex_9pin_swd_schema() -> EndpointSchema:
     return pin_map_endpoint_schema("Cortex 9-pin SWD/JTAG", CORTEX_9PIN_SWD_PIN_MAP)
+
+
+MSP430_FET_14PIN_PIN_MAP = (
+    ("1", "TDO_TDI"),
+    ("2", "VCC_TOOL"),
+    ("3", "TDI_VPP"),
+    ("4", "VCC_TARGET"),
+    ("5", "TMS"),
+    ("6", "NC"),
+    ("7", "TCK"),
+    ("8", "TEST_VPP"),
+    ("9", "GND"),
+    ("10", "AUX_CTS_SCL"),
+    ("11", "RST"),
+    ("12", "AUX_TXD_SDA"),
+    ("13", "AUX_RTS"),
+    ("14", "AUX_RXD_SIMO"),
+)
+
+
+def msp430_fet_14pin_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, MSP430_FET_14PIN_PIN_MAP, at=at)
+
+
+def msp430_fet_14pin_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("TI MSP430 14-pin FET", MSP430_FET_14PIN_PIN_MAP)
+
+
+def msp430_fet_14pin_link_schema() -> HarnessSchema:
+    return pin_map_passthrough_schema("TI MSP430 14-pin FET link", "TI MSP430 14-pin FET", MSP430_FET_14PIN_PIN_MAP)
+
+
+AMD_XILINX_14PIN_JTAG_PIN_MAP = (
+    ("1", "GND1"),
+    ("2", "VREF"),
+    ("3", "GND3"),
+    ("4", "TMS"),
+    ("5", "GND5"),
+    ("6", "TCK"),
+    ("7", "GND7"),
+    ("8", "TDO"),
+    ("9", "GND9"),
+    ("10", "TDI"),
+    ("11", "GND11"),
+    ("12", "NC"),
+    ("13", "PGND"),
+    ("14", "SRST"),
+)
+
+
+def amd_xilinx_14pin_jtag_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, AMD_XILINX_14PIN_JTAG_PIN_MAP, at=at)
+
+
+def amd_xilinx_14pin_jtag_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("AMD/Xilinx 14-pin JTAG", AMD_XILINX_14PIN_JTAG_PIN_MAP)
+
+
+def amd_xilinx_14pin_jtag_link_schema() -> HarnessSchema:
+    return pin_map_passthrough_schema(
+        "AMD/Xilinx 14-pin JTAG link",
+        "AMD/Xilinx 14-pin JTAG",
+        AMD_XILINX_14PIN_JTAG_PIN_MAP,
+    )
+
+
+INTEL_FPGA_10PIN_JTAG_PIN_MAP = (
+    ("1", "TCK"),
+    ("2", "GND2"),
+    ("3", "TDO"),
+    ("4", "VCC_TARGET"),
+    ("5", "TMS"),
+    ("6", "PROC_RST"),
+    ("7", "NC7"),
+    ("8", "NC8"),
+    ("9", "TDI"),
+    ("10", "GND10"),
+)
+
+
+def intel_fpga_10pin_jtag_header(label: str, *, at: tuple[float, float] | None = None):
+    return pin_map_endpoint(label, INTEL_FPGA_10PIN_JTAG_PIN_MAP, at=at)
+
+
+def intel_fpga_10pin_jtag_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("Intel FPGA Download Cable II 10-pin JTAG", INTEL_FPGA_10PIN_JTAG_PIN_MAP)
+
+
+def intel_fpga_10pin_jtag_link_schema() -> HarnessSchema:
+    return pin_map_passthrough_schema(
+        "Intel FPGA Download Cable II 10-pin JTAG link",
+        "Intel FPGA Download Cable II 10-pin JTAG",
+        INTEL_FPGA_10PIN_JTAG_PIN_MAP,
+    )
 
 
 SPI_SIGNALS = ("VCC", "CS_N", "SCLK", "MOSI", "MISO", "GND")
