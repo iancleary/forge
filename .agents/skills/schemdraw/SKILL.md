@@ -98,6 +98,8 @@ Use the bundled examples as local-first starting points:
 - `examples/uart_serial.py`: UART point-to-point serial pattern
 - `examples/i2c_sensor.py`: I2C short-reach digital pattern
 - `examples/i2c_multidrop.py`: I2C multidrop pattern with explicit pull-up ownership
+- `examples/qwiic_i2c_link.py`: Qwiic JST-SH exact pin-map I2C pattern
+- `examples/grove_i2c_link.py`: Grove 4-pin exact pin-map I2C pattern
 - `examples/onewire_sensor.py`: 1-Wire short-reach digital pattern
 - `examples/mdio_link.py`: MDIO management-link pattern
 - `examples/rs422_link.py`: RS-422 full-duplex differential serial pattern
@@ -112,12 +114,14 @@ Use the bundled examples as local-first starting points:
 - `examples/timing_bus.json`: timing diagram input
 - `examples/register_map.json`: bitfield / register-map input
 - `examples/helpers/pinmap.py`: shared helpers for endpoint and pin definitions
-- `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and RJ45 T568B
+- `examples/helpers/connectors.py`: standard connector-builder helpers such as DE-9/DA-15/DB-25, headers, terminal blocks, and exact-pin RJ45 T568B
 - `examples/helpers/schema.py`: schema validators for endpoint families, required signals, required mappings, and policy-aware bus participants
 - `examples/helpers/protocols.py`: protocol-family helpers and schemas for SWD, JTAG, SPI, SpaceWire, Ethernet, UART, PPS, multidrop I2C, and multidrop RS-485
 - for named debug headers, prefer the pin-map-backed examples over logical-only signal bundles when physical pin numbering matters
 
 Prefer adapting one of these before browsing external docs.
+
+When an exact connector family is already known, prefer the named physical-standard examples over the generic protocol examples.
 
 ## Determinism
 

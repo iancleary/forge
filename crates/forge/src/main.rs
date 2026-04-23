@@ -5035,6 +5035,8 @@ fn release_skills() -> &'static [EmbeddedSkill] {
                 "examples/uart_serial.py",
                 "examples/i2c_sensor.py",
                 "examples/i2c_multidrop.py",
+                "examples/qwiic_i2c_link.py",
+                "examples/grove_i2c_link.py",
                 "examples/onewire_sensor.py",
                 "examples/mdio_link.py",
                 "examples/rs422_link.py",

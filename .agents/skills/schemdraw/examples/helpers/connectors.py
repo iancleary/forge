@@ -51,28 +51,32 @@ def terminal_block(label: str, signals: list[str], *, at: tuple[float, float] | 
     return endpoint(f"{label}\nTerminal Block", pins, at=at)
 
 
-DE9_RS232_SIGNALS = (
-    "DCD",
-    "RXD",
-    "TXD",
-    "DTR",
-    "GND",
-    "DSR",
-    "RTS",
-    "CTS",
-    "RI",
+DE9_RS232_PIN_MAP = (
+    ("1", "DCD"),
+    ("2", "RXD"),
+    ("3", "TXD"),
+    ("4", "DTR"),
+    ("5", "GND"),
+    ("6", "DSR"),
+    ("7", "RTS"),
+    ("8", "CTS"),
+    ("9", "RI"),
 )
 
-RJ45_T568B_SIGNALS = (
-    "TX+",
-    "TX-",
-    "RX+",
-    "BI1+",
-    "BI1-",
-    "RX-",
-    "BI2+",
-    "BI2-",
+DE9_RS232_SIGNALS = tuple(signal for _, signal in DE9_RS232_PIN_MAP)
+
+RJ45_T568B_PIN_MAP = (
+    ("1", "TX+"),
+    ("2", "TX-"),
+    ("3", "RX+"),
+    ("4", "BI1+"),
+    ("5", "BI1-"),
+    ("6", "RX-"),
+    ("7", "BI2+"),
+    ("8", "BI2-"),
 )
+
+RJ45_T568B_SIGNALS = tuple(signal for _, signal in RJ45_T568B_PIN_MAP)
 
 RS232_ALIASES = {
     "SHLD": "SHIELD",
@@ -84,7 +88,7 @@ def rs232_de9_schema() -> EndpointSchema:
     return EndpointSchema(
         family="DE-9 RS-232",
         pin_count=9,
-        exact_signals=DE9_RS232_SIGNALS,
+        pin_map=DE9_RS232_PIN_MAP,
     )
 
 
@@ -111,5 +115,13 @@ def rs232_de9(label: str, *, at: tuple[float, float] | None = None, side: str = 
 
 
 def rj45_t568b(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
-    pins = [PinDef(signal, str(index + 1), side=side) for index, signal in enumerate(RJ45_T568B_SIGNALS)]
+    pins = [PinDef(signal, pin, side=side) for pin, signal in RJ45_T568B_PIN_MAP]
     return endpoint(f"{label}\nRJ45 T568B", pins, at=at)
+
+
+def rj45_t568b_schema() -> EndpointSchema:
+    return EndpointSchema(
+        family="RJ45 T568B",
+        pin_count=8,
+        pin_map=RJ45_T568B_PIN_MAP,
+    )

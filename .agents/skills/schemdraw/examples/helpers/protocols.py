@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from helpers.connectors import header_1x, header_2x, rj45_t568b
+from helpers.connectors import header_1x, header_2x, rj45_t568b, rj45_t568b_schema
 from helpers.pinmap import PinDef, endpoint
 from helpers.schema import BusSchema, EndpointSchema, HarnessSchema
 
@@ -221,6 +221,20 @@ def uart_schema() -> HarnessSchema:
 
 I2C_SIGNALS = ("VCC", "SCL", "SDA", "GND")
 
+QWIIC_I2C_PIN_MAP = (
+    ("1", "GND"),
+    ("2", "3V3"),
+    ("3", "SDA"),
+    ("4", "SCL"),
+)
+
+GROVE_I2C_PIN_MAP = (
+    ("1", "SCL"),
+    ("2", "SDA"),
+    ("3", "VCC"),
+    ("4", "GND"),
+)
+
 
 def i2c_header(label: str, *, at: tuple[float, float] | None = None, side: str = "left"):
     return header_1x(label, list(I2C_SIGNALS), at=at, side=side)
@@ -228,6 +242,52 @@ def i2c_header(label: str, *, at: tuple[float, float] | None = None, side: str =
 
 def i2c_schema() -> HarnessSchema:
     return passthrough_schema("I2C low-speed link", "I2C header", I2C_SIGNALS)
+
+
+def qwiic_i2c_header(
+    label: str,
+    *,
+    at: tuple[float, float] | None = None,
+    side: str = "left",
+):
+    return pin_map_endpoint(label, QWIIC_I2C_PIN_MAP, at=at, odd_side=side, even_side=side)
+
+
+def qwiic_i2c_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("Qwiic JST-SH 4-pin", QWIIC_I2C_PIN_MAP)
+
+
+def qwiic_i2c_link_schema() -> HarnessSchema:
+    endpoint_schema = qwiic_i2c_schema()
+    return HarnessSchema(
+        name="Qwiic I2C link",
+        left=endpoint_schema,
+        right=endpoint_schema,
+        required_connections=tuple((signal, signal) for _, signal in QWIIC_I2C_PIN_MAP),
+    )
+
+
+def grove_i2c_header(
+    label: str,
+    *,
+    at: tuple[float, float] | None = None,
+    side: str = "left",
+):
+    return pin_map_endpoint(label, GROVE_I2C_PIN_MAP, at=at, odd_side=side, even_side=side)
+
+
+def grove_i2c_schema() -> EndpointSchema:
+    return pin_map_endpoint_schema("Grove 4-pin I2C", GROVE_I2C_PIN_MAP)
+
+
+def grove_i2c_link_schema() -> HarnessSchema:
+    endpoint_schema = grove_i2c_schema()
+    return HarnessSchema(
+        name="Grove I2C link",
+        left=endpoint_schema,
+        right=endpoint_schema,
+        required_connections=tuple((signal, signal) for _, signal in GROVE_I2C_PIN_MAP),
+    )
 
 
 def i2c_multidrop_schema() -> BusSchema:
@@ -442,7 +502,13 @@ def ethernet_rj45(label: str, *, at: tuple[float, float] | None = None, side: st
 
 
 def ethernet_schema() -> HarnessSchema:
-    return passthrough_schema("Ethernet T568B link", "RJ45 T568B", ETHERNET_T568B_SIGNALS)
+    endpoint_schema = rj45_t568b_schema()
+    return HarnessSchema(
+        name="Ethernet T568B link",
+        left=endpoint_schema,
+        right=endpoint_schema,
+        required_connections=tuple((signal, signal) for signal in ETHERNET_T568B_SIGNALS),
+    )
 
 
 def ethernet_variant_schema(*, shielded: bool = False, poe_mode: str = "none") -> BusSchema:
