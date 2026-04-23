@@ -98,8 +98,6 @@ Use the bundled examples as local-first starting points:
 - `examples/uart_serial.py`: UART point-to-point serial pattern
 - `examples/i2c_sensor.py`: I2C short-reach digital pattern
 - `examples/i2c_multidrop.py`: I2C multidrop pattern with explicit pull-up ownership
-- `examples/qwiic_i2c_link.py`: Qwiic JST-SH exact pin-map I2C pattern
-- `examples/grove_i2c_link.py`: Grove 4-pin exact pin-map I2C pattern
 - `examples/onewire_sensor.py`: 1-Wire short-reach digital pattern
 - `examples/mdio_link.py`: MDIO management-link pattern
 - `examples/rs422_link.py`: RS-422 full-duplex differential serial pattern

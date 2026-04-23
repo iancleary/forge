@@ -24,8 +24,6 @@ Do not start from hand-drawn connector art when the real job is validating a pro
 - `examples/uart_serial.py`: simple UART serial plus power and ground
 - `examples/i2c_sensor.py`: short-reach I2C bus pattern
 - `examples/i2c_multidrop.py`: controller-plus-multiple-target I2C bus pattern with explicit pull-up ownership
-- `examples/qwiic_i2c_link.py`: exact Qwiic JST-SH 4-pin I2C pin-map pattern
-- `examples/grove_i2c_link.py`: exact Grove 4-pin I2C pin-map pattern
 - `examples/onewire_sensor.py`: 1-Wire device link pattern
 - `examples/mdio_link.py`: MDIO management link pattern
 - `examples/rs422_link.py`: full-duplex differential serial with shield policy
@@ -79,8 +77,6 @@ The local helper layer now includes exact pin-map patterns for:
 - Cortex 9-pin SWD/JTAG
 - DE-9 RS-232
 - RJ45 T568B
-- Qwiic JST-SH 4-pin I2C
-- Grove 4-pin I2C
 
 Use these when:
 
@@ -140,17 +136,6 @@ Multidrop rule:
 
 - use `examples/i2c_multidrop.py` when the important contract is bus ownership, not just one controller-to-one-target wiring segment
 - make one controller own pull-ups in the schema instead of leaving pull-up location implicit
-
-Named physical standards:
-
-- use `examples/qwiic_i2c_link.py` when the interface is specifically SparkFun-style Qwiic with `GND`, `3V3`, `SDA`, `SCL` in exact pin order
-- use `examples/grove_i2c_link.py` when the interface is specifically Grove 4-pin I2C with `SCL`, `SDA`, `VCC`, `GND` in exact pin order
-- do not collapse these into one “4-pin I2C connector” because the physical order is part of the contract
-
-Primary sources used for the named I2C connector defaults:
-
-- SparkFun Qwiic documentation describing the 4-pin JST-SH order as `GND`, `3.3V`, `SDA`, `SCL`
-- Seeed Grove documentation describing the 4-pin I2C order as `SCL`, `SDA`, `VCC`, `GND`
 
 ## 1-Wire
 
