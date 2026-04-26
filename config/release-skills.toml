@@ -29,6 +29,12 @@ legacy_names = ["pi-autoresearch"]
 name = "autoresearch-finalize"
 
 [[skills]]
+name = "create-release-process"
+
+[[skills]]
+name = "cut-release"
+
+[[skills]]
 name = "thinking-in-the-limit"
 
 [[skills]]

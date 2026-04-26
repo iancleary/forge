@@ -107,11 +107,13 @@ Forge should distinguish between skills that maintain a workflow and skills or c
 
 Examples:
 
-- a repo-local skill such as `create-release-process` exists to define, audit, and repair the release process
-- a repo-local skill such as `cut-release` can exist to execute the ordinary release by calling the checked-in runner
+- a managed workflow-maintenance skill such as `create-release-process` exists to define, audit, and repair the release process
+- a managed workflow-execution skill such as `cut-release` can execute the ordinary release by calling the checked-in runner
 - the checked-in repo command `just cut-release` remains the deterministic runner that the execution skill should call
 
 That distinction matters because Codex can otherwise misread a maintenance skill as the thing to run, or mis-handle an execution skill by reconstructing the shell flow instead of calling the deterministic repo task runner.
+
+The deployed release-process skills are portable defaults. Repo-local guidance and checked-in runners tailor the actual versioning scheme, release notes source, validation sequence, and publish action for each project.
 
 Decision rule:
 
@@ -128,13 +130,14 @@ stateDiagram-v2
 
 For Forge releases, the intended mapping is:
 
-- "change the release flow" -> use the repo-local `create-release-process` skill
-- "cut the next release" -> use the repo-local `cut-release` skill, which should run `just cut-release` (often after `just cut-release --dry-run`)
+- "change the release flow" -> use the managed `create-release-process` skill, then apply the Forge-specific contract from `AGENTS.md` and `docs/release.md`
+- "cut the next release" -> use the managed `cut-release` skill, which should run `just cut-release` (often after `just cut-release --dry-run`)
 
 ## Trigger Contract For Forge Skills
 
 Forge-managed skills should follow this trigger contract:
 
+- the frontmatter `name` must match the skill folder name so Codex App and Codex CLI explicit invocation use the same identifier
 - the frontmatter `description` is the primary trigger contract
 - the body should reinforce boundaries with concise "use this when" and "do not use this when" guidance when needed
 - router skills should mention the skills they route to by name

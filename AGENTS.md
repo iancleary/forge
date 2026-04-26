@@ -66,14 +66,14 @@ Before committing:
 
 ## Repo Skills
 
-- use the repo-local `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
-- use the repo-local `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
+- use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
+- use the Forge-managed `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
 - use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
 - use `just cut-release --print-next-version` when you need the inferred next release version without starting the release flow
 - prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
 - the release script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
-- keep `cut-release` repo-local; do not promote it to a Forge-managed user skill unless the workflow is generalized beyond this Cargo workspace
-- if the release flow changes, update the script, [docs/release.md](docs/release.md), and the skill together
+- the deployed release-process skills provide portable defaults, while this repo's `AGENTS.md`, `docs/release.md`, `just cut-release`, and `scripts/cut-release.sh` tailor the Forge-specific CalVer, notes, validation, and publish behavior
+- if the release flow changes, update the script, [docs/release.md](docs/release.md), and the release-process skills together
 
 ## Adding A New CLI
 

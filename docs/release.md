@@ -44,9 +44,10 @@ Both read-only modes skip the clean-tree check and do not run the release steps.
 
 For agent work in this repo, distinguish between maintaining the workflow and executing it:
 
-- use the repo-local `create-release-process` skill when you are establishing, auditing, or changing the release process itself
-- use the repo-local `cut-release` skill for an ordinary request to publish the next Forge release
+- use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the release process itself
+- use the Forge-managed `cut-release` skill for an ordinary request to publish the next Forge release
 - the `cut-release` skill should execute `just cut-release` (often after `just cut-release --dry-run`) rather than reconstructing the release by hand
+- the deployed release-process skills are portable; this repo's `AGENTS.md`, this document, `just cut-release`, and `scripts/cut-release.sh` tailor Forge-specific Phoenix-date CalVer, release notes, validation, and GitHub release behavior
 - only reconstruct the flow manually when you are explicitly correcting an already-published release
 
 Decision rule:
