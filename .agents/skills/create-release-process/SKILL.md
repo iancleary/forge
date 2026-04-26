@@ -1,27 +1,83 @@
 ---
 name: create-release-process
-description: "Create or update a repo-local release process, then route ordinary release work through a checked-in `scripts/cut-release.sh` or `just cut-release` plus repo-local instructions in `AGENTS.md`, adapted to the repo’s package manager and release situation."
+description: "Create, audit, or update a repo-local release process by discovering the repo's versioning, notes, validation, and publish requirements, then leaving a checked-in runner plus local agent instructions that future releases can execute deterministically."
 ---
 
 # Create Release Process
 
-Use this skill to establish or update a repo-local release process. The goal is not just to run a release once. The goal is to leave behind a deterministic local pattern that future agent runs can follow.
+Use this skill to establish or revise a repo-local release process. The goal is not to run one release by hand. The goal is to leave behind a deterministic local pattern that future agent runs can follow.
 
-Do not use this skill as a substitute for the repo's normal release command when the workflow already exists. In Forge itself, a normal "cut the next release" request should go through the repo-local `cut-release` execution skill, which should in turn run `just cut-release` (often after `just cut-release --dry-run`).
+This is a portable Forge-managed skill. It should adapt to the target repo instead of imposing Forge's own release policy.
 
-Primary commands and related surfaces:
+## Use This When
 
-- `just cut-release`
-- `just cut-release --dry-run`
-- `just cut-release --print-current-version`
-- `just cut-release --print-next-version`
-- `./scripts/cut-release.sh --version <repo-version>`
-- `.agents/skills/cut-release/SKILL.md`
+- the user asks to create, define, audit, repair, or change a release workflow
+- the repo does not have a deterministic release runner yet
+- the repo's release process exists but does not match its current versioning, notes, validation, or publishing requirements
+- ordinary release requests keep requiring reconstructed shell sequences
 
-In Forge itself, read [docs/release.md](../../../docs/release.md) when you need the full release contract or need to update the documented workflow.
+## Do Not Use This When
 
-Forge-specific contract today:
+- the user is asking to cut or publish the next normal release and the repo already has a working release runner
+- the task is only to query a current or next version through an existing read-only command
+- the user is correcting an already-published release and needs explicit repair steps
 
+For ordinary release execution, use `cut-release` after this workflow exists.
+
+## Discovery
+
+Decide the release process from repo evidence, not habit.
+
+Inspect:
+
+- local agent instructions: `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/release.md`
+- package manager and version source: `Cargo.toml`, `pyproject.toml`, `package.json`, workspace manifests
+- versioning scheme: SemVer, CalVer, date-based tags, or another documented repo-specific policy
+- lockfiles: `Cargo.lock`, `uv.lock`, `pnpm-lock.yaml`, `package-lock.json`
+- task runner: `justfile`, `Makefile`, package scripts, repo scripts
+- validation path: tests, checks, lint, build, release artifact generation
+- release notes source: generated changelog, curated markdown file, GitHub release notes, conventional commits, or repo-specific template
+- publish mode: GitHub release, package registry publish, artifact upload, deploy, or manual handoff
+
+Ask the user only when the repo evidence does not determine a safe policy.
+
+## Tailoring Contract
+
+The deployed skill supplies the pattern. The target repo supplies the contract.
+
+Make the repo-local release process explicit about:
+
+- versioning scheme and whether the next version can be inferred
+- required version argument shape when inference is unsafe
+- release notes format and source, such as `--notes-file`, generated notes, or a checked-in template
+- files the runner may mutate, including manifests and lockfiles
+- validation commands that must pass before publishing
+- branch, clean-tree, tag, and remote requirements
+- final public-facing action, such as `gh release create`, registry publish, deploy, or manual stop point
+- dry-run behavior and read-only version query commands, when useful
+
+## Implementation Pattern
+
+Prefer the repo's existing task runner.
+
+If a `justfile` exists, prefer a `just cut-release` recipe backed by a checked-in script. Otherwise use the closest local convention, such as `scripts/cut-release.sh`, `make release`, or a package script.
+
+When creating or updating the workflow:
+
+- create or update a checked-in release runner
+- make `--dry-run` available for previewing the mutating sequence
+- add read-only version query flags when useful, such as `--print-current-version` and `--print-next-version`
+- route ordinary release requests through a `cut-release` execution skill when the repo wants agent routing
+- update local agent instructions so future sessions know which skill and runner to use
+- update release docs when the repo has a release document
+
+Keep the runner narrow and auditable. Do not hide broad automation behind prompts.
+
+## Forge Repo Contract
+
+When this skill is used inside Forge itself:
+
+- read `docs/release.md` before changing the release flow
 - prefer `just cut-release` as the default entrypoint
 - use `just cut-release --print-current-version` for a read-only current-version query
 - use `just cut-release --print-next-version` for a read-only next-version query
@@ -29,67 +85,19 @@ Forge-specific contract today:
 - the script owns `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
 - omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
 - the final publish step is `gh release create`
+- if the Forge release flow changes, update `scripts/cut-release.sh`, `docs/release.md`, `AGENTS.md`, this skill, and the `cut-release` skill together
 
-## Pattern
+## Output
 
-When a repo does not already have the release pattern in place:
+Leave behind:
 
-- inspect the repo to identify the package manager, version files, lockfiles, validation command, and release mode
-- create `scripts/` if it does not exist
-- create `.agents/skills/create-release-process/` if it does not exist
-- add a repo-local `scripts/cut-release.sh`
-- add or update the repo-local `.agents/skills/create-release-process/SKILL.md`
-- if ordinary release requests should route through a repo-local execution skill, add or update `.agents/skills/cut-release/SKILL.md`
-- add repo-local instructions in `AGENTS.md` that tell future agents when to use the maintenance skill, the execution skill, and the checked-in runner
+- the checked-in release runner or task recipe
+- local instructions describing maintenance vs. execution
+- release docs, if the repo has them
+- a clear note on dry-run, versioning, notes, validation, and publishing behavior
 
-The pattern should stay deterministic:
+## Safety
 
-- a checked-in script is the source of truth for the release flow
-- the maintenance skill updates the script, docs, and repo-local guidance
-- the execution skill routes ordinary release requests to that script instead of hand-built shell sequences
-- the script supports `--dry-run`
-- normal use is dry-run first, then real release
-- corrections to an already-published release stay explicit and manual
+Release workflows are public-facing. Prefer inspect, dry-run, diff, then apply.
 
-## Detection
-
-Decide the release process from repo evidence, not habit.
-
-Look for:
-
-- package manager and version source: `Cargo.toml`, `pyproject.toml`, `package.json`, workspace files
-- versioning scheme: semver, CalVer, date-based tags, or another documented repo-specific scheme
-- lockfiles: `Cargo.lock`, `uv.lock`, `pnpm-lock.yaml`, `package-lock.json`
-- task runner: `justfile`, `Makefile`, `package.json` scripts, repo scripts
-- release mode: checked-in script already exists, GitHub release is manual via `gh`, or the repo has another explicit release contract in docs
-
-If the repo already has a deterministic checked-in release process, refine it instead of replacing it.
-
-## Agent Instructions
-
-After creating the local release process, leave repo-local instructions that future agents can follow without rediscovering the workflow.
-
-Those instructions should say:
-
-- when to use the `create-release-process` skill
-- when to use the `cut-release` execution skill
-- which entrypoint to prefer: `just cut-release`, `./scripts/cut-release.sh`, or another repo wrapper
-- whether dry-run is required before the real release
-- which versioning scheme the repo uses and whether the script can infer the next version
-- which package manager and version files the script owns
-- whether the final publish step is `gh release create` or another explicit repo-local release action
-
-Working rules:
-
-- Prefer `just cut-release` as the default entrypoint when a `justfile` exists; otherwise use the checked-in repo wrapper that fits the repo.
-- Use this skill to maintain or repair the release workflow.
-- Use the `cut-release` skill to execute an ordinary release through the repo runner.
-- Use `--dry-run` before mutating when you need to verify the next version or the enforced sequence.
-- Use `--version <v>` whenever the repo contract does not make next-version inference deterministic.
-- Do not reconstruct the flow with separate bump, check, push, and `gh release create` commands unless you are explicitly correcting a previously published release.
-- If you change the release flow itself in Forge, update [docs/release.md](../../../docs/release.md), [AGENTS.md](../../../AGENTS.md), this skill, and the `cut-release` execution skill together.
-
-Safety:
-
-- `just cut-release` commits, pushes `main`, and creates a public GitHub release.
-- Corrections to an already-published tag or release stay explicit. Inspect the live tag, fix the repo state first, then recreate the release deliberately.
+Do not publish, push, tag, or upload packages while creating or repairing the workflow unless the user explicitly asks for an actual release.

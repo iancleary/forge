@@ -1659,6 +1659,8 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "forge-cli",
                 "autoresearch-create",
                 "autoresearch-finalize",
+                "create-release-process",
+                "cut-release",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -5143,6 +5145,8 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("learning-systems"),
         embedded_skill!("autoresearch-create"),
         embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
+        embedded_skill!("create-release-process"),
+        embedded_skill!("cut-release"),
         embedded_skill!("thinking-in-the-limit"),
         embedded_skill!("chrome-devtools-mcp"),
         embedded_skill!(
@@ -6665,6 +6669,18 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "autoresearch-finalize")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "create-release-process")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "cut-release")
         );
         assert!(
             contract
