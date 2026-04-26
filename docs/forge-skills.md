@@ -120,10 +120,10 @@ Checks:
 - skill directory exists
 - `SKILL.md` exists
 - frontmatter includes `name` and `description`
-- skill name matches folder name policy where applicable
+- frontmatter `name` matches the managed skill name, which is the repo folder name for repo-sourced skills
 - router references point to skills that exist in the current Forge source
 
-The intent is to keep the user-scope skill surface deterministic. Descriptions and router references are part of the maintained contract, not free-form text.
+The intent is to keep the user-scope skill surface deterministic. Codex App skill routing uses the frontmatter `name`, while Codex CLI routing uses the skill folder name, so Forge-managed skills keep those identifiers identical. Descriptions and router references are part of the maintained contract, not free-form text.
 
 ### `forge skills install`
 

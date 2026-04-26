@@ -1639,6 +1639,11 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             .with_context(|| format!("skill {} frontmatter invalid", def.name))?;
         if metadata.name.is_empty() {
             issues.push("frontmatter field `name` is required".to_string());
+        } else if metadata.name != def.name {
+            issues.push(format!(
+                "frontmatter field `name` must match managed skill name `{}`",
+                def.name
+            ));
         }
         if metadata.description.is_empty() {
             issues.push("frontmatter field `description` is required".to_string());
@@ -5114,9 +5119,25 @@ fn release_skills() -> &'static [EmbeddedSkill] {
                 "references/foundations.md",
                 "references/rendering.md",
                 "references/diagram-selection.md",
+                "references/examples.md",
                 "references/business-diagrams.md",
                 "references/technical-diagrams.md",
                 "references/authoring-models.md",
+                "examples/c4-context-basic.mmd",
+                "examples/class-basic.mmd",
+                "examples/flowchart-basic.mmd",
+                "examples/flowchart-styled.mmd",
+                "examples/gantt-basic.mmd",
+                "examples/gitgraph-basic.mmd",
+                "examples/journey-basic.mmd",
+                "examples/pie-basic.mmd",
+                "examples/sequence-basic.mmd",
+                "examples/sequence-blogging-app.mmd",
+                "examples/sequence-boxes-activation.mmd",
+                "examples/sequence-loops-alt-opt.mmd",
+                "examples/sequence-par-critical-break.mmd",
+                "examples/sequence-self-loop.mmd",
+                "examples/state-basic.mmd",
             ]
         ),
         embedded_skill!("learning-systems"),
@@ -6670,6 +6691,55 @@ EOF
         let release_names = release_skill_names();
 
         assert_eq!(contract_names, release_names);
+    }
+
+    #[test]
+    fn embedded_release_skill_frontmatter_names_match_release_names() {
+        for skill in load_release_skills() {
+            let body = String::from_utf8(
+                skill
+                    .files
+                    .get("SKILL.md")
+                    .expect("release skill has SKILL.md")
+                    .clone(),
+            )
+            .expect("release skill markdown is UTF-8");
+            let metadata = parse_skill_frontmatter(&body).expect("parse skill frontmatter");
+
+            assert_eq!(metadata.name, skill.name);
+        }
+    }
+
+    #[test]
+    fn skills_validate_rejects_frontmatter_name_mismatch() {
+        let repo_root = temp_path("skill-name-mismatch");
+        let skill_root = repo_root.join(".agents").join("skills").join("folder-name");
+        fs::create_dir_all(&skill_root).expect("create skill root");
+        fs::write(
+            skill_root.join("SKILL.md"),
+            "---\nname: display-name\ndescription: Test skill.\n---\n\nBody.\n",
+        )
+        .expect("write skill");
+
+        let result = skills_validate(SkillsValidateArgs {
+            skill: None,
+            all: true,
+            source: Some(SkillSourceArg::Repo),
+            repo_path: Some(repo_root.clone()),
+        })
+        .expect("validate skills");
+
+        assert!(!result.valid);
+        assert_eq!(result.skills.len(), 1);
+        assert_eq!(result.skills[0].name, "folder-name");
+        assert_eq!(
+            result.skills[0].issues,
+            vec![
+                "frontmatter field `name` must match managed skill name `folder-name`".to_string()
+            ]
+        );
+
+        let _ = fs::remove_dir_all(repo_root);
     }
 
     #[test]

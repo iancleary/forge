@@ -135,6 +135,7 @@ For Forge releases, the intended mapping is:
 
 Forge-managed skills should follow this trigger contract:
 
+- the frontmatter `name` must match the skill folder name so Codex App and Codex CLI explicit invocation use the same identifier
 - the frontmatter `description` is the primary trigger contract
 - the body should reinforce boundaries with concise "use this when" and "do not use this when" guidance when needed
 - router skills should mention the skills they route to by name
