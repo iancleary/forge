@@ -33,6 +33,7 @@ Initial Forge-managed skills:
 - `forge-tools`
 - `linear-cli`
 - `mermaid-diagrams`
+- `typst-documents`
 - `learning-systems`
 - `autoresearch-create`
 - `autoresearch-finalize`
