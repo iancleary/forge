@@ -12,6 +12,7 @@ Pick the narrowest CLI skill that matches the job:
 - `bytefield-diagrams`: author and render bytefield, packet-layout, and memory-layout SVG diagrams through `forge bytefield`.
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
 - `mermaid-diagrams`: text-first Mermaid authoring, diagram-type selection, and rendering through the Forge `mermaid` CLI.
+- `typst-documents`: source-first Typst PDF authoring, reusable document templates, and compile/build verification.
 - `slack-query-cli`: Slack permalink resolution, search, thread reads, and nearby message context.
 - `slack-agent-cli`: assistant-oriented Slack thread replies, reactions, file uploads, DMs, and channel joins.
 - `codex-threads-cli`: local Codex session sync, search, thread resolution, and event inspection.

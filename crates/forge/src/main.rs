@@ -1661,6 +1661,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "autoresearch-finalize",
                 "create-release-process",
                 "cut-release",
+                "typst-documents",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -5142,6 +5143,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
                 "examples/state-basic.mmd",
             ]
         ),
+        embedded_skill!("typst-documents"),
         embedded_skill!("learning-systems"),
         embedded_skill!("autoresearch-create"),
         embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
@@ -6693,6 +6695,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "chrome-devtools-mcp")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "typst-documents")
         );
     }
 

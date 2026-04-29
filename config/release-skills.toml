@@ -19,6 +19,9 @@ name = "linear-cli"
 name = "mermaid-diagrams"
 
 [[skills]]
+name = "typst-documents"
+
+[[skills]]
 name = "learning-systems"
 
 [[skills]]
