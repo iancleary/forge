@@ -1078,6 +1078,55 @@ struct ToolUpdatePlan {
     items: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolUpdateTarget {
+    Packages,
+    Rustup,
+    Uv,
+    UvTools,
+    CargoInstalls,
+    Gum,
+}
+
+const DEFAULT_TOOL_UPDATE_TARGETS: &[ToolUpdateTarget] = &[
+    ToolUpdateTarget::Packages,
+    ToolUpdateTarget::Rustup,
+    ToolUpdateTarget::Uv,
+    ToolUpdateTarget::UvTools,
+    ToolUpdateTarget::CargoInstalls,
+    ToolUpdateTarget::Gum,
+];
+
+impl ToolUpdateTarget {
+    #[cfg(test)]
+    fn id(self) -> &'static str {
+        match self {
+            ToolUpdateTarget::Packages => "packages",
+            ToolUpdateTarget::Rustup => "rustup",
+            ToolUpdateTarget::Uv => "uv",
+            ToolUpdateTarget::UvTools => "uv-tools",
+            ToolUpdateTarget::CargoInstalls => "cargo-installs",
+            ToolUpdateTarget::Gum => "gum",
+        }
+    }
+
+    fn from_raw(raw: &str) -> Result<Self> {
+        match raw {
+            "packages" | "package-manager" | "system" | "brew" | "homebrew" | "winget" => {
+                Ok(ToolUpdateTarget::Packages)
+            }
+            "rust" | "rustup" | "rust-toolchain" | "rust-toolchains" => {
+                Ok(ToolUpdateTarget::Rustup)
+            }
+            "uv" | "uv-self" => Ok(ToolUpdateTarget::Uv),
+            "uv-tools" | "uv-tool" => Ok(ToolUpdateTarget::UvTools),
+            "cargo" | "cargo-install" | "cargo-installs" => Ok(ToolUpdateTarget::CargoInstalls),
+            "gum" => Ok(ToolUpdateTarget::Gum),
+            other => bail!("unknown global tool updater: {other}"),
+        }
+    }
+}
+
 fn main() {
     let args = env::args_os().collect::<Vec<_>>();
     let wants_json = args.iter().any(|arg| arg.to_str() == Some("--json"));
@@ -1975,23 +2024,24 @@ fn tool_update(args: ToolUpdateArgs) -> Result<ToolUpdateResult> {
     let mut entries = Vec::new();
 
     for target in selected {
-        match target.as_str() {
-            "packages" => entries.push(run_tool_update_plan(
+        match target {
+            ToolUpdateTarget::Packages => entries.push(run_tool_update_plan(
                 tool_update_packages_plan(),
                 args.dry_run,
             )),
-            "rustup" => entries.push(run_tool_update_plan(
+            ToolUpdateTarget::Rustup => entries.push(run_tool_update_plan(
                 tool_update_rustup_plan(),
                 args.dry_run,
             )),
-            "uv" => entries.push(tool_update_uv(args.dry_run)),
-            "uv-tools" => entries.push(run_tool_update_plan(
+            ToolUpdateTarget::Uv => entries.push(tool_update_uv(args.dry_run)),
+            ToolUpdateTarget::UvTools => entries.push(run_tool_update_plan(
                 tool_update_uv_tools_plan(),
                 args.dry_run,
             )),
-            "cargo-installs" => entries.push(tool_update_cargo_installs(args.dry_run)),
-            "gum" => entries.push(tool_update_gum(args.dry_run)),
-            other => bail!("unknown global tool updater: {other}"),
+            ToolUpdateTarget::CargoInstalls => {
+                entries.push(tool_update_cargo_installs(args.dry_run))
+            }
+            ToolUpdateTarget::Gum => entries.push(tool_update_gum(args.dry_run)),
         }
     }
 
@@ -2003,40 +2053,19 @@ fn tool_update(args: ToolUpdateArgs) -> Result<ToolUpdateResult> {
     })
 }
 
-fn select_tool_update_targets(requested: &[String]) -> Result<Vec<String>> {
+fn select_tool_update_targets(requested: &[String]) -> Result<Vec<ToolUpdateTarget>> {
     if requested.is_empty() {
-        return Ok(vec![
-            "packages".to_string(),
-            "rustup".to_string(),
-            "uv".to_string(),
-            "uv-tools".to_string(),
-            "cargo-installs".to_string(),
-            "gum".to_string(),
-        ]);
+        return Ok(DEFAULT_TOOL_UPDATE_TARGETS.to_vec());
     }
 
     let mut selected = Vec::new();
     for item in requested {
-        let normalized = normalize_tool_update_target(item)?;
-        if !selected.contains(&normalized) {
-            selected.push(normalized);
+        let target = ToolUpdateTarget::from_raw(item)?;
+        if !selected.contains(&target) {
+            selected.push(target);
         }
     }
     Ok(selected)
-}
-
-fn normalize_tool_update_target(raw: &str) -> Result<String> {
-    match raw {
-        "packages" | "package-manager" | "system" | "brew" | "homebrew" | "winget" => {
-            Ok("packages".to_string())
-        }
-        "rust" | "rustup" | "rust-toolchain" | "rust-toolchains" => Ok("rustup".to_string()),
-        "uv" | "uv-self" => Ok("uv".to_string()),
-        "uv-tools" | "uv-tool" => Ok("uv-tools".to_string()),
-        "cargo" | "cargo-install" | "cargo-installs" => Ok("cargo-installs".to_string()),
-        "gum" => Ok("gum".to_string()),
-        other => bail!("unknown global tool updater: {other}"),
-    }
 }
 
 fn tool_update_summary(entries: &[ToolUpdateEntry]) -> ToolUpdateSummary {
@@ -7234,6 +7263,45 @@ mod tests {
         assert_eq!(gum[0].args, vec!["install", "gum"]);
         assert_eq!(gum[1].source, "go_install");
         assert_eq!(gum[1].args, vec!["install", GUM_GO_PACKAGE]);
+    }
+
+    #[test]
+    fn tool_update_target_selection_has_stable_order_and_alias_dedupe() {
+        let defaults = select_tool_update_targets(&[]).expect("default targets");
+        let ids = defaults
+            .iter()
+            .map(|target| target.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            vec![
+                "packages",
+                "rustup",
+                "uv",
+                "uv-tools",
+                "cargo-installs",
+                "gum"
+            ]
+        );
+
+        let requested = vec![
+            "brew".to_string(),
+            "packages".to_string(),
+            "rust".to_string(),
+            "uv-self".to_string(),
+            "uv-tools".to_string(),
+            "cargo".to_string(),
+            "cargo-installs".to_string(),
+        ];
+        let selected = select_tool_update_targets(&requested).expect("selected targets");
+        let ids = selected
+            .iter()
+            .map(|target| target.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            vec!["packages", "rustup", "uv", "uv-tools", "cargo-installs"]
+        );
     }
 
     #[test]
