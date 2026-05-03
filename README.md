@@ -17,11 +17,71 @@ This section is the primary path: using Forge as an installed tool on a machine.
 
 Recommended patterns:
 
-1. simplest bootstrap on a new machine
-2. deterministic bootstrap pinned to a specific release when needed
-3. steady-state updates through `forge self update-check` and `forge self update`
+1. platform bootstrap prerequisites
+2. simplest bootstrap on a new machine
+3. deterministic bootstrap pinned to a specific release when needed
+4. steady-state updates through `forge self update-check`, `forge self update`, and `forge tool update`
 
-### 1. Simplest Bootstrap
+### 1. Platform Bootstrap Prerequisites
+
+Install only the platform-level prerequisites first. The intended flow is:
+
+1. install the platform package manager where needed
+2. install Rust/Cargo through the official rustup bootstrap
+3. install Forge
+4. let Forge bootstrap the rest of the global tool surface
+5. use Forge for steady-state maintenance
+
+macOS preferred Homebrew bootstrap:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+if [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+brew --version
+```
+
+WinGet is Windows-only. On macOS, Homebrew is the platform package manager that `forge tool update packages` uses.
+
+macOS/Linux preferred Rust bootstrap:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+. "$HOME/.cargo/env"
+rustup default stable
+cargo --version
+```
+
+Prefer sourcing rustup's generated `~/.cargo/env` file from your shell startup file. It adds `~/.cargo/bin` only when needed.
+
+For zsh:
+
+```sh
+# load rustup and cargo
+[[ ! -f "$HOME/.cargo/env" ]] || source "$HOME/.cargo/env" 1>/dev/null
+```
+
+For bash or POSIX shell profiles:
+
+```sh
+# load rustup and cargo
+[ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+```
+
+Windows preferred:
+
+```powershell
+winget install -e --id Rustlang.Rustup
+rustup default stable
+cargo --version
+```
+
+On Windows, Rust source builds also need the MSVC linker and Windows SDK. If `cargo` reports missing MSVC build tools, install the Visual Studio C++ tools through WinGet before building Forge from source.
+
+### 2. Simplest Bootstrap
 
 Use `curl` as the bootstrap path on a new machine:
 
@@ -40,26 +100,19 @@ That installer:
 - installs Forge-managed skills into `~/.agents/skills` by default
 - installs the managed Codex baseline into `~/.codex/` by default
 
-### 2. Deterministic Bootstrap
-
-If you want a deterministic install pinned to a specific release:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260412.0.7/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
-```
-
-If you want the binaries but not the Codex baseline:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --skip-codex
-```
-
 After installation, a good first verification step is:
 
 ```sh
 forge doctor
 forge skills status
 forge codex diff
+```
+
+Then let Forge preview and apply the rest of the global tool bootstrap:
+
+```sh
+forge tool update --dry-run
+forge tool update
 ```
 
 If you want to verify a downloaded release archive against the published GitHub provenance attestation:
@@ -74,14 +127,34 @@ gh attestation verify ./forge-20260412.0.7-aarch64-apple-darwin.tar.gz \
 
 That command is the strictest and explicit check used for release artifact trust.
 
-### 3. Steady-State Updates
+### 3. Deterministic Bootstrap
+
+If you want a deterministic install pinned to a specific release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260412.0.7/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
+```
+
+If you want the binaries but not the Codex baseline:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --skip-codex
+```
+
+### 4. Steady-State Updates
 
 After bootstrap, prefer the Forge-managed update path:
 
 ```sh
 forge self update-check
 forge self update
+forge tool update --dry-run
+forge tool update
 ```
+
+Use `forge self update` for Forge itself and Forge-managed Codex assets. Use `forge tool update` for global tools owned outside the current project: the platform package manager, Rust toolchains through `rustup`, uv, uv-installed tools, cargo-installed commands, and `gum`.
+
+Project dependency updates are intentionally out of scope for `forge tool update`; keep those in each repo's own package manager or release workflow.
 
 In release mode, that path now:
 
@@ -113,6 +186,8 @@ The most common commands and their intent:
   compares the installed Forge version to the latest GitHub release.
 - `forge self update [--build-from-source]`
   updates Forge and managed assets when behind.
+- `forge tool update [--dry-run]`
+  updates global command-line tools through the platform package manager, rustup, uv, uv-installed tools, cargo-installed crates, and ensures `gum` is installed.
 - `forge version [--json] [--update]`  
   reports the current hash/version plus release state; `--update` runs `forge self update` directly when an update is available.
 - `forge skills install --all`  
@@ -145,6 +220,8 @@ Quick reference:
 forge doctor
 forge self update-check
 forge self update
+forge tool update --dry-run
+forge tool update
 forge version
 forge skills status
 forge codex diff

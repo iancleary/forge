@@ -16,6 +16,8 @@ Use these commands first:
 - `forge permissions fix --json`
 - `forge self update-check --json`
 - `forge self update --json`
+- `forge tool update --dry-run --json`
+- `forge tool update --json`
 - `forge skills status --json`
 - `forge codex diff --json`
 - `forge bytefield install --json`
@@ -29,6 +31,7 @@ Working rules:
 - Route to `bytefield-diagrams` when the request is specifically about authoring packet or memory-layout diagrams rather than general Forge administration.
 - Prefer `permissions check` before `permissions fix`.
 - Prefer `self update-check` before `self update`.
+- Use `tool update` only for globally installed command-line tools and tool-managed commands; it uses Homebrew on macOS/Linux and WinGet on Windows for platform package-manager work, runs `rustup update` for Rust toolchains, and maintains uv/cargo-installed commands. Do not use it for project dependencies, lockfiles, virtual environments, or repo-local package updates.
 - `skills status` defaults to `mainline` targets; use `--scope all` when debugging development installs.
 - Use `--force` on `self update-check` only when a fresh remote check is required.
 - Use `--repo-path` only when the repo is not in the expected configured location.
@@ -39,6 +42,7 @@ Safety:
 
 - `permissions fix` changes local file modes.
 - `self update` changes the local Forge install.
+- `tool update` can change globally installed commands, update Rust toolchains, and may install `gum` when it is missing.
 - `forge codex install` writes user-scoped Codex assets.
 - Do not run modifying commands unless the user asked for them or clearly approved the local mutation.
 
