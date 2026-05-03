@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tar::Archive;
 
+mod tool_update;
+
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const FORGE_REPO_URL: &str = "https://github.com/iancleary/forge";
 const DEFAULT_FORGE_REPO_INSTALL_SUBPATH: &str = ".agents/skills-installed";
@@ -166,6 +168,8 @@ enum Command {
         subcommand
     )]
     Skills(SkillsCommand),
+    #[command(about = "Update globally installed command-line tools", subcommand)]
+    Tool(ToolCommand),
     #[command(
         about = "Render, diff, and install Forge-managed Codex user config",
         subcommand
@@ -225,6 +229,12 @@ enum SkillsCommand {
         about = "Reinstall skills from the release source, switching back from repo-sourced testing"
     )]
     Revert(SkillsRevertArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum ToolCommand {
+    #[command(about = "Update known globally installed tools and tool-provided commands")]
+    Update(tool_update::UpdateArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -1138,6 +1148,10 @@ fn run(cli: Cli) -> Result<()> {
             emit_output(output, data, |data| {
                 format_skills_install_human("revert", data)
             })?;
+        }
+        Command::Tool(ToolCommand::Update(args)) => {
+            let data = tool_update::update(args)?;
+            emit_output(output, data, tool_update::format_human)?;
         }
         Command::Codex(CodexCommand::Render(args)) => {
             let data = codex_render(args)?;
@@ -4992,6 +5006,7 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
     let code = match message.as_str() {
         // Map common failures to stable machine-readable codes.
         msg if msg.contains("provide a skill name or --all") => "invalid_usage",
+        msg if msg.contains("unknown global tool updater:") => "invalid_usage",
         msg if msg.contains("invalid target:") || msg.contains("path target must be absolute:") => {
             "invalid_target"
         }
@@ -6636,6 +6651,19 @@ EOF
             .collect::<Vec<_>>();
 
         assert_eq!(contract_packages, installer_packages);
+    }
+
+    #[test]
+    fn release_installer_exposes_tool_bootstrap_handoff() {
+        let installer = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/install-forge-release.sh"
+        ));
+        assert!(installer.contains("--bootstrap-tools-dry-run"));
+        assert!(installer.contains("--bootstrap-tools"));
+        assert!(installer.contains("forge tool update --dry-run"));
+        assert!(installer.contains("forge tool update"));
+        assert!(installer.contains("FORGE_TOOL_UPDATE_MODE=\"$TOOL_UPDATE_MODE\""));
     }
 
     #[test]

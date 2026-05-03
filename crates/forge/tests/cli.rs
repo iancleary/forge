@@ -81,6 +81,36 @@ printf '%s\n' 'ok'
 "#
 }
 
+#[cfg(unix)]
+fn fake_tool_cargo_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+log="${FORGE_TEST_CARGO_LOG:-}"
+if [ "${1:-}" = "install" ] && [ "${2:-}" = "--list" ]; then
+  printf '%s\n' 'bat v0.25.0:'
+  printf '%s\n' '  bat'
+  printf '%s\n' 'ripgrep v14.1.1:'
+  printf '%s\n' '  rg'
+  exit 0
+fi
+if [ -n "$log" ]; then
+  printf '%s\n' "$*" > "$log"
+fi
+printf '%s\n' 'updated'
+"#
+}
+
+#[cfg(unix)]
+fn fake_tool_success_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+if [ -n "${FORGE_TEST_TOOL_LOG:-}" ]; then
+  printf '%s\n' "$0 $*" >> "$FORGE_TEST_TOOL_LOG"
+fi
+printf '%s\n' 'ok'
+"#
+}
+
 #[test]
 fn cli_install_and_status_use_mainline_user_target() {
     let root = temp_path("install-status");
@@ -303,6 +333,201 @@ fn cli_self_update_rejects_repo_mode_flags() {
             .as_str()
             .unwrap_or("")
             .contains("unexpected argument '--repo-path'")
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_tool_update_dry_run_reports_global_commands() {
+    let root = temp_path("tool-update-dry-run");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let fake_cargo = root.join("fake-cargo");
+    let fake_uv = root.join("fake-uv");
+    let fake_rustup = root.join("fake-rustup");
+    let fake_brew = root.join("fake-brew");
+    let missing_gum = root.join("missing-gum");
+    write_executable_script(&fake_cargo, fake_tool_cargo_script());
+    write_executable_script(&fake_uv, fake_tool_success_script());
+    write_executable_script(&fake_rustup, fake_tool_success_script());
+    write_executable_script(&fake_brew, fake_tool_success_script());
+    let fake_cargo_str = fake_cargo.to_string_lossy().into_owned();
+    let fake_uv_str = fake_uv.to_string_lossy().into_owned();
+    let fake_rustup_str = fake_rustup.to_string_lossy().into_owned();
+    let fake_brew_str = fake_brew.to_string_lossy().into_owned();
+    let missing_gum_str = missing_gum.to_string_lossy().into_owned();
+
+    let output = run_forge_with_env(
+        &["--json", "tool", "update", "--dry-run"],
+        &config_dir,
+        &home_dir,
+        &[
+            ("FORGE_TOOL_UPDATE_CARGO_BIN", fake_cargo_str.as_str()),
+            ("FORGE_TOOL_UPDATE_UV_BIN", fake_uv_str.as_str()),
+            ("FORGE_TOOL_UPDATE_RUSTUP_BIN", fake_rustup_str.as_str()),
+            ("FORGE_TOOL_UPDATE_BREW_BIN", fake_brew_str.as_str()),
+            ("FORGE_TOOL_UPDATE_GUM_BIN", missing_gum_str.as_str()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let body: Value = serde_json::from_str(stdout.trim()).expect("tool update json");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["data"]["dry_run"], true);
+    assert_eq!(body["data"]["summary"]["planned"], 6);
+
+    let entries = body["data"]["entries"].as_array().expect("entries array");
+    let ids = entries
+        .iter()
+        .map(|entry| entry["id"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        vec![
+            "packages",
+            "rustup",
+            "uv",
+            "uv-tools",
+            "cargo-installs",
+            "gum"
+        ]
+    );
+    assert_eq!(entries[0]["source"].as_str(), Some("homebrew"));
+    assert_eq!(
+        entries[1]["command"].as_array().unwrap()[0].as_str(),
+        Some(fake_rustup_str.as_str())
+    );
+    assert_eq!(
+        entries[1]["command"].as_array().unwrap()[1].as_str(),
+        Some("update")
+    );
+    assert_eq!(
+        entries[2]["env"].as_array().unwrap()[0].as_str(),
+        Some("UV_NO_MODIFY_PATH=1")
+    );
+    assert_eq!(entries[2]["source"].as_str(), Some("uv_self"));
+    assert_eq!(
+        entries[4]["command"].as_array().unwrap()[0].as_str(),
+        Some(fake_cargo_str.as_str())
+    );
+    assert!(
+        entries[4]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.as_str() == Some("bat"))
+    );
+    assert!(
+        entries[4]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.as_str() == Some("ripgrep"))
+    );
+    assert_eq!(
+        entries[5]["command"].as_array().unwrap()[1].as_str(),
+        Some("install")
+    );
+    assert_eq!(
+        entries[5]["command"].as_array().unwrap()[2].as_str(),
+        Some("gum")
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_tool_update_cargo_installs_runs_parsed_packages() {
+    let root = temp_path("tool-update-cargo");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let fake_cargo = root.join("fake-cargo");
+    let log_path = root.join("cargo.log");
+    write_executable_script(&fake_cargo, fake_tool_cargo_script());
+    let fake_cargo_str = fake_cargo.to_string_lossy().into_owned();
+    let log_path_str = log_path.to_string_lossy().into_owned();
+
+    let output = run_forge_with_env(
+        &["--json", "tool", "update", "cargo-installs"],
+        &config_dir,
+        &home_dir,
+        &[
+            ("FORGE_TOOL_UPDATE_CARGO_BIN", fake_cargo_str.as_str()),
+            ("FORGE_TEST_CARGO_LOG", log_path_str.as_str()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let body: Value = serde_json::from_str(stdout.trim()).expect("tool update json");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["data"]["summary"]["succeeded"], 1);
+    assert_eq!(
+        fs::read_to_string(&log_path).expect("read cargo log"),
+        "install bat ripgrep\n"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_tool_update_gum_installs_when_missing() {
+    let root = temp_path("tool-update-gum");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let fake_brew = root.join("fake-brew");
+    let missing_gum = root.join("missing-gum");
+    let log_path = root.join("tool.log");
+    write_executable_script(&fake_brew, fake_tool_success_script());
+    let fake_brew_str = fake_brew.to_string_lossy().into_owned();
+    let missing_gum_str = missing_gum.to_string_lossy().into_owned();
+    let log_path_str = log_path.to_string_lossy().into_owned();
+
+    let output = run_forge_with_env(
+        &["--json", "tool", "update", "gum"],
+        &config_dir,
+        &home_dir,
+        &[
+            ("FORGE_TOOL_UPDATE_BREW_BIN", fake_brew_str.as_str()),
+            ("FORGE_TOOL_UPDATE_GUM_BIN", missing_gum_str.as_str()),
+            ("FORGE_TEST_TOOL_LOG", log_path_str.as_str()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let body: Value = serde_json::from_str(stdout.trim()).expect("tool update json");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["data"]["summary"]["succeeded"], 1);
+    assert_eq!(
+        fs::read_to_string(&log_path).expect("read tool log"),
+        format!("{fake_brew_str} install gum\n")
     );
 
     let _ = fs::remove_dir_all(root);

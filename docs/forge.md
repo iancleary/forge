@@ -130,6 +130,79 @@ Important boundary:
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
 
+### Release Installer Tool Bootstrap
+
+```sh
+scripts/install-forge-release.sh [--bootstrap-tools-dry-run|--bootstrap-tools]
+```
+
+The release installer can hand off to `forge tool update` after Forge itself, managed skills, and optional Codex assets are installed.
+
+Behavior:
+
+- default installer behavior does not run global tool maintenance
+- `--bootstrap-tools-dry-run` runs `forge tool update --dry-run` after install
+- `--bootstrap-tools` runs `forge tool update` after install
+- both modes preserve the `forge tool update` boundary: no project dependencies, manifests, lockfiles, virtual environments, or repo-local package state are updated
+- installer handoff to the pinned release installer preserves the selected tool-bootstrap mode
+
+### `forge tool update`
+
+```sh
+forge tool update [tool]... [--dry-run] [--json]
+```
+
+Updates global command-line tools and installed command surfaces owned outside the current project.
+
+Default targets:
+
+- `packages`: runs the platform package-manager update:
+  - macOS/Linux: `brew upgrade`
+  - Windows: `winget upgrade --all --accept-package-agreements --accept-source-agreements`
+- `rustup`: runs `rustup update` to update installed Rust toolchains
+- `uv`: runs `UV_NO_MODIFY_PATH=1 uv self update` when `uv` is already on `PATH`; if missing, installs via uv's standalone installer
+- `uv-tools`: runs `uv tool upgrade --all`
+- `cargo-installs`: reads `cargo install --list`, extracts top-level installed crate names, then runs `cargo install <crate>...`
+- `gum`: ensures the `gum` command exists; if missing, installs from Homebrew on macOS/Linux, from WinGet on Windows, and can fall back to `go install github.com/charmbracelet/gum@latest` where appropriate
+
+Install/update sources:
+
+| Target | macOS/Linux | Windows |
+| --- | --- | --- |
+| `packages` | Homebrew (`brew upgrade`) | WinGet (`winget upgrade --all`) |
+| `rustup` | Rustup toolchains (`rustup update`) | Rustup toolchains (`rustup update`) |
+| `uv` | existing uv self-update, otherwise standalone installer (`curl -LsSf https://astral.sh/uv/install.sh \| sh`) | existing uv self-update, otherwise standalone installer (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"`) |
+| `uv-tools` | uv tool manager (`uv tool upgrade --all`) | uv tool manager (`uv tool upgrade --all`) |
+| `cargo-installs` | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) |
+| `gum` | Homebrew first, Go install fallback | WinGet (`winget install --id charmbracelet.gum -e`) |
+
+Behavior:
+
+- does not inspect or mutate the current repo's project dependencies, manifests, lockfiles, virtual environments, or `node_modules`
+- each target returns an entry with `source` and `planned`, `skipped`, `succeeded`, or `failed`
+- `--dry-run` shows the planned global commands without running mutating update/install commands
+- unknown requested targets fail as invalid usage
+- `uv self update` can fail when uv was installed through a package manager; that failure is reported as a target result rather than rewritten into a project dependency update
+
+Examples:
+
+```sh
+# Preview global tool maintenance
+forge tool update --dry-run
+
+# Run all default global updates
+forge tool update
+
+# Only update Rust toolchains, cargo-installed crates, and uv-installed tools
+forge tool update rustup cargo-installs uv-tools
+
+# Run only the platform package-manager update
+forge tool update packages
+
+# Ensure gum is installed
+forge tool update gum
+```
+
 ### `forge version`
 
 ```sh

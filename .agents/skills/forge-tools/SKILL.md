@@ -16,7 +16,7 @@ Pick the narrowest CLI skill that matches the job:
 - `slack-query-cli`: Slack permalink resolution, search, thread reads, and nearby message context.
 - `slack-agent-cli`: assistant-oriented Slack thread replies, reactions, file uploads, DMs, and channel joins.
 - `codex-threads-cli`: local Codex session sync, search, thread resolution, and event inspection.
-- `forge-cli`: local Forge config, permission checks, self-update commands, and managed-surface deployment.
+- `forge-cli`: local Forge config, permission checks, self-update commands, global tool updates, and managed-surface deployment.
 - `autoresearch-create`: start an autonomous experiment loop for measurable optimization work.
 - `autoresearch-finalize`: turn an autoresearch branch into clean, reviewable branches.
 - `create-release-process`: create, audit, or update a repo-local release workflow that future releases can execute deterministically.

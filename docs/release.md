@@ -176,6 +176,7 @@ That script:
 - falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
+- can explicitly hand off to global tool bootstrap with `--bootstrap-tools-dry-run` or `--bootstrap-tools`
 
 Deterministic install:
 
