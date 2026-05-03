@@ -100,6 +100,8 @@ mod tests {
             "uv-installed tools",
             "cargo-installed commands",
             "`gum`",
+            "--bootstrap-tools-dry-run",
+            "--bootstrap-tools",
             "Project dependency updates are intentionally out of scope",
         ] {
             assert!(readme.contains(expected), "README.md missing `{expected}`");

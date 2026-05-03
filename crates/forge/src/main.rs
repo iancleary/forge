@@ -6654,6 +6654,19 @@ EOF
     }
 
     #[test]
+    fn release_installer_exposes_tool_bootstrap_handoff() {
+        let installer = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/install-forge-release.sh"
+        ));
+        assert!(installer.contains("--bootstrap-tools-dry-run"));
+        assert!(installer.contains("--bootstrap-tools"));
+        assert!(installer.contains("forge tool update --dry-run"));
+        assert!(installer.contains("forge tool update"));
+        assert!(installer.contains("FORGE_TOOL_UPDATE_MODE=\"$TOOL_UPDATE_MODE\""));
+    }
+
+    #[test]
     fn embedded_release_skills_contract_is_valid() {
         let contract = release_skills_contract().expect("parse embedded release skills contract");
         assert_eq!(contract.version, 1);

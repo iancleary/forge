@@ -115,6 +115,19 @@ forge tool update --dry-run
 forge tool update
 ```
 
+For a one-step Forge install plus global tool handoff, use an explicit installer mode:
+
+```sh
+# Install Forge, then preview global tool bootstrap
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --bootstrap-tools-dry-run
+
+# After reviewing the preview
+forge tool update
+
+# Install Forge, then run global tool bootstrap
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --bootstrap-tools
+```
+
 If you want to verify a downloaded release archive against the published GitHub provenance attestation:
 
 ```sh

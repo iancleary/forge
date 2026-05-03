@@ -130,6 +130,22 @@ Important boundary:
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
 
+### Release Installer Tool Bootstrap
+
+```sh
+scripts/install-forge-release.sh [--bootstrap-tools-dry-run|--bootstrap-tools]
+```
+
+The release installer can hand off to `forge tool update` after Forge itself, managed skills, and optional Codex assets are installed.
+
+Behavior:
+
+- default installer behavior does not run global tool maintenance
+- `--bootstrap-tools-dry-run` runs `forge tool update --dry-run` after install
+- `--bootstrap-tools` runs `forge tool update` after install
+- both modes preserve the `forge tool update` boundary: no project dependencies, manifests, lockfiles, virtual environments, or repo-local package state are updated
+- installer handoff to the pinned release installer preserves the selected tool-bootstrap mode
+
 ### `forge tool update`
 
 ```sh

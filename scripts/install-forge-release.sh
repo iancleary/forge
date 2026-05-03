@@ -10,6 +10,7 @@ RELEASE_DOWNLOAD_URL="${REPO_URL}/releases/download"
 REF="${FORGE_TAG:-}"
 INSTALL_CODEX=1
 BUILD_FROM_SOURCE=0
+TOOL_UPDATE_MODE="${FORGE_TOOL_UPDATE_MODE:-none}"
 ATTESTATION_FAILURE_MODE="${ATTESTATION_FAILURE_MODE:-prompt}"
 
 usage() {
@@ -23,13 +24,21 @@ tagged source build with `cargo` and `git` (source build only).
 
 Usage:
   install-forge-release.sh [--tag <release-tag>] [--skip-codex] [--build-from-source]
+  install-forge-release.sh [--bootstrap-tools|--bootstrap-tools-dry-run]
   install-forge-release.sh [--attestation-failure <prompt|source|fail>]
 
 Examples:
   install-forge-release.sh
   install-forge-release.sh --tag 20260412.0.7
   install-forge-release.sh --tag 20260412.0.7 --build-from-source
+  install-forge-release.sh --bootstrap-tools-dry-run
+  install-forge-release.sh --bootstrap-tools
   install-forge-release.sh --attestation-failure fail
+
+Tool bootstrap:
+  --bootstrap-tools-dry-run installs Forge, then runs `forge tool update --dry-run`.
+  --bootstrap-tools installs Forge, then runs `forge tool update`.
+  Neither mode updates project dependencies, manifests, lockfiles, or virtual environments.
 EOF
 }
 
@@ -223,8 +232,12 @@ handoff_to_tagged_installer() {
   [ -n "$REF" ] && set -- "$@" --tag "$REF"
   [ "$INSTALL_CODEX" -eq 0 ] && set -- "$@" --skip-codex
   [ "$BUILD_FROM_SOURCE" -eq 1 ] && set -- "$@" --build-from-source
+  case "$TOOL_UPDATE_MODE" in
+    dry-run) set -- "$@" --bootstrap-tools-dry-run ;;
+    apply) set -- "$@" --bootstrap-tools ;;
+  esac
 
-  ATTESTATION_FAILURE_MODE="$ATTESTATION_FAILURE_MODE" FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" \
+  ATTESTATION_FAILURE_MODE="$ATTESTATION_FAILURE_MODE" FORGE_TOOL_UPDATE_MODE="$TOOL_UPDATE_MODE" FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" \
     exec "$installer_path" "$@"
 }
 
@@ -340,6 +353,14 @@ while [ "$#" -gt 0 ]; do
       BUILD_FROM_SOURCE=1
       shift
       ;;
+    --bootstrap-tools-dry-run)
+      TOOL_UPDATE_MODE=dry-run
+      shift
+      ;;
+    --bootstrap-tools)
+      TOOL_UPDATE_MODE=apply
+      shift
+      ;;
     --attestation-failure)
       [ "$#" -ge 2 ] || die "missing value for --attestation-failure"
       ATTESTATION_FAILURE_MODE="$2"
@@ -361,6 +382,14 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+case "$TOOL_UPDATE_MODE" in
+  none|dry-run|apply)
+    ;;
+  *)
+    die "invalid FORGE_TOOL_UPDATE_MODE: $TOOL_UPDATE_MODE (expected none|dry-run|apply)"
+    ;;
+esac
 
 if [ -z "$REF" ]; then
   REF="$(resolve_latest_tag)"
@@ -401,5 +430,16 @@ if [ "$INSTALL_CODEX" -eq 1 ]; then
   echo "Installing Forge-managed Codex user config into ~/.codex"
   forge codex install
 fi
+
+case "$TOOL_UPDATE_MODE" in
+  dry-run)
+    echo "Previewing global tool bootstrap with forge tool update --dry-run"
+    forge tool update --dry-run
+    ;;
+  apply)
+    echo "Bootstrapping global tools with forge tool update"
+    forge tool update
+    ;;
+esac
 
 echo "Forge install complete."
