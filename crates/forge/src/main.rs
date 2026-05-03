@@ -1150,7 +1150,7 @@ fn run(cli: Cli) -> Result<()> {
             })?;
         }
         Command::Tool(ToolCommand::Update(args)) => {
-            let data = tool_update::update(args)?;
+            let data = tool_update::update(args, output)?;
             emit_output(output, data, tool_update::format_human)?;
         }
         Command::Codex(CodexCommand::Render(args)) => {

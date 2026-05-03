@@ -182,6 +182,7 @@ Behavior:
 - each target returns an entry with `source` and `planned`, `skipped`, `succeeded`, or `failed`
 - `--dry-run` shows the planned global commands without running mutating update/install commands
 - unknown requested targets fail as invalid usage
+- in human mode, `forge tool update` shows a spinner while each selected global update target is in progress
 - `uv self update` can fail when uv was installed through a package manager; that failure is reported as a target result rather than rewritten into a project dependency update
 
 Examples:

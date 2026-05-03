@@ -8,7 +8,10 @@ use std::{
 
 use anyhow::Result;
 use clap::Args;
+use cli_core::OutputMode;
 use serde::Serialize;
+
+use crate::UpdateProgress;
 
 mod catalog;
 
@@ -69,12 +72,20 @@ struct Plan {
     items: Vec<String>,
 }
 
-pub(crate) fn update(args: UpdateArgs) -> Result<UpdateResult> {
+pub(crate) fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let requested = args.tool.clone();
     let selected = select_targets(&requested)?;
+    let total_steps = selected.len();
+    let progress = UpdateProgress::new(output);
     let mut entries = Vec::new();
 
-    for target in selected {
+    for (index, target) in selected.into_iter().enumerate() {
+        progress.step(format!(
+            "[{}/{}] {}",
+            index + 1,
+            total_steps,
+            target_progress_message(target, args.dry_run)
+        ));
         match target {
             Target::Packages => entries.push(run_plan(packages_plan(), args.dry_run)),
             Target::Rustup => entries.push(run_plan(rustup_plan(), args.dry_run)),
@@ -106,6 +117,28 @@ fn select_targets(requested: &[String]) -> Result<Vec<Target>> {
         }
     }
     Ok(selected)
+}
+
+fn target_progress_message(target: Target, dry_run: bool) -> &'static str {
+    if dry_run {
+        return match target {
+            Target::Packages => "Planning package-manager updates",
+            Target::Rustup => "Planning Rust toolchain updates",
+            Target::Uv => "Planning uv update",
+            Target::UvTools => "Planning uv-installed tool updates",
+            Target::CargoInstalls => "Planning cargo-installed binary updates",
+            Target::Gum => "Planning gum command install",
+        };
+    }
+
+    match target {
+        Target::Packages => "Updating package-manager packages",
+        Target::Rustup => "Updating Rust toolchains",
+        Target::Uv => "Updating uv",
+        Target::UvTools => "Updating uv-installed tools",
+        Target::CargoInstalls => "Updating cargo-installed binaries",
+        Target::Gum => "Ensuring gum command is installed",
+    }
 }
 
 fn summary(entries: &[Entry]) -> Summary {
