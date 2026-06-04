@@ -84,10 +84,10 @@ Committed single change:
 <autoreview-helper> --mode commit --commit HEAD
 ```
 
-or with the helper:
+or with the installed-user helper:
 
 ```bash
-/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --mode commit --commit HEAD
+${HOME}/.agents/skills/autoreview/scripts/autoreview --mode commit --commit HEAD
 ```
 
 Use commit review for already-landed or already-pushed work on `main`. Reviewing
@@ -151,10 +151,10 @@ OpenClaw repo-local helper:
 .agents/skills/autoreview/scripts/autoreview --help
 ```
 
-`agent-scripts` checkout helper:
+Forge checkout helper:
 
 ```bash
-skills/autoreview/scripts/autoreview --help
+.agents/skills/autoreview/scripts/autoreview --help
 ```
 
 On native Windows, invoke the extensionless Python helper through Python:
@@ -173,16 +173,16 @@ skills/autoreview/scripts/test-review-harness --fixture benign --engine codex
 skills\autoreview\scripts\test-review-harness.ps1 -Fixture benign -Engine codex
 ```
 
-Global helper from `agent-scripts`:
+Installed-user helper:
 
 ```bash
-~/.codex/skills/agent-scripts/autoreview/scripts/autoreview --help
+${HOME}/.agents/skills/autoreview/scripts/autoreview --help
 ```
 
-If installed from `agent-scripts`, path is:
+If you need an explicit local Forge checkout path for Ian's default setup, use:
 
 ```bash
-/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --help
+/Users/iancleary/Development/forge/.agents/skills/autoreview/scripts/autoreview --help
 ```
 
 The helper:
