@@ -1665,6 +1665,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
         if def.name == "forge-tools" {
             for required in [
                 "design-algorithm",
+                "effective-loop-writer",
                 "linear-cli",
                 "mermaid-diagrams",
                 "slack-query-cli",
@@ -5128,6 +5129,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
     &[
         embedded_skill!("forge-tools"),
         embedded_skill!("design-algorithm"),
+        embedded_skill!("effective-loop-writer"),
         embedded_skill!("bytefield-diagrams"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
@@ -6675,6 +6677,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "forge-tools")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "effective-loop-writer")
         );
         assert!(
             contract

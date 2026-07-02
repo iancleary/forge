@@ -1,6 +1,6 @@
 ---
 name: forge-tools
-description: Route Codex to the right Forge CLI skill for Linear, Slack retrieval or assistant actions, Codex session retrieval, or local Forge management. Use when a task may involve more than one Forge CLI or when the correct CLI is not obvious yet.
+description: Route Codex to the right Forge CLI or workflow skill for Linear, Slack retrieval or assistant actions, Codex session retrieval, loop design, or local Forge management. Use when a task may involve more than one Forge skill or when the correct narrow skill is not obvious yet.
 ---
 
 # Forge Tools
@@ -19,6 +19,7 @@ Pick the narrowest CLI skill that matches the job:
 - `forge-cli`: local Forge config, permission checks, self-update commands, global tool updates, and managed-surface deployment.
 - `autoresearch-create`: start an autonomous experiment loop for measurable optimization work.
 - `autoresearch-finalize`: turn an autoresearch branch into clean, reviewable branches.
+- `effective-loop-writer`: interview the human and scaffold a restartable file-backed loop under `loops/`.
 - `create-release-process`: create, audit, or update a repo-local release workflow that future releases can execute deterministically.
 - `cut-release`: execute an existing repo-local release workflow by running the checked-in release runner.
 - `chrome-devtools-mcp`: Codex MCP setup and live Chrome debugging with console/network/DOM/trace inspection.
@@ -27,6 +28,7 @@ Pick the narrowest CLI skill that matches the job:
 Default operating rules:
 
 - Use `design-algorithm` when the user is shaping a feature, debating command surface, or deciding whether recurring shell work should become a Forge primitive.
+- Use `effective-loop-writer` when the user wants to design or scaffold an unattended loop, generator-evaluator workflow, overnight agent procedure, or reusable loop artifact.
 - Use `create-release-process` for release workflow maintenance and `cut-release` for ordinary release execution after the workflow exists.
 - Prefer the crate-specific skill once the target CLI is clear.
 - Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
