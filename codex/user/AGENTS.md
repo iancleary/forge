@@ -95,6 +95,7 @@ Ask first:
 - Treat skill `description` frontmatter as the primary routing contract.
 - Use router skills first when the right narrow skill is not obvious.
 - Prefer user-scoped skills installed under `~/.agents/skills` for portable cross-repo behavior.
+- Use `effective-loop-writer` when a user asks to design, scaffold, or improve an unattended restartable agent loop; it should produce file-backed `loops/<name>/` artifacts with role boundaries, contract, state, restart policy, rubric, traces, deletion criteria, and the current bottleneck.
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
 - Distinguish workflow-maintenance skills from executable repo commands: if a repo already has a documented task runner or checked-in script for the actual job, use that command for ordinary execution and use the skill only when creating, auditing, or changing the workflow.
 - In repos like Forge, that means `create-release-process` maintains the release workflow, while the `cut-release` skill executes the workflow by calling `just cut-release`.
