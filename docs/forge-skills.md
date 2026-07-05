@@ -38,6 +38,7 @@ Initial Forge-managed skills:
 - `learning-systems`
 - `autoresearch-create`
 - `autoresearch-finalize`
+- `autoreview`
 - `create-release-process`
 - `cut-release`
 - `thinking-in-the-limit`

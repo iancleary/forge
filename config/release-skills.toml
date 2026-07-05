@@ -35,6 +35,9 @@ legacy_names = ["pi-autoresearch"]
 name = "autoresearch-finalize"
 
 [[skills]]
+name = "autoreview"
+
+[[skills]]
 name = "create-release-process"
 
 [[skills]]

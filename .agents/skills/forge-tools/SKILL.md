@@ -20,6 +20,7 @@ Pick the narrowest CLI skill that matches the job:
 - `autoresearch-create`: start an autonomous experiment loop for measurable optimization work.
 - `autoresearch-finalize`: turn an autoresearch branch into clean, reviewable branches.
 - `effective-loop-writer`: interview the human and scaffold a restartable file-backed loop under `loops/`.
+- `autoreview`: run structured Codex-first or optional Claude code review as a closeout check before commit, PR update, or ship.
 - `create-release-process`: create, audit, or update a repo-local release workflow that future releases can execute deterministically.
 - `cut-release`: execute an existing repo-local release workflow by running the checked-in release runner.
 - `chrome-devtools-mcp`: Codex MCP setup and live Chrome debugging with console/network/DOM/trace inspection.

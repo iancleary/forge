@@ -1672,6 +1672,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "slack-agent-cli",
                 "codex-threads-cli",
                 "forge-cli",
+                "autoreview",
                 "autoresearch-create",
                 "autoresearch-finalize",
                 "create-release-process",
@@ -5164,6 +5165,15 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("learning-systems"),
         embedded_skill!("autoresearch-create"),
         embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
+        embedded_skill!(
+            "autoreview",
+            files = [
+                "scripts/autoreview",
+                "scripts/test-review-harness",
+                "scripts/test-review-harness.ps1",
+                "scripts/test-review-harness.py",
+            ]
+        ),
         embedded_skill!("create-release-process"),
         embedded_skill!("cut-release"),
         embedded_skill!("thinking-in-the-limit"),
@@ -6707,6 +6717,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "autoresearch-finalize")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "autoreview")
         );
         assert!(
             contract
