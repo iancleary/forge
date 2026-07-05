@@ -51,6 +51,7 @@ Current Forge-managed skills:
 - `cut-release`
 - `thinking-in-the-limit`
 - `chrome-devtools-mcp`
+- `webwright`
 - `schemdraw`
 - `slack-query-cli`
 - `slack-agent-cli`

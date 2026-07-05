@@ -32,6 +32,7 @@ Pick the narrowest CLI skill that matches the job:
 - `create-release-process`: create, audit, or update a repo-local release workflow that future releases can execute deterministically.
 - `cut-release`: execute an existing repo-local release workflow by running the checked-in release runner.
 - `chrome-devtools-mcp`: Codex MCP setup and live Chrome debugging with console/network/DOM/trace inspection.
+- `webwright`: live web task automation through local Playwright scripts, screenshots, logs, and reusable `final_script.py` artifacts.
 - `design-algorithm`: shaping and scope-reduction workflow for deciding what should exist before building or automating it.
 
 Default operating rules:
@@ -46,6 +47,7 @@ Default operating rules:
 - Use `documentation-and-adrs` when the change updates durable workflow, command, or architecture knowledge.
 - Use `effective-loop-writer` when the user wants to design or scaffold an unattended loop, generator-evaluator workflow, overnight agent procedure, or reusable loop artifact.
 - Use `create-release-process` for release workflow maintenance and `cut-release` for ordinary release execution after the workflow exists.
+- Use `webwright` when the user asks Codex to complete or craft a reusable live web workflow with screenshot evidence; use `chrome-devtools-mcp` instead when the job is debugging an app through console, network, DOM, screenshot, or trace inspection.
 - Prefer the crate-specific skill once the target CLI is clear.
 - Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.

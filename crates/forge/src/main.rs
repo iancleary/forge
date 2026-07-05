@@ -5290,6 +5290,15 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("thinking-in-the-limit"),
         embedded_skill!("chrome-devtools-mcp"),
         embedded_skill!(
+            "webwright",
+            files = [
+                "reference/playwright_patterns.md",
+                "reference/workflow.md",
+                "reference/cli_tool_mode.md",
+                "THIRD_PARTY_NOTICES.md"
+            ]
+        ),
+        embedded_skill!(
             "schemdraw",
             files = [
                 "references/schemdraw.md",
@@ -6976,6 +6985,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "chrome-devtools-mcp")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "webwright")
         );
         assert!(
             contract
