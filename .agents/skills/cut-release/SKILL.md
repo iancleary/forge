@@ -54,12 +54,25 @@ Use read-only version query commands when available instead of parsing manifests
 
 Do not reconstruct the flow with separate version bump, check, push, tag, and publish commands unless the user is explicitly repairing a release outside the normal path.
 
+## GitHub Auth Boundary
+
+Run every `gh auth ...` command outside the sandbox. The sandbox can hide or misreport keyring-backed GitHub credentials, so a sandboxed auth failure is not authoritative.
+
+- `gh auth status`
+- `gh auth login`
+- `gh auth refresh`
+
+For release work, check GitHub CLI auth with an outside-sandbox `gh auth status` before treating auth as missing or broken. Run other release commands outside the sandbox only when they need Git metadata writes, network access, public mutation, or keyring-backed credentials in the current environment.
+
+Repo-local release runners are allowed to vary, especially outside Forge. Do not assume another repo's release runner matches Forge's `scripts/cut-release.sh`. Before executing a runner, inspect the entrypoint and directly delegated helper scripts for `gh auth`. If the runner calls `gh auth`, may call it through an uninspected helper, or is too opaque to verify, run the whole runner outside the sandbox to avoid a hidden sandboxed auth failure.
+
 ## Forge Repo Contract
 
 When this skill is used inside Forge itself:
 
 - read `docs/release.md` if you need the full contract
 - inspect git state and confirm the repo is on the intended branch
+- run `gh auth ...` checks outside the sandbox before treating GitHub CLI auth failures as blockers
 - prefer `just cut-release` as the entrypoint
 - prefer `just cut-release --dry-run` before the real release when validating the next version or sequence
 - use `just cut-release --print-current-version` for a read-only current-version query
