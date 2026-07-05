@@ -92,5 +92,6 @@ Current imported or adapted sources:
 
 - `steipete/agent-scripts`: operational helper and review patterns, especially `autoreview`
 - `addyosmani/agent-skills`: engineering workflow patterns, adapted into compact Forge-managed skills
+- `microsoft/Webwright`: Webwright browser-task skill and reference workflow, adapted into a Forge-managed skill snapshot
 
 Do not assume future upstream changes are automatically accepted. Re-run the intake review for each update.
