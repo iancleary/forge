@@ -25,19 +25,27 @@ That skill lifecycle is separate from `forge codex render|diff|install`, which m
 
 ## Managed Skills
 
-Initial Forge-managed skills:
+Current Forge-managed skills:
 
+- `forge-tools`
 - `design-algorithm`
+- `source-driven-development`
+- `debugging-and-error-recovery`
+- `api-and-interface-design`
+- `security-and-hardening`
+- `test-strategy`
+- `code-simplification`
+- `documentation-and-adrs`
 - `effective-loop-writer`
 - `bytefield-diagrams`
 - `gh-body-file`
-- `forge-tools`
 - `linear-cli`
 - `mermaid-diagrams`
 - `typst-documents`
 - `learning-systems`
 - `autoresearch-create`
 - `autoresearch-finalize`
+- `autoreview`
 - `create-release-process`
 - `cut-release`
 - `thinking-in-the-limit`
@@ -153,6 +161,7 @@ Behavior:
 - use `--target-role mainline` when a non-user target should be treated as part of the primary managed install set
 - overwrite is allowed by default for existing Forge-managed targets
 - overwrite fails for unmanaged collisions unless `--force-unmanaged` is set
+- executable source files are installed with executable permissions on Unix targets; non-executable skill files are installed as regular readable files
 
 ### `forge skills diff`
 

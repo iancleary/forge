@@ -217,7 +217,10 @@ fn cli_self_update_reports_all_unmanaged_collisions_actionably() {
     let stderr = String::from_utf8(update.stderr).expect("stderr utf8");
     let err_json: Value = serde_json::from_str(stderr.trim()).expect("error json");
     assert_eq!(err_json["ok"], false);
-    assert_eq!(err_json["error"]["code"], "unmanaged_collision");
+    assert_eq!(
+        err_json["error"]["code"], "unmanaged_collision",
+        "{err_json}"
+    );
     let msg = err_json["error"]["message"].as_str().unwrap_or("");
     assert!(msg.contains("forge-tools"));
     assert!(msg.contains("forge skills install --all --force-unmanaged"));

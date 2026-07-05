@@ -7,6 +7,27 @@ name = "forge-tools"
 name = "design-algorithm"
 
 [[skills]]
+name = "source-driven-development"
+
+[[skills]]
+name = "debugging-and-error-recovery"
+
+[[skills]]
+name = "api-and-interface-design"
+
+[[skills]]
+name = "security-and-hardening"
+
+[[skills]]
+name = "test-strategy"
+
+[[skills]]
+name = "code-simplification"
+
+[[skills]]
+name = "documentation-and-adrs"
+
+[[skills]]
 name = "effective-loop-writer"
 
 [[skills]]
@@ -33,6 +54,9 @@ legacy_names = ["pi-autoresearch"]
 
 [[skills]]
 name = "autoresearch-finalize"
+
+[[skills]]
+name = "autoreview"
 
 [[skills]]
 name = "create-release-process"

@@ -66,6 +66,13 @@ Before committing:
 
 ## Repo Skills
 
+- use `source-driven-development` when a change depends on external API, library, CLI, or vendor behavior that should be verified from primary sources
+- use `debugging-and-error-recovery` for failing tests, broken commands, unexpected behavior, or repeated fix attempts
+- use `api-and-interface-design` when adding or changing public CLI/API/module/JSON contracts after the need survives design review
+- use `security-and-hardening` when a change touches trust boundaries such as input, auth, secrets, files, shell commands, network calls, permissions, or persisted state
+- use `test-strategy` to choose focused proof for features, bug fixes, refactors, and regressions without forcing ceremony
+- use `code-simplification` when behavior is known and the goal is to reduce complexity while preserving proof
+- use `documentation-and-adrs` when a change affects durable docs, workflow policy, command contracts, or architecture decisions
 - use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
 - use the Forge-managed `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
 - use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
@@ -90,6 +97,8 @@ When adding a new Forge-managed skill, update these three locations together:
 - add the skill directory and `SKILL.md` under `.agents/skills/<skill-name>/`
 - add the skill to `config/release-skills.toml`
 - add `embedded_skill!("<skill-name>")` to `release_skills()` in `crates/forge/src/main.rs`
+
+For adapted third-party skills, also add `THIRD_PARTY_NOTICES.md` with the upstream repo, inspected commit, upstream path, and license notice. Use [docs/skill-intake.md](docs/skill-intake.md) before importing upstream skills, commands, hooks, or helper scripts.
 
 ## Versioning And Releases
 
