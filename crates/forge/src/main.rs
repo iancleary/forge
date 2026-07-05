@@ -64,6 +64,31 @@ macro_rules! embedded_skill {
             files: &[
                 $(EmbeddedSkillFile {
                     relative_path: $relative_path,
+                    executable: false,
+                    contents: include_bytes!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../../.agents/skills/",
+                        $name,
+                        "/",
+                        $relative_path
+                    )),
+                }),+
+            ],
+        }
+    };
+    ($name:literal, files = [$(($relative_path:literal, executable = $executable:literal)),+ $(,)?]) => {
+        EmbeddedSkill {
+            name: $name,
+            skill_md: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../.agents/skills/",
+                $name,
+                "/SKILL.md"
+            )),
+            files: &[
+                $(EmbeddedSkillFile {
+                    relative_path: $relative_path,
+                    executable: $executable,
                     contents: include_bytes!(concat!(
                         env!("CARGO_MANIFEST_DIR"),
                         "/../../.agents/skills/",
@@ -958,12 +983,35 @@ struct SkillDefinition {
     source_path: Option<PathBuf>,
     source_ref: String,
     source_repo_path: Option<PathBuf>,
-    files: BTreeMap<String, Vec<u8>>,
+    files: BTreeMap<String, SkillFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SkillFile {
+    contents: Vec<u8>,
+    executable: bool,
+}
+
+impl SkillFile {
+    fn regular(contents: impl Into<Vec<u8>>) -> Self {
+        Self {
+            contents: contents.into(),
+            executable: false,
+        }
+    }
+
+    fn from_embedded(file: &EmbeddedSkillFile) -> Self {
+        Self {
+            contents: file.contents.to_vec(),
+            executable: file.executable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct EmbeddedSkillFile {
     relative_path: &'static str,
+    executable: bool,
     contents: &'static [u8],
 }
 
@@ -1647,7 +1695,7 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
             .files
             .get("SKILL.md")
             .ok_or_else(|| anyhow!("skill {} is missing SKILL.md", def.name))?;
-        let body = String::from_utf8(skill_md.clone())
+        let body = String::from_utf8(skill_md.contents.clone())
             .with_context(|| format!("skill {} SKILL.md was not UTF-8", def.name))?;
         let metadata = parse_skill_frontmatter(&body)
             .with_context(|| format!("skill {} frontmatter invalid", def.name))?;
@@ -1848,7 +1896,9 @@ fn codex_diff(args: CodexDiffArgs) -> Result<CodexDiffResult> {
                 target_path: target_path.display().to_string(),
                 status: status.to_string(),
                 source_hash: hash_bytes(&asset.contents),
-                target_hash: target_contents.as_ref().map(hash_bytes),
+                target_hash: target_contents
+                    .as_ref()
+                    .map(|contents| hash_bytes(contents)),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -5168,10 +5218,11 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!(
             "autoreview",
             files = [
-                "scripts/autoreview",
-                "scripts/test-review-harness",
-                "scripts/test-review-harness.ps1",
-                "scripts/test-review-harness.py",
+                ("scripts/autoreview", executable = true),
+                ("scripts/test-review-harness", executable = true),
+                ("scripts/test-review-harness.ps1", executable = false),
+                ("scripts/test-review-harness.py", executable = true),
+                ("THIRD_PARTY_NOTICES.md", executable = false),
             ]
         ),
         embedded_skill!("create-release-process"),
@@ -5244,9 +5295,15 @@ fn load_release_skills() -> Vec<SkillDefinition> {
         .iter()
         .map(|skill| {
             let mut files = BTreeMap::new();
-            files.insert("SKILL.md".to_string(), skill.skill_md.as_bytes().to_vec());
+            files.insert(
+                "SKILL.md".to_string(),
+                SkillFile::regular(skill.skill_md.as_bytes().to_vec()),
+            );
             for file in skill.files {
-                files.insert(file.relative_path.to_string(), file.contents.to_vec());
+                files.insert(
+                    file.relative_path.to_string(),
+                    SkillFile::from_embedded(file),
+                );
             }
             SkillDefinition {
                 name: skill.name.to_string(),
@@ -5406,13 +5463,16 @@ fn release_skill_definitions(
         if let Some(embedded_skill) = embedded_by_name.get(skill.name.as_str()).copied() {
             files.insert(
                 "SKILL.md".to_string(),
-                embedded_skill.skill_md.as_bytes().to_vec(),
+                SkillFile::regular(embedded_skill.skill_md.as_bytes().to_vec()),
             );
             for file in embedded_skill.files {
-                files.insert(file.relative_path.to_string(), file.contents.to_vec());
+                files.insert(
+                    file.relative_path.to_string(),
+                    SkillFile::from_embedded(file),
+                );
             }
         } else {
-            files.insert("SKILL.md".to_string(), Vec::new());
+            files.insert("SKILL.md".to_string(), SkillFile::regular(Vec::new()));
         }
         definitions.push(SkillDefinition {
             name: skill.name.clone(),
@@ -5496,13 +5556,17 @@ fn git_repo_ref(repo_path: &Path) -> Option<String> {
     git_stdout(repo_path, &["rev-parse", "HEAD"]).ok()
 }
 
-fn load_skill_files_from_dir(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+fn load_skill_files_from_dir(root: &Path) -> Result<BTreeMap<String, SkillFile>> {
     let mut files = BTreeMap::new();
     collect_files(root, root, &mut files)?;
     Ok(files)
 }
 
-fn collect_files(root: &Path, current: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
+fn collect_files(
+    root: &Path,
+    current: &Path,
+    files: &mut BTreeMap<String, SkillFile>,
+) -> Result<()> {
     for entry in
         fs::read_dir(current).with_context(|| format!("failed to read {}", current.display()))?
     {
@@ -5514,9 +5578,15 @@ fn collect_files(root: &Path, current: &Path, files: &mut BTreeMap<String, Vec<u
         if path.is_dir() {
             collect_files(root, &path, files)?;
         } else {
+            let contents =
+                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+            let executable = skill_file_is_executable(&path)?;
             files.insert(
                 rel.to_string_lossy().replace('\\', "/"),
-                fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?,
+                SkillFile {
+                    contents,
+                    executable,
+                },
             );
         }
     }
@@ -5526,15 +5596,44 @@ fn collect_files(root: &Path, current: &Path, files: &mut BTreeMap<String, Vec<u
 fn write_skill_definition(target_path: &Path, def: &SkillDefinition) -> Result<()> {
     fs::create_dir_all(target_path)
         .with_context(|| format!("failed to create {}", target_path.display()))?;
-    for (rel, contents) in &def.files {
+    for (rel, file) in &def.files {
         let path = target_path.join(rel);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
-        fs::write(&path, contents)
+        fs::write(&path, &file.contents)
             .with_context(|| format!("failed to write {}", path.display()))?;
+        set_skill_file_permissions(&path, file)?;
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn skill_file_is_executable(path: &Path) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata =
+        fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
+    Ok(metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn skill_file_is_executable(_path: &Path) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(unix)]
+fn set_skill_file_permissions(path: &Path, file: &SkillFile) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = if file.executable { 0o755 } else { 0o644 };
+    fs::set_permissions(path, PermissionsExt::from_mode(mode))
+        .with_context(|| format!("failed to set permissions on {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_skill_file_permissions(_path: &Path, _file: &SkillFile) -> Result<()> {
     Ok(())
 }
 
@@ -5688,14 +5787,17 @@ struct SkillFrontmatter {
     description: String,
 }
 
-fn hash_skill_files(files: &BTreeMap<String, Vec<u8>>) -> String {
+fn hash_skill_files(files: &BTreeMap<String, SkillFile>) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
-    for (path, bytes) in files {
+    for (path, file) in files {
+        let executable_marker = [u8::from(file.executable)];
         for byte in path
             .as_bytes()
             .iter()
             .chain([0u8].iter())
-            .chain(bytes.iter())
+            .chain(executable_marker.iter())
+            .chain([0u8].iter())
+            .chain(file.contents.iter())
         {
             hash ^= u64::from(*byte);
             hash = hash.wrapping_mul(0x100000001b3);
@@ -5705,8 +5807,8 @@ fn hash_skill_files(files: &BTreeMap<String, Vec<u8>>) -> String {
 }
 
 fn build_diff_files(
-    source: &BTreeMap<String, Vec<u8>>,
-    target: &BTreeMap<String, Vec<u8>>,
+    source: &BTreeMap<String, SkillFile>,
+    target: &BTreeMap<String, SkillFile>,
 ) -> Vec<SkillDiffFile> {
     let mut names = BTreeSet::new();
     names.extend(source.keys().cloned());
@@ -5714,8 +5816,8 @@ fn build_diff_files(
     names
         .into_iter()
         .map(|path| {
-            let source_hash = source.get(&path).map(hash_bytes);
-            let target_hash = target.get(&path).map(hash_bytes);
+            let source_hash = source.get(&path).map(|file| hash_bytes(&file.contents));
+            let target_hash = target.get(&path).map(|file| hash_bytes(&file.contents));
             let status = match (source.get(&path), target.get(&path)) {
                 (Some(lhs), Some(rhs)) if lhs == rhs => "same",
                 (Some(_), Some(_)) => "changed",
@@ -5733,7 +5835,7 @@ fn build_diff_files(
         .collect()
 }
 
-fn hash_bytes(bytes: &Vec<u8>) -> String {
+fn hash_bytes(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in bytes {
         hash ^= u64::from(*byte);
@@ -6203,7 +6305,10 @@ mod tests {
             .iter()
             .find(|def| def.name == "brand-new-skill")
             .expect("synthetic skill included");
-        assert_eq!(synthetic_skill.files.get("SKILL.md"), Some(&Vec::new()));
+        assert_eq!(
+            synthetic_skill.files.get("SKILL.md"),
+            Some(&SkillFile::regular(Vec::new()))
+        );
     }
 
     #[test]
@@ -6242,6 +6347,72 @@ mod tests {
                 .all(|entry| entry.target_role == SkillTargetRole::Mainline
                     && entry.target_root == install_root.display().to_string())
         );
+
+        let _ = fs::remove_dir_all(install_root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_preserves_embedded_executable_skill_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let install_root = temp_path("autoreview-install");
+        fs::create_dir_all(&install_root).expect("create install root");
+        let config = ForgeConfig::default();
+        let mut state = ForgeState::default();
+
+        skills_install_internal(
+            &config,
+            &mut state,
+            InstallRequest {
+                skill_names: vec!["autoreview".to_string()],
+                all: false,
+                source_kind: Some(SkillSourceKind::Release),
+                repo_path: None,
+                target: Some(format!("path:{}", install_root.display())),
+                target_role: Some(SkillTargetRole::Development),
+                resolved_target: None,
+                force: true,
+                force_unmanaged: true,
+                force_unmanaged_paths: BTreeSet::new(),
+                restrict_to_targets: None,
+            },
+        )
+        .expect("install autoreview");
+
+        let autoreview_mode = fs::metadata(
+            install_root
+                .join("autoreview")
+                .join("scripts")
+                .join("autoreview"),
+        )
+        .expect("autoreview metadata")
+        .permissions()
+        .mode()
+            & 0o777;
+        let harness_mode = fs::metadata(
+            install_root
+                .join("autoreview")
+                .join("scripts")
+                .join("test-review-harness"),
+        )
+        .expect("harness metadata")
+        .permissions()
+        .mode()
+            & 0o777;
+        let notice_mode = fs::metadata(
+            install_root
+                .join("autoreview")
+                .join("THIRD_PARTY_NOTICES.md"),
+        )
+        .expect("notice metadata")
+        .permissions()
+        .mode()
+            & 0o777;
+
+        assert_eq!(autoreview_mode, 0o755);
+        assert_eq!(harness_mode, 0o755);
+        assert_eq!(notice_mode, 0o644);
 
         let _ = fs::remove_dir_all(install_root);
     }
@@ -6777,6 +6948,7 @@ EOF
                     .files
                     .get("SKILL.md")
                     .expect("release skill has SKILL.md")
+                    .contents
                     .clone(),
             )
             .expect("release skill markdown is UTF-8");

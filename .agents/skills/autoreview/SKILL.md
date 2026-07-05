@@ -9,6 +9,8 @@ Run the bundled structured review helper as a closeout check. This is code revie
 
 Codex review is the default when no engine is set. It usually delivers the best review results and should remain the normal final closeout engine.
 
+This skill is adapted from `steipete/agent-scripts`; see `THIRD_PARTY_NOTICES.md` for upstream provenance and MIT license notice.
+
 Use when:
 
 - user asks for Codex review / Claude review / autoreview / second-model review
@@ -43,6 +45,23 @@ Use when:
 - If `gh`/Gitcrawl reports `database disk image is malformed`, run `gitcrawl doctor --json` once to let the portable cache repair before retrying review; do not bypass the shim unless repair fails and freshness requires live GitHub.
 - If Gitcrawl reports a portable manifest mismatch, source/runtime DB health error, or stale portable-store checkout, run `gitcrawl doctor --json` and inspect `source_db_health`, `runtime_db_health`, and `portable_store_status` before falling back to live GitHub.
 - Do not push just to review. Push only when the user requested push/ship/PR update.
+
+## Loop Integration
+
+Use `autoreview` as an evaluator or closeout gate for loops, not as the inner generator. Running a full review on every speculative iteration is usually too slow and can cause the loop to optimize for reviewer appeasement instead of the loop metric.
+
+For `autoresearch` loops:
+
+- run focused correctness checks inside the experiment loop
+- run `autoreview` after a candidate is kept and stabilized
+- run `autoreview` per finalized branch when using `autoresearch-finalize`
+- record accepted/rejected findings in the loop log or finalization notes
+
+For file-backed agent loops from `effective-loop-writer`:
+
+- include `autoreview` in `evaluator-rubric.md` only when the loop produces non-trivial code
+- treat repeated accepted findings as loop feedback: update the contract, context, or generator instructions before another iteration
+- stop for a human when the review finding shows the loop contract is wrong, not merely when an implementation attempt is broken
 
 ## Pick Target
 

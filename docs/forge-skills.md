@@ -154,6 +154,7 @@ Behavior:
 - use `--target-role mainline` when a non-user target should be treated as part of the primary managed install set
 - overwrite is allowed by default for existing Forge-managed targets
 - overwrite fails for unmanaged collisions unless `--force-unmanaged` is set
+- executable source files are installed with executable permissions on Unix targets; non-executable skill files are installed as regular readable files
 
 ### `forge skills diff`
 
