@@ -164,6 +164,7 @@ Default targets:
 - `uv-tools`: runs `uv tool upgrade --all`
 - `cargo-installs`: reads `cargo install --list`, extracts top-level installed crate names, then runs `cargo install <crate>...`
 - `gum`: ensures the `gum` command exists; if missing, installs from Homebrew on macOS/Linux, from WinGet on Windows, and can fall back to `go install github.com/charmbracelet/gum@latest` where appropriate
+- `codegraph`: upgrades an existing CodeGraph CLI with `codegraph upgrade`; if missing, installs the standalone CLI from the official CodeGraph installer
 
 Install/update sources:
 
@@ -175,10 +176,12 @@ Install/update sources:
 | `uv-tools` | uv tool manager (`uv tool upgrade --all`) | uv tool manager (`uv tool upgrade --all`) |
 | `cargo-installs` | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) |
 | `gum` | Homebrew first, Go install fallback | WinGet (`winget install --id charmbracelet.gum -e`) |
+| `codegraph` | existing `codegraph upgrade`, otherwise standalone installer (`curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh \| sh`) | existing `codegraph upgrade`, otherwise standalone installer (`powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 \| iex"`) |
 
 Behavior:
 
 - does not inspect or mutate the current repo's project dependencies, manifests, lockfiles, virtual environments, or `node_modules`
+- installs or upgrades the CodeGraph CLI only; project indexing through `codegraph init` and agent MCP wiring through `codegraph install` remain explicit separate actions
 - each target returns an entry with `source` and `planned`, `skipped`, `succeeded`, or `failed`
 - `--dry-run` shows the planned global commands without running mutating update/install commands
 - unknown requested targets fail as invalid usage
@@ -202,6 +205,9 @@ forge tool update packages
 
 # Ensure gum is installed
 forge tool update gum
+
+# Ensure CodeGraph is installed or upgraded
+forge tool update codegraph
 ```
 
 ### `forge version`

@@ -347,6 +347,7 @@ fn cli_tool_update_dry_run_reports_global_commands() {
     let root = temp_path("tool-update-dry-run");
     let config_dir = root.join("config");
     let home_dir = root.join("home");
+    let cargo_home = root.join("cargo-home");
     fs::create_dir_all(&config_dir).expect("create config dir");
     fs::create_dir_all(&home_dir).expect("create home dir");
 
@@ -355,6 +356,7 @@ fn cli_tool_update_dry_run_reports_global_commands() {
     let fake_rustup = root.join("fake-rustup");
     let fake_brew = root.join("fake-brew");
     let missing_gum = root.join("missing-gum");
+    let missing_codegraph = root.join("missing-codegraph");
     write_executable_script(&fake_cargo, fake_tool_cargo_script());
     write_executable_script(&fake_uv, fake_tool_success_script());
     write_executable_script(&fake_rustup, fake_tool_success_script());
@@ -364,6 +366,10 @@ fn cli_tool_update_dry_run_reports_global_commands() {
     let fake_rustup_str = fake_rustup.to_string_lossy().into_owned();
     let fake_brew_str = fake_brew.to_string_lossy().into_owned();
     let missing_gum_str = missing_gum.to_string_lossy().into_owned();
+    let missing_codegraph_str = missing_codegraph.to_string_lossy().into_owned();
+    let cargo_home_str = cargo_home.to_string_lossy().into_owned();
+    let codegraph_bin_dir = cargo_home.join("bin");
+    let codegraph_bin_dir_env = format!("CODEGRAPH_BIN_DIR={}", codegraph_bin_dir.display());
 
     let output = run_forge_with_env(
         &["--json", "tool", "update", "--dry-run"],
@@ -375,6 +381,11 @@ fn cli_tool_update_dry_run_reports_global_commands() {
             ("FORGE_TOOL_UPDATE_RUSTUP_BIN", fake_rustup_str.as_str()),
             ("FORGE_TOOL_UPDATE_BREW_BIN", fake_brew_str.as_str()),
             ("FORGE_TOOL_UPDATE_GUM_BIN", missing_gum_str.as_str()),
+            (
+                "FORGE_TOOL_UPDATE_CODEGRAPH_BIN",
+                missing_codegraph_str.as_str(),
+            ),
+            ("CARGO_HOME", cargo_home_str.as_str()),
         ],
     );
     assert!(
@@ -387,7 +398,7 @@ fn cli_tool_update_dry_run_reports_global_commands() {
     let body: Value = serde_json::from_str(stdout.trim()).expect("tool update json");
     assert_eq!(body["ok"], true);
     assert_eq!(body["data"]["dry_run"], true);
-    assert_eq!(body["data"]["summary"]["planned"], 6);
+    assert_eq!(body["data"]["summary"]["planned"], 7);
 
     let entries = body["data"]["entries"].as_array().expect("entries array");
     let ids = entries
@@ -402,7 +413,8 @@ fn cli_tool_update_dry_run_reports_global_commands() {
             "uv",
             "uv-tools",
             "cargo-installs",
-            "gum"
+            "gum",
+            "codegraph"
         ]
     );
     assert_eq!(entries[0]["source"].as_str(), Some("homebrew"));
@@ -444,6 +456,24 @@ fn cli_tool_update_dry_run_reports_global_commands() {
     assert_eq!(
         entries[5]["command"].as_array().unwrap()[2].as_str(),
         Some("gum")
+    );
+    assert_eq!(
+        entries[6]["source"].as_str(),
+        Some("codegraph_standalone_installer")
+    );
+    assert_eq!(
+        entries[6]["command"].as_array().unwrap()[0].as_str(),
+        Some("sh")
+    );
+    assert!(
+        entries[6]["command"].as_array().unwrap()[2]
+            .as_str()
+            .unwrap_or("")
+            .contains("colbymchenry/codegraph/main/install.sh")
+    );
+    assert_eq!(
+        entries[6]["env"].as_array().unwrap()[0].as_str(),
+        Some(codegraph_bin_dir_env.as_str())
     );
 
     let _ = fs::remove_dir_all(root);

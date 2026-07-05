@@ -8,6 +8,7 @@ pub(super) enum Target {
     UvTools,
     CargoInstalls,
     Gum,
+    Codegraph,
 }
 
 pub(super) struct TargetCatalogEntry {
@@ -46,6 +47,11 @@ pub(super) const TARGET_CATALOG: &[TargetCatalogEntry] = &[
         target: Target::Gum,
         id: "gum",
         aliases: &[],
+    },
+    TargetCatalogEntry {
+        target: Target::Codegraph,
+        id: "codegraph",
+        aliases: &["code-graph"],
     },
 ];
 
