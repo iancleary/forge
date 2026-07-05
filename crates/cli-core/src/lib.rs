@@ -103,10 +103,8 @@ pub fn resolve_config_dir(
     if let Ok(path) = env::var(config_dir_env_var) {
         return Ok(expand_path(&path));
     }
-    if use_forge_config_dir {
-        if let Ok(path) = env::var("FORGE_CONFIG_DIR") {
-            return Ok(expand_path(&path).join(config_subdir));
-        }
+    if use_forge_config_dir && let Ok(path) = env::var("FORGE_CONFIG_DIR") {
+        return Ok(expand_path(&path).join(config_subdir));
     }
     if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(xdg).join("forge").join(config_subdir));
@@ -235,16 +233,16 @@ pub fn ensure_owner_only_permissions(path: &Path, is_dir: bool) -> Result<()> {
 }
 
 pub fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home);
-        }
+    if path == "~"
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home);
     }
 
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
+    if let Some(stripped) = path.strip_prefix("~/")
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home).join(stripped);
     }
 
     PathBuf::from(path)

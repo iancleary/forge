@@ -750,21 +750,21 @@ fn extract_session_data(build: &mut SessionBuild, value: &Value) -> Result<()> {
             }
         }
         Some("response_item") => {
-            if let Some(payload) = value.get("payload") {
-                if payload.get("type").and_then(Value::as_str) == Some("message") {
-                    let role = payload
-                        .get("role")
-                        .and_then(Value::as_str)
-                        .unwrap_or("unknown");
-                    if let Some(content) = payload.get("content").and_then(Value::as_array) {
-                        let joined = content
-                            .iter()
-                            .filter_map(extract_content_text)
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        if !joined.trim().is_empty() && matches!(role, "user" | "assistant") {
-                            push_message(build, value, role, &joined, "response_item");
-                        }
+            if let Some(payload) = value.get("payload")
+                && payload.get("type").and_then(Value::as_str) == Some("message")
+            {
+                let role = payload
+                    .get("role")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                if let Some(content) = payload.get("content").and_then(Value::as_array) {
+                    let joined = content
+                        .iter()
+                        .filter_map(extract_content_text)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !joined.trim().is_empty() && matches!(role, "user" | "assistant") {
+                        push_message(build, value, role, &joined, "response_item");
                     }
                 }
             }
@@ -792,12 +792,13 @@ fn push_message(
         .map(ToString::to_string);
     let dedupe_key = format!("{}|{}", role, text);
     if let Some((index, existing_source_type)) = build.seen_messages.get(&dedupe_key).cloned() {
-        if existing_source_type == "event_msg" && source_type == "response_item" {
-            if let Some(existing) = build.messages.get_mut(index) {
-                existing.source_type = source_type.to_string();
-                if existing.timestamp.is_none() {
-                    existing.timestamp = timestamp.clone();
-                }
+        if existing_source_type == "event_msg"
+            && source_type == "response_item"
+            && let Some(existing) = build.messages.get_mut(index)
+        {
+            existing.source_type = source_type.to_string();
+            if existing.timestamp.is_none() {
+                existing.timestamp = timestamp.clone();
             }
         }
         return;
@@ -973,15 +974,15 @@ fn codex_root() -> Result<PathBuf> {
 }
 
 fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home);
-        }
+    if path == "~"
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home);
     }
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
+    if let Some(stripped) = path.strip_prefix("~/")
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home).join(stripped);
     }
     PathBuf::from(path)
 }

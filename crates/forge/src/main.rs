@@ -1411,7 +1411,7 @@ fn update_check(_args: UpdateCheckArgs) -> Result<UpdateCheckResult> {
 fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let config = ForgeConfig::default();
     let source_kind = SkillSourceKind::Release;
-    let total_steps = 6usize;
+    let total_steps = 7usize;
     let before_head = None;
     let after_head = None;
     let branch = None;
@@ -1420,11 +1420,34 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let progress = UpdateProgress::new(output);
 
     let mut state = load_state_or_default()?;
-    progress.step(format!("[1/{total_steps}] Checking latest Forge release"));
+    progress.step(format!(
+        "[1/{total_steps}] Checking managed skill ownership"
+    ));
+    // Detect collisions already known to the running Forge release before any
+    // network work. This keeps local ownership errors actionable offline.
+    let current_release_skill_defs = load_release_skills();
+    let current_status = skills_status_with_defs(
+        &config,
+        &state,
+        &source_kind,
+        &current_release_skill_defs,
+        SkillsStatusScope::Mainline,
+        None,
+        None,
+    )?;
+    let current_collisions = current_status
+        .entries
+        .iter()
+        .filter(|entry| entry.state == "unmanaged_collision")
+        .collect::<Vec<_>>();
+    let mut collision_resolution =
+        resolve_unmanaged_collisions(output, &progress, &current_collisions)?;
+
+    progress.step(format!("[2/{total_steps}] Checking latest Forge release"));
     let target_version = latest_release_version()?
         .ok_or_else(|| anyhow!("failed to determine the latest Forge release tag"))?;
     progress.step(format!(
-        "[2/{total_steps}] Loading release contracts for {target_version}"
+        "[3/{total_steps}] Loading release contracts for {target_version}"
     ));
     let release_contract = fetch_release_tools_contract(&target_version)?;
     let release_skill_contract = fetch_release_skills_contract(&target_version)?;
@@ -1436,9 +1459,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let release_skill_defs = release_skill_definitions(&target_version, &release_skill_contract);
 
     progress.step(format!(
-        "[3/{total_steps}] Checking managed skill ownership"
+        "[4/{total_steps}] Checking target release skill ownership"
     ));
-    // Detect unmanaged skill collisions before installing anything.
+    // Detect collisions introduced by the target release before installing
+    // anything. Skip paths already resolved by the offline preflight.
     let status = skills_status_with_defs(
         &config,
         &state,
@@ -1452,8 +1476,27 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         .entries
         .iter()
         .filter(|entry| entry.state == "unmanaged_collision")
+        .filter(|entry| {
+            !collision_resolution
+                .force_paths
+                .contains(&entry.target_path)
+                && !collision_resolution
+                    .skipped_by_root
+                    .values()
+                    .any(|skipped| skipped.contains(&entry.name))
+        })
         .collect::<Vec<_>>();
-    let collision_resolution = resolve_unmanaged_collisions(output, &progress, &collisions)?;
+    let target_collision_resolution = resolve_unmanaged_collisions(output, &progress, &collisions)?;
+    collision_resolution
+        .force_paths
+        .extend(target_collision_resolution.force_paths);
+    for (root, names) in target_collision_resolution.skipped_by_root {
+        collision_resolution
+            .skipped_by_root
+            .entry(root)
+            .or_default()
+            .extend(names);
+    }
 
     let before_version = Some(env!("CARGO_PKG_VERSION").to_string());
     let mut install_method = None;
@@ -1466,7 +1509,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
             progress.step(format!(
-                "[4/{total_steps}] Installing Forge {target_version}"
+                "[5/{total_steps}] Installing Forge {target_version}"
             ));
             let install = install_release_packages(
                 &target_version,
@@ -1484,7 +1527,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             installed_binaries = install.installed_binaries;
             let after_version = Some(target_version.clone());
             progress.step(format!(
-                "[5/{total_steps}] Applying release migration contract"
+                "[6/{total_steps}] Applying release migration contract"
             ));
             let local_contract = reconcile_release_local_contract(
                 &release_contract,
@@ -1494,7 +1537,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             save_state(&state_file_path()?, &state)?;
             let targets = mainline_targets_for_reconcile(&config, &state, None)?;
             progress.step(format!(
-                "[6/{total_steps}] Reconciling managed skills and Codex"
+                "[7/{total_steps}] Reconciling managed skills and Codex"
             ));
             let delegated = reconcile_release_with_installed_forge(
                 &targets,
@@ -1512,10 +1555,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             (after_version, local_contract, reconcile_changed)
         } else {
             progress.step(format!(
-                "[4/{total_steps}] Install step skipped; already on {target_version}"
+                "[5/{total_steps}] Install step skipped; already on {target_version}"
             ));
             progress.step(format!(
-                "[5/{total_steps}] Applying release migration contract"
+                "[6/{total_steps}] Applying release migration contract"
             ));
             let local_contract = reconcile_release_local_contract(
                 &release_contract,
@@ -1568,7 +1611,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             installs.extend(result.installs);
         }
         progress.step(format!(
-            "[6/{total_steps}] Reconciling managed Codex assets"
+            "[7/{total_steps}] Reconciling managed skills and Codex"
         ));
         let codex_result = codex_install(CodexInstallArgs {
             asset: Vec::new(),
@@ -2240,7 +2283,7 @@ fn inspect_permission_target(
             actual_mode_bits
         };
 
-        return Ok(PermissionItem {
+        Ok(PermissionItem {
             path: target.path.display().to_string(),
             kind: permission_kind_name(target.kind).to_string(),
             exists: true,
@@ -2248,7 +2291,7 @@ fn inspect_permission_target(
             actual_mode: Some(format_mode(final_mode_bits)),
             ok: final_mode_bits == target.expected_mode,
             changed,
-        });
+        })
     }
 
     #[cfg(not(unix))]
@@ -2638,7 +2681,7 @@ fn format_update_check_human(result: &UpdateCheckResult) -> String {
     if !noteworthy.is_empty() {
         out.push('\n');
         let _ = writeln!(out, "skill details:");
-        append_skill_status_entries(&mut out, noteworthy.into_iter());
+        append_skill_status_entries(&mut out, noteworthy);
     }
 
     out.trim_end().to_string()
@@ -2946,13 +2989,7 @@ fn format_update_human(result: &UpdateResult) -> String {
     ));
 
     let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
-    let _ = writeln!(
-        out,
-        "{:<width$} | {}",
-        "FIELD",
-        "VALUE",
-        width = label_width
-    );
+    let _ = writeln!(out, "{:<width$} | VALUE", "FIELD", width = label_width);
     let value_width = "VALUE".len();
     let _ = writeln!(
         out,
@@ -3452,16 +3489,16 @@ where
     let config_path = config_dir.join("config.toml");
     if config_path.exists() {
         sources.push(format!("file:{}", config_path.display()));
-        if let Ok(body) = fs::read_to_string(&config_path) {
-            if let Some((has_inline_token, token_file)) = parse_config(&body) {
-                if has_inline_token {
-                    sources.push("config:inline_token".to_string());
-                }
-                if let Some(token_file) = token_file {
-                    let path = expand_path(&token_file);
-                    if path.exists() {
-                        sources.push(format!("config:token_file:{}", path.display()));
-                    }
+        if let Ok(body) = fs::read_to_string(&config_path)
+            && let Some((has_inline_token, token_file)) = parse_config(&body)
+        {
+            if has_inline_token {
+                sources.push("config:inline_token".to_string());
+            }
+            if let Some(token_file) = token_file {
+                let path = expand_path(&token_file);
+                if path.exists() {
+                    sources.push(format!("config:token_file:{}", path.display()));
                 }
             }
         }
@@ -3642,13 +3679,13 @@ fn resolve_dev_repo_path(cli_repo_path: Option<PathBuf>) -> Result<PathBuf> {
 
     let cwd = env::current_dir().context("failed to read current directory")?;
     let output = run_command(&cwd, "git", &["rev-parse", "--show-toplevel"]);
-    if let Ok(output) = output {
-        if output.status.success() {
-            let stdout = String::from_utf8(output.stdout).context("git output was not UTF-8")?;
-            let root = stdout.trim();
-            if !root.is_empty() {
-                return Ok(PathBuf::from(root));
-            }
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let stdout = String::from_utf8(output.stdout).context("git output was not UTF-8")?;
+        let root = stdout.trim();
+        if !root.is_empty() {
+            return Ok(PathBuf::from(root));
         }
     }
 
@@ -3710,15 +3747,15 @@ fn state_file_path() -> Result<PathBuf> {
 }
 
 fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home);
-        }
+    if path == "~"
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home);
     }
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
+    if let Some(stripped) = path.strip_prefix("~/")
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home).join(stripped);
     }
     PathBuf::from(path)
 }
@@ -4235,10 +4272,9 @@ fn release_manifest_url(version: &str) -> String {
 }
 
 fn can_verify_release_asset_attestation() -> bool {
-    let has_attestation_verify = run_command_capture("gh", &["attestation", "verify", "--help"])
+    run_command_capture("gh", &["attestation", "verify", "--help"])
         .map(|output| output.status.success())
-        .unwrap_or(false);
-    has_attestation_verify
+        .unwrap_or(false)
 }
 
 fn verify_release_asset_attestation(version: &str, archive_path: &Path) -> Result<()> {
@@ -4278,7 +4314,7 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
 }
 
 fn try_download_url_to_path(url: &str, path: &Path) -> Result<Option<()>> {
-    let args = vec![
+    let args = [
         "-fsSL".to_string(),
         "-o".to_string(),
         path.display().to_string(),
@@ -4297,7 +4333,7 @@ fn try_download_url_to_path(url: &str, path: &Path) -> Result<Option<()>> {
 }
 
 fn download_url_to_path(url: &str, path: &Path) -> Result<()> {
-    let args = vec![
+    let args = [
         "-fsSL".to_string(),
         "-o".to_string(),
         path.display().to_string(),
@@ -4429,7 +4465,7 @@ fn checkout_release_repo(version: &str) -> Result<(PathBuf, PathBuf)> {
     fs::create_dir_all(&temp_dir)
         .with_context(|| format!("failed to create {}", temp_dir.display()))?;
     let repo_path = temp_dir.join("repo");
-    let args = vec![
+    let args = [
         "clone".to_string(),
         "--depth".to_string(),
         "1".to_string(),
@@ -5967,16 +6003,15 @@ fn skills_status_with_defs(
         if !matches_scope(&install.target_role, scope) {
             continue;
         }
-        if let Some(filter) = target_filter.as_ref() {
-            if install.target_root != filter.root.display().to_string()
+        if let Some(filter) = target_filter.as_ref()
+            && (install.target_root != filter.root.display().to_string()
                 || install.target_kind != filter.kind
                 || filter
                     .role
                     .as_ref()
-                    .is_some_and(|role| &install.target_role != role)
-            {
-                continue;
-            }
+                    .is_some_and(|role| &install.target_role != role))
+        {
+            continue;
         }
         let target_path = PathBuf::from(&install.target_path);
         if !target_path.exists() {
@@ -5986,7 +6021,7 @@ fn skills_status_with_defs(
                 target_role: target_role_name(&install.target_role).to_string(),
                 target_path: install.target_path.clone(),
                 state: "missing".to_string(),
-                source_kind: source_kind_name(&source_kind).to_string(),
+                source_kind: source_kind_name(source_kind).to_string(),
                 source_hash: source_hashes.get(&install.skill_name).cloned(),
                 target_hash: None,
             });
@@ -6007,7 +6042,7 @@ fn skills_status_with_defs(
             target_role: target_role_name(&install.target_role).to_string(),
             target_path: install.target_path.clone(),
             state: state_name.to_string(),
-            source_kind: source_kind_name(&source_kind).to_string(),
+            source_kind: source_kind_name(source_kind).to_string(),
             source_hash,
             target_hash: Some(target_hash),
         });
@@ -6017,16 +6052,15 @@ fn skills_status_with_defs(
         if !matches_scope(&target.role, scope) {
             continue;
         }
-        if let Some(filter) = target_filter.as_ref() {
-            if target.root != filter.root
+        if let Some(filter) = target_filter.as_ref()
+            && (target.root != filter.root
                 || target.kind != filter.kind
                 || filter
                     .role
                     .as_ref()
-                    .is_some_and(|role| &target.role != role)
-            {
-                continue;
-            }
+                    .is_some_and(|role| &target.role != role))
+        {
+            continue;
         }
         if !target.root.exists() {
             continue;
@@ -6050,7 +6084,7 @@ fn skills_status_with_defs(
                 target_role: target_role_name(&target.role).to_string(),
                 target_path: candidate.display().to_string(),
                 state: "unmanaged_collision".to_string(),
-                source_kind: source_kind_name(&source_kind).to_string(),
+                source_kind: source_kind_name(source_kind).to_string(),
                 source_hash: source_hashes.get(&def.name).cloned(),
                 target_hash: Some(hash_skill_files(&target_files)),
             });
@@ -6059,7 +6093,7 @@ fn skills_status_with_defs(
 
     entries.sort_by(|a, b| a.name.cmp(&b.name).then(a.target_path.cmp(&b.target_path)));
     Ok(SkillsStatusResult {
-        source_kind: source_kind_name(&source_kind).to_string(),
+        source_kind: source_kind_name(source_kind).to_string(),
         scope: status_scope_name(scope).to_string(),
         entries,
     })
