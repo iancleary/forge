@@ -5241,6 +5241,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("documentation-and-adrs", files = ["THIRD_PARTY_NOTICES.md"]),
         embedded_skill!("effective-loop-writer"),
         embedded_skill!("bytefield-diagrams"),
+        embedded_skill!("codegraph"),
         embedded_skill!("gh-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!(
@@ -6975,6 +6976,12 @@ EOF
                 .skills
                 .iter()
                 .any(|skill| skill.name == "chrome-devtools-mcp")
+        );
+        assert!(
+            contract
+                .skills
+                .iter()
+                .any(|skill| skill.name == "codegraph")
         );
         assert!(
             contract

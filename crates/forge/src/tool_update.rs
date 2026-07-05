@@ -18,6 +18,10 @@ mod catalog;
 use catalog::{TARGET_CATALOG, Target};
 
 const GUM_GO_PACKAGE: &str = "github.com/charmbracelet/gum@latest";
+const CODEGRAPH_INSTALL_SH_URL: &str =
+    "https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh";
+const CODEGRAPH_INSTALL_PS1_URL: &str =
+    "https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1";
 
 #[derive(Args, Debug)]
 pub(crate) struct UpdateArgs {
@@ -93,6 +97,7 @@ pub(crate) fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResul
             Target::UvTools => entries.push(run_plan(uv_tools_plan(), args.dry_run)),
             Target::CargoInstalls => entries.push(update_cargo_installs(args.dry_run)),
             Target::Gum => entries.push(update_gum(args.dry_run)),
+            Target::Codegraph => entries.push(update_codegraph(args.dry_run)),
         }
     }
 
@@ -128,6 +133,7 @@ fn target_progress_message(target: Target, dry_run: bool) -> &'static str {
             Target::UvTools => "Planning uv-installed tool updates",
             Target::CargoInstalls => "Planning cargo-installed binary updates",
             Target::Gum => "Planning gum command install",
+            Target::Codegraph => "Planning CodeGraph command install or upgrade",
         };
     }
 
@@ -138,6 +144,7 @@ fn target_progress_message(target: Target, dry_run: bool) -> &'static str {
         Target::UvTools => "Updating uv-installed tools",
         Target::CargoInstalls => "Updating cargo-installed binaries",
         Target::Gum => "Ensuring gum command is installed",
+        Target::Codegraph => "Ensuring CodeGraph command is installed or upgraded",
     }
 }
 
@@ -405,6 +412,78 @@ fn update_gum(dry_run: bool) -> Entry {
         exit_code: None,
         detail: Some("no supported installer was available for gum".to_string()),
     })
+}
+
+fn update_codegraph(dry_run: bool) -> Entry {
+    let codegraph =
+        env::var("FORGE_TOOL_UPDATE_CODEGRAPH_BIN").unwrap_or_else(|_| "codegraph".to_string());
+    if command_succeeds(&codegraph, &["--version"]) {
+        return run_plan(codegraph_upgrade_plan(codegraph), dry_run);
+    }
+
+    run_plan(codegraph_install_plan(), dry_run)
+}
+
+fn codegraph_upgrade_plan(codegraph_bin: String) -> Plan {
+    Plan {
+        id: "codegraph".to_string(),
+        label: "CodeGraph command".to_string(),
+        source: "codegraph_self".to_string(),
+        program: codegraph_bin,
+        args: vec!["upgrade".to_string()],
+        env: Vec::new(),
+        items: vec!["codegraph".to_string()],
+    }
+}
+
+fn codegraph_install_plan() -> Plan {
+    codegraph_install_plan_for(env::consts::OS, codegraph_bin_dir())
+}
+
+fn codegraph_install_plan_for(os: &str, bin_dir: Option<String>) -> Plan {
+    match os {
+        "windows" => Plan {
+            id: "codegraph".to_string(),
+            label: "CodeGraph command".to_string(),
+            source: "codegraph_standalone_installer".to_string(),
+            program: env::var("FORGE_TOOL_UPDATE_POWERSHELL_BIN")
+                .unwrap_or_else(|_| "powershell".to_string()),
+            args: vec![
+                "-ExecutionPolicy".to_string(),
+                "ByPass".to_string(),
+                "-c".to_string(),
+                format!("irm {CODEGRAPH_INSTALL_PS1_URL} | iex"),
+            ],
+            env: Vec::new(),
+            items: vec!["codegraph".to_string()],
+        },
+        _ => {
+            let env = bin_dir
+                .map(|path| vec![("CODEGRAPH_BIN_DIR".to_string(), path)])
+                .unwrap_or_default();
+            Plan {
+                id: "codegraph".to_string(),
+                label: "CodeGraph command".to_string(),
+                source: "codegraph_standalone_installer".to_string(),
+                program: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    format!("curl -fsSL {CODEGRAPH_INSTALL_SH_URL} | sh"),
+                ],
+                env,
+                items: vec!["codegraph".to_string()],
+            }
+        }
+    }
+}
+
+fn codegraph_bin_dir() -> Option<String> {
+    if let Ok(cargo_home) = env::var("CARGO_HOME") {
+        return Some(format!("{cargo_home}/bin"));
+    }
+    env::var("HOME")
+        .ok()
+        .map(|home| format!("{home}/.cargo/bin"))
 }
 
 fn gum_install_plans() -> Vec<Plan> {
@@ -697,6 +776,25 @@ mod tests {
         assert_eq!(gum[0].args, vec!["install", "gum"]);
         assert_eq!(gum[1].source, "go_install");
         assert_eq!(gum[1].args, vec!["install", GUM_GO_PACKAGE]);
+
+        let codegraph = codegraph_install_plan_for("macos", Some("/tmp/cargo/bin".to_string()));
+        assert_eq!(codegraph.id, "codegraph");
+        assert_eq!(codegraph.source, "codegraph_standalone_installer");
+        assert_eq!(codegraph.program, "sh");
+        assert_eq!(
+            codegraph.args,
+            vec![
+                "-c",
+                "curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh"
+            ]
+        );
+        assert_eq!(
+            codegraph.env,
+            vec![(
+                "CODEGRAPH_BIN_DIR".to_string(),
+                "/tmp/cargo/bin".to_string()
+            )]
+        );
     }
 
     #[test]
@@ -714,7 +812,8 @@ mod tests {
                 "uv",
                 "uv-tools",
                 "cargo-installs",
-                "gum"
+                "gum",
+                "codegraph"
             ]
         );
 
@@ -726,6 +825,8 @@ mod tests {
             "uv-tools".to_string(),
             "cargo".to_string(),
             "cargo-installs".to_string(),
+            "code-graph".to_string(),
+            "codegraph".to_string(),
         ];
         let selected = select_targets(&requested).expect("selected targets");
         let ids = selected
@@ -734,7 +835,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             ids,
-            vec!["packages", "rustup", "uv", "uv-tools", "cargo-installs"]
+            vec![
+                "packages",
+                "rustup",
+                "uv",
+                "uv-tools",
+                "cargo-installs",
+                "codegraph"
+            ]
         );
     }
 
@@ -783,5 +891,19 @@ mod tests {
                 "--accept-source-agreements",
             ]
         );
+
+        let codegraph = codegraph_install_plan_for("windows", Some("ignored".to_string()));
+        assert_eq!(codegraph.source, "codegraph_standalone_installer");
+        assert_eq!(codegraph.program, "powershell");
+        assert_eq!(
+            codegraph.args,
+            vec![
+                "-ExecutionPolicy",
+                "ByPass",
+                "-c",
+                "irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex",
+            ]
+        );
+        assert!(codegraph.env.is_empty());
     }
 }

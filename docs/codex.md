@@ -91,7 +91,7 @@ Forge should use router skills to keep routing explicit and compact.
 Current pattern:
 
 - `forge-tools` is the entry router for Forge-authored tools
-- crate-specific and domain skills such as `linear-cli`, `mermaid-diagrams`, `typst-documents`, `slack-query-cli`, and `slack-agent-cli` handle domain execution
+- crate-specific and domain skills such as `linear-cli`, `mermaid-diagrams`, `typst-documents`, `codegraph`, `slack-query-cli`, and `slack-agent-cli` handle domain execution
 - shared operating skills such as `design-algorithm` handle shaping and reduction work that crosses domains
 - engineering workflow skills such as `source-driven-development`, `debugging-and-error-recovery`, `api-and-interface-design`, `security-and-hardening`, `test-strategy`, `code-simplification`, and `documentation-and-adrs` provide compact close-to-code procedures without importing a full upstream lifecycle pack
 - loop-design skills such as `effective-loop-writer` turn unattended agent-loop ideas into file-backed loop artifacts

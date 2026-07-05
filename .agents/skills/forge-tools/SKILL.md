@@ -10,6 +10,7 @@ Use this skill as the lightweight entry point for the Forge CLI bundle.
 Pick the narrowest CLI skill that matches the job:
 
 - `bytefield-diagrams`: author and render bytefield, packet-layout, and memory-layout SVG diagrams through `forge bytefield`.
+- `codegraph`: semantic code exploration, symbol lookup, call paths, impact analysis, and affected-test discovery through CodeGraph.
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
 - `mermaid-diagrams`: text-first Mermaid authoring, diagram-type selection, and rendering through the Forge `mermaid` CLI.
 - `typst-documents`: source-first Typst PDF authoring, reusable document templates, and compile/build verification.
@@ -49,6 +50,7 @@ Default operating rules:
 - Prefer `--json` for all reads because it is the deterministic, low-token contract agents consume directly.
 - Fetch a small amount of data first with the tool's `--limit` or narrowest read command.
 - For bytefield diagram work, keep authoring in the upstream DSL and execution in `forge bytefield` rather than teaching every session a new shell wrapper.
+- For CodeGraph work, use the managed `codegraph` skill and keep CLI install, project indexing, and agent MCP config as separate explicit steps.
 - Treat write commands as explicit actions; do not infer a mutation from a read request.
 - Keep work inside the CLI contract instead of reconstructing external API calls yourself.
 - Use `jq` only for one-off local reshaping after the CLI has already returned the right record set.
