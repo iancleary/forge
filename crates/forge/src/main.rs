@@ -1682,11 +1682,11 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
     let repo_path = resolve_repo_path(args.repo_path);
     let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
     let skills = load_skills_for_source(&source_kind, repo_path.as_deref())?;
-    let selected = select_skill_defs(skills, args.skill.as_deref(), args.all)?;
-    let known_names = selected
+    let known_names = skills
         .iter()
         .map(|def| def.name.clone())
         .collect::<BTreeSet<_>>();
+    let selected = select_skill_defs(skills, args.skill.as_deref(), args.all)?;
 
     let mut results = Vec::new();
     for def in selected {
@@ -7011,6 +7011,21 @@ EOF
         );
 
         let _ = fs::remove_dir_all(repo_root);
+    }
+
+    #[test]
+    fn skills_validate_single_router_uses_full_source_for_refs() {
+        let result = skills_validate(SkillsValidateArgs {
+            skill: Some("forge-tools".to_string()),
+            all: false,
+            source: Some(SkillSourceArg::Release),
+            repo_path: None,
+        })
+        .expect("validate forge-tools");
+
+        assert!(result.valid, "{:?}", result.skills[0].issues);
+        assert_eq!(result.skills.len(), 1);
+        assert_eq!(result.skills[0].name, "forge-tools");
     }
 
     #[test]
