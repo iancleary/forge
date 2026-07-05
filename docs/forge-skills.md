@@ -25,13 +25,20 @@ That skill lifecycle is separate from `forge codex render|diff|install`, which m
 
 ## Managed Skills
 
-Initial Forge-managed skills:
+Current Forge-managed skills:
 
+- `forge-tools`
 - `design-algorithm`
+- `source-driven-development`
+- `debugging-and-error-recovery`
+- `api-and-interface-design`
+- `security-and-hardening`
+- `test-strategy`
+- `code-simplification`
+- `documentation-and-adrs`
 - `effective-loop-writer`
 - `bytefield-diagrams`
 - `gh-body-file`
-- `forge-tools`
 - `linear-cli`
 - `mermaid-diagrams`
 - `typst-documents`

@@ -93,6 +93,7 @@ Current pattern:
 - `forge-tools` is the entry router for Forge-authored tools
 - crate-specific and domain skills such as `linear-cli`, `mermaid-diagrams`, `typst-documents`, `slack-query-cli`, and `slack-agent-cli` handle domain execution
 - shared operating skills such as `design-algorithm` handle shaping and reduction work that crosses domains
+- engineering workflow skills such as `source-driven-development`, `debugging-and-error-recovery`, `api-and-interface-design`, `security-and-hardening`, `test-strategy`, `code-simplification`, and `documentation-and-adrs` provide compact close-to-code procedures without importing a full upstream lifecycle pack
 - loop-design skills such as `effective-loop-writer` turn unattended agent-loop ideas into file-backed loop artifacts
 
 Router skills should:
@@ -146,6 +147,32 @@ Forge-managed skills should follow this trigger contract:
 
 This is what makes skill routing deterministic enough to be maintained as a first-party system.
 
+## Upstream Skill Intake
+
+Forge may adapt useful material from upstream skill repositories, but the Forge copy is a maintained snapshot, not a live dependency.
+
+Use [skill-intake.md](skill-intake.md) before importing or updating skills, commands, hooks, helper scripts, or routing policy from another repo.
+
+Current policy:
+
+- prefer compact Forge adaptations over wholesale copies
+- keep upstream provenance and license notices with adapted skills
+- treat upstream command files as workflow ideas unless Forge has a stable target for managed command assets
+- keep hooks opt-in, visible, non-destructive by default, and backed by status or dry-run behavior
+- reject machine-local assumptions and broad lifecycle packs when one narrow Forge skill carries the useful behavior
+
+The first curated engineering workflow set adapted from `addyosmani/agent-skills` is:
+
+- `source-driven-development`
+- `debugging-and-error-recovery`
+- `api-and-interface-design`
+- `security-and-hardening`
+- `test-strategy`
+- `code-simplification`
+- `documentation-and-adrs`
+
+Those skills are intentionally smaller than the upstream pack. Forge already has stronger repo-specific rules, managed install behavior, and closeout tooling, so it should not duplicate every upstream lifecycle concept.
+
 ## Installation Model
 
 If Forge is the source of truth, then portable Codex assets should be deployable through Forge rather than copied manually.
@@ -160,6 +187,49 @@ Likely next candidates:
 - generated or installable first-party Codex policy assets where the contract is stable
 
 The boundary should stay narrow. Forge should manage Codex assets that are durable, portable, and worth versioning.
+
+## Machine Workflow
+
+Forge-managed machines should prefer a cheap inspect-first workflow.
+
+Daily or first-session status:
+
+```sh
+forge doctor --json
+forge permissions check --json
+forge self update-check --json
+forge skills status --json
+forge codex diff --json
+```
+
+Apply only after inspection:
+
+```sh
+forge self update --json
+forge codex install
+forge skills install --all --source release
+```
+
+This keeps machine setup deterministic without turning startup into hidden mutation.
+
+Do not add a broad `forge machine bootstrap` command until repeated use proves a stable dry-run contract. The first useful automation boundary is a status/dry-run view that reports Forge version drift, managed skill drift, Codex asset drift, permission drift, and missing tools without applying changes.
+
+## Commands And Hooks
+
+Upstream command packs and lifecycle hooks should be treated as inputs to Forge design, not automatically installed runtime surfaces.
+
+For commands:
+
+- prefer managed skills and existing Forge commands first
+- document slash-command equivalents only when the target agent supports them cleanly
+- avoid command assets that hide broad multi-step workflows behind a short name without a preview path
+
+For hooks:
+
+- keep hooks opt-in
+- prefer repo-local validation hooks over user-session hooks
+- avoid hooks that fetch network state, write config, install tools, or repair drift automatically
+- route ordinary machine updates through explicit `forge self update`, `forge codex install`, and `forge skills install`
 
 ## Official Codex Surfaces
 

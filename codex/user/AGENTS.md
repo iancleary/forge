@@ -95,6 +95,13 @@ Ask first:
 - Treat skill `description` frontmatter as the primary routing contract.
 - Use router skills first when the right narrow skill is not obvious.
 - Prefer user-scoped skills installed under `~/.agents/skills` for portable cross-repo behavior.
+- Use `source-driven-development` when a change depends on external API, library, CLI, or vendor behavior that should be verified from primary sources.
+- Use `debugging-and-error-recovery` for failing tests, broken commands, unexpected behavior, or repeated fix attempts.
+- Use `api-and-interface-design` when adding or changing public CLI/API/module/JSON contracts after the need survives design review.
+- Use `security-and-hardening` when a change touches trust boundaries such as input, auth, secrets, files, shell commands, network calls, permissions, or persisted state.
+- Use `test-strategy` to choose focused proof for features, bug fixes, refactors, and regressions without forcing ceremony.
+- Use `code-simplification` when behavior is known and the goal is to reduce complexity while preserving proof.
+- Use `documentation-and-adrs` when a change affects durable docs, workflow policy, command contracts, or architecture decisions.
 - Use `effective-loop-writer` when a user asks to design, scaffold, or improve an unattended restartable agent loop; it should produce file-backed `loops/<name>/` artifacts with role boundaries, contract, state, restart policy, rubric, traces, deletion criteria, and the current bottleneck.
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
 - Distinguish workflow-maintenance skills from executable repo commands: if a repo already has a documented task runner or checked-in script for the actual job, use that command for ordinary execution and use the skill only when creating, auditing, or changing the workflow.
@@ -105,3 +112,5 @@ Ask first:
 - Durable heuristics may be authored in Forge fragments, but they should not require separate runtime files.
 - The user baseline should optimize for truth, safety, speed, and deterministic behavior rather than personality.
 - When Forge manages this baseline, prefer `forge codex diff` before `forge codex install` so mutation stays explicit and reviewable.
+- Prefer an inspect-first Forge machine workflow: `forge doctor --json`, `forge permissions check --json`, `forge self update-check --json`, `forge skills status --json`, and `forge codex diff --json` before install/update commands.
+- Treat hooks as opt-in and visible; do not rely on hidden session-start mutation for normal Forge maintenance.

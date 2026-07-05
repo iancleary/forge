@@ -1726,6 +1726,13 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "create-release-process",
                 "cut-release",
                 "typst-documents",
+                "source-driven-development",
+                "debugging-and-error-recovery",
+                "api-and-interface-design",
+                "security-and-hardening",
+                "test-strategy",
+                "code-simplification",
+                "documentation-and-adrs",
             ] {
                 if !body.contains(required) {
                     issues.push(format!("router skill should reference `{required}`"));
@@ -5180,6 +5187,22 @@ fn release_skills() -> &'static [EmbeddedSkill] {
     &[
         embedded_skill!("forge-tools"),
         embedded_skill!("design-algorithm"),
+        embedded_skill!(
+            "source-driven-development",
+            files = ["THIRD_PARTY_NOTICES.md"]
+        ),
+        embedded_skill!(
+            "debugging-and-error-recovery",
+            files = ["THIRD_PARTY_NOTICES.md"]
+        ),
+        embedded_skill!(
+            "api-and-interface-design",
+            files = ["THIRD_PARTY_NOTICES.md"]
+        ),
+        embedded_skill!("security-and-hardening", files = ["THIRD_PARTY_NOTICES.md"]),
+        embedded_skill!("test-strategy", files = ["THIRD_PARTY_NOTICES.md"]),
+        embedded_skill!("code-simplification", files = ["THIRD_PARTY_NOTICES.md"]),
+        embedded_skill!("documentation-and-adrs", files = ["THIRD_PARTY_NOTICES.md"]),
         embedded_skill!("effective-loop-writer"),
         embedded_skill!("bytefield-diagrams"),
         embedded_skill!("gh-body-file"),

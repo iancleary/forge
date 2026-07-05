@@ -23,6 +23,12 @@ Use these commands first:
 - `forge bytefield install --json`
 - `forge bytefield render --source <file> --output <file> --json`
 
+Machine workflow:
+
+- First-session or daily inspection: `forge doctor --json`, `forge permissions check --json`, `forge self update-check --json`, `forge skills status --json`, then `forge codex diff --json`.
+- Apply only after inspection: `forge self update --json`, `forge codex install`, or `forge skills install --all --source release`.
+- Do not invent a broad bootstrap flow unless the user asks to design one; use `design-algorithm` first and keep any future automation inspectable with a dry-run/status path.
+
 Working rules:
 
 - Prefer `--json` for agent reads because it is the deterministic, low-token contract.
