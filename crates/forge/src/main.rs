@@ -6635,7 +6635,7 @@ mod tests {
 
     #[test]
     fn doctor_summary_counts_warn_as_not_ready() {
-        let checks = vec![
+        let checks = [
             DoctorCheck {
                 id: "cargo".to_string(),
                 category: "tool".to_string(),
@@ -6796,7 +6796,7 @@ mod tests {
 
         let output = format_doctor_human(&result);
 
-        assert!(output.contains("[PASS] cargo: cargo is available") == !output.contains("\x1b["));
+        assert!(output.contains("[PASS] cargo: cargo is available") != output.contains("\x1b["));
     }
 
     #[test]
