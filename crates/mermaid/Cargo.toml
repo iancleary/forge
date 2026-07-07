@@ -2,6 +2,7 @@
 name = "mermaid"
 version = "20260705.0.3"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
