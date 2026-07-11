@@ -390,6 +390,7 @@ codex/
       config.portable.toml
       agents/
         fast.toml.example
+        planner.toml.example
         researcher.toml.example
     fragments/
       principles.md
@@ -415,6 +416,10 @@ tool_namespace = "agents"
 [agents.researcher]
 description = "Deep research agent"
 config_file = "agents/researcher.toml"
+
+[agents.planner]
+description = "Planning agent"
+config_file = "agents/planner.toml"
 ```
 
 The role file can then set model and reasoning defaults for that role:
@@ -423,6 +428,15 @@ The role file can then set model and reasoning defaults for that role:
 # ~/.codex/agents/researcher.toml
 model = "gpt-5.5"
 model_reasoning_effort = "high"
+```
+
+A planner role can also carry its own model, reasoning effort, and personality:
+
+```toml
+# ~/.codex/agents/planner.toml
+model = "gpt-5.6"
+model_reasoning_effort = "medium"
+personality = "sol"
 ```
 
 Codex role spawning can select a configured role, but the spawn call itself should not be treated as the place to pass ad hoc per-spawn reasoning parameters unless Codex exposes that capability.
