@@ -360,6 +360,8 @@ Good candidates for a Forge-owned config template:
 - preferred default model
 - preferred default reasoning effort
 - stable plugin enablement that is not machine-specific
+- stable feature flags such as multi-agent role routing
+- role declarations that point at portable role-specific config files
 
 Bad candidates:
 
@@ -386,6 +388,10 @@ codex/
     config/
       config.toml.example
       config.portable.toml
+      agents/
+        fast.toml.example
+        planner.toml.example
+        researcher.toml.example
     fragments/
       principles.md
 ```
@@ -398,6 +404,42 @@ Deployment model:
 - render, diff, and install `AGENTS.md` to `~/.codex/AGENTS.md` with `forge codex`
 - render, diff, and install user rules to `~/.codex/rules/` with `forge codex`
 - keep live machine-specific config local, with optional Forge-generated fragments
+- keep role-specific config examples under `codex/user/config/agents/` and install only the roles the user chooses to enable
+
+Multi-agent role configuration should stay template-driven:
+
+```toml
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = "agents"
+
+[agents.researcher]
+description = "Deep research agent"
+config_file = "agents/researcher.toml"
+
+[agents.planner]
+description = "Planning agent"
+config_file = "agents/planner.toml"
+```
+
+The role file can then set model and reasoning defaults for that role:
+
+```toml
+# ~/.codex/agents/researcher.toml
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+```
+
+A planner role can also carry its own model, reasoning effort, and personality:
+
+```toml
+# ~/.codex/agents/planner.toml
+model = "gpt-5.6"
+model_reasoning_effort = "medium"
+personality = "sol"
+```
+
+Codex role spawning can select a configured role, but the spawn call itself should not be treated as the place to pass ad hoc per-spawn reasoning parameters unless Codex exposes that capability.
 
 Recommended interpretation:
 
@@ -454,6 +496,8 @@ Preferred workflow:
 - `forge codex render` to show the rendered user-scoped Codex assets from Forge-owned sources
 - `forge codex diff` to compare rendered output with the live local files
 - `forge codex install` to apply the rendered output explicitly
+- `forge codex config diff` to preview the targeted config merge for multi-agent roles
+- `forge codex config install` to merge only Forge-managed config sections and role files into the local Codex config
 
 Design constraints:
 
@@ -473,10 +517,11 @@ This supports speed and low prompt count without broadening destructive defaults
 
 It does not manage:
 
-- live `~/.codex/config.toml`
 - auth and installation files
 - session history, caches, or plugin state
 - profile or character switching
+
+It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features.multi_agent_v2]` and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
 
 Target model:
 

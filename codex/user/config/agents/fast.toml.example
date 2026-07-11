@@ -1,0 +1,5 @@
+# Example role-specific Codex config for fast, lower-cost work.
+# Install as ~/.codex/agents/fast.toml when enabling the fast role.
+
+model = "gpt-5.5"
+model_reasoning_effort = "low"

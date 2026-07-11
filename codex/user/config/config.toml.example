@@ -4,6 +4,22 @@ model = "gpt-5.4"
 model_reasoning_effort = "medium"
 personality = "pragmatic"
 
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = "agents"
+
+[agents.researcher]
+description = "Deep research agent"
+config_file = "agents/researcher.toml"
+
+[agents.fast]
+description = "Fast low-latency agent"
+config_file = "agents/fast.toml"
+
+[agents.planner]
+description = "Planning agent"
+config_file = "agents/planner.toml"
+
 [plugins."github@openai-curated"]
 enabled = true
 
