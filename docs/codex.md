@@ -360,6 +360,8 @@ Good candidates for a Forge-owned config template:
 - preferred default model
 - preferred default reasoning effort
 - stable plugin enablement that is not machine-specific
+- stable feature flags such as multi-agent role routing
+- role declarations that point at portable role-specific config files
 
 Bad candidates:
 
@@ -386,6 +388,9 @@ codex/
     config/
       config.toml.example
       config.portable.toml
+      agents/
+        fast.toml.example
+        researcher.toml.example
     fragments/
       principles.md
 ```
@@ -398,6 +403,29 @@ Deployment model:
 - render, diff, and install `AGENTS.md` to `~/.codex/AGENTS.md` with `forge codex`
 - render, diff, and install user rules to `~/.codex/rules/` with `forge codex`
 - keep live machine-specific config local, with optional Forge-generated fragments
+- keep role-specific config examples under `codex/user/config/agents/` and install only the roles the user chooses to enable
+
+Multi-agent role configuration should stay template-driven:
+
+```toml
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = "agents"
+
+[agents.researcher]
+description = "Deep research agent"
+config_file = "agents/researcher.toml"
+```
+
+The role file can then set model and reasoning defaults for that role:
+
+```toml
+# ~/.codex/agents/researcher.toml
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+```
+
+Codex role spawning can select a configured role, but the spawn call itself should not be treated as the place to pass ad hoc per-spawn reasoning parameters unless Codex exposes that capability.
 
 Recommended interpretation:
 
