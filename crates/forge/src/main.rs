@@ -27,6 +27,10 @@ const REPO_SKILLS_SUBPATH: &str = ".agents/skills";
 const REPO_CODEX_USER_SUBPATH: &str = "codex/user";
 const CODEX_AGENTS_REL_PATH: &str = "AGENTS.md";
 const CODEX_RULES_REL_PATH: &str = "rules/user-policy.rules";
+const CODEX_CONFIG_PORTABLE_REL_PATH: &str = "config/config.portable.toml";
+const CODEX_CONFIG_TARGET_REL_PATH: &str = "config.toml";
+const CODEX_ROLE_CONFIG_SOURCE_DIR: &str = "config/agents";
+const CODEX_ROLE_CONFIG_TARGET_DIR: &str = "agents";
 const RELEASE_INSTALLER_REL_PATH: &str = "scripts/install-forge-release.sh";
 const RELEASE_TOOLS_REL_PATH: &str = "config/release-tools.toml";
 const RELEASE_SKILLS_REL_PATH: &str = "config/release-skills.toml";
@@ -270,6 +274,19 @@ enum CodexCommand {
     Diff(CodexDiffArgs),
     #[command(about = "Install Forge-managed Codex assets to the selected target")]
     Install(CodexInstallArgs),
+    #[command(
+        about = "Targeted merge, diff, and install of Forge-managed Codex config fragments",
+        subcommand
+    )]
+    Config(CodexConfigCommand),
+}
+
+#[derive(Subcommand, Debug)]
+enum CodexConfigCommand {
+    #[command(about = "Diff the targeted Codex config merge against the selected target")]
+    Diff(CodexConfigArgs),
+    #[command(about = "Apply the targeted Codex config merge to the selected target")]
+    Install(CodexConfigArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -519,6 +536,20 @@ struct CodexInstallArgs {
         help = "Install one asset: agents or rules; repeat to select multiple assets (default: all)"
     )]
     asset: Vec<CodexAssetArg>,
+    #[arg(
+        long,
+        default_value = "user",
+        help = "Target: user or path:/absolute/path"
+    )]
+    target: String,
+    #[arg(long, value_enum, help = "Use repo or release as the source")]
+    source: Option<SkillSourceArg>,
+    #[arg(long, help = "Override the forge repo path")]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct CodexConfigArgs {
     #[arg(
         long,
         default_value = "user",
@@ -1069,6 +1100,12 @@ struct CodexAssetDefinition {
 }
 
 #[derive(Debug, Clone)]
+struct CodexConfigSource {
+    portable_config: CodexAssetDefinition,
+    role_configs: Vec<CodexAssetDefinition>,
+}
+
+#[derive(Debug, Clone)]
 struct ResolvedCodexTarget {
     kind: CodexTargetKind,
     root: PathBuf,
@@ -1211,6 +1248,14 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::Codex(CodexCommand::Install(args)) => {
             let data = codex_install(args)?;
+            emit_output(output, data, format_codex_install_human)?;
+        }
+        Command::Codex(CodexCommand::Config(CodexConfigCommand::Diff(args))) => {
+            let data = codex_config_diff(args)?;
+            emit_output(output, data, format_codex_diff_human)?;
+        }
+        Command::Codex(CodexCommand::Config(CodexConfigCommand::Install(args))) => {
+            let data = codex_config_install(args)?;
             emit_output(output, data, format_codex_install_human)?;
         }
         Command::Bytefield(BytefieldCommand::Install(args)) => {
@@ -1977,6 +2022,107 @@ fn codex_install(args: CodexInstallArgs) -> Result<CodexInstallResult> {
 
     let mut entries = Vec::new();
     for asset in assets {
+        let target_path = target.root.join(&asset.relative_path);
+        let status = if target_path.exists() {
+            let existing = fs::read(&target_path)
+                .with_context(|| format!("failed to read {}", target_path.display()))?;
+            if existing == asset.contents {
+                "unchanged"
+            } else {
+                if let Some(parent) = target_path.parent() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("failed to create {}", parent.display()))?;
+                }
+                fs::write(&target_path, &asset.contents)
+                    .with_context(|| format!("failed to write {}", target_path.display()))?;
+                "updated"
+            }
+        } else {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            fs::write(&target_path, &asset.contents)
+                .with_context(|| format!("failed to write {}", target_path.display()))?;
+            "installed"
+        };
+
+        entries.push(CodexInstallEntry {
+            name: asset.name,
+            relative_path: asset.relative_path,
+            target_path: target_path.display().to_string(),
+            source_hash: hash_bytes(&asset.contents),
+            status: status.to_string(),
+        });
+    }
+
+    Ok(CodexInstallResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: codex_target_kind_name(&target.kind).to_string(),
+        target_root: target.root.display().to_string(),
+        assets: entries,
+    })
+}
+
+fn codex_config_diff(args: CodexConfigArgs) -> Result<CodexDiffResult> {
+    let repo_path = resolve_repo_path(args.repo_path);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let target = resolve_codex_target(Some(&args.target))?;
+    let source = load_codex_config_source(&source_kind, repo_path.as_deref())?;
+    let expected = expected_codex_config_assets(&target.root, &source)?;
+
+    let assets = expected
+        .into_iter()
+        .map(|asset| {
+            let target_path = target.root.join(&asset.relative_path);
+            let target_contents = if target_path.exists() {
+                Some(
+                    fs::read(&target_path)
+                        .with_context(|| format!("failed to read {}", target_path.display()))?,
+                )
+            } else {
+                None
+            };
+            let status = match target_contents.as_ref() {
+                Some(existing) if existing == &asset.contents => "same",
+                Some(_) => "changed",
+                None => "missing",
+            };
+            Ok(CodexDiffEntry {
+                name: asset.name,
+                relative_path: asset.relative_path,
+                target_path: target_path.display().to_string(),
+                status: status.to_string(),
+                source_hash: hash_bytes(&asset.contents),
+                target_hash: target_contents
+                    .as_ref()
+                    .map(|contents| hash_bytes(contents)),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let identical = assets.iter().all(|asset| asset.status == "same");
+    Ok(CodexDiffResult {
+        source_kind: source_kind_name(&source_kind).to_string(),
+        target_kind: codex_target_kind_name(&target.kind).to_string(),
+        target_root: target.root.display().to_string(),
+        identical,
+        assets,
+    })
+}
+
+fn codex_config_install(args: CodexConfigArgs) -> Result<CodexInstallResult> {
+    let repo_path = resolve_repo_path(args.repo_path);
+    let source_kind = resolve_source_kind(args.source, repo_path.as_deref())?;
+    let target = resolve_codex_target(Some(&args.target))?;
+    let source = load_codex_config_source(&source_kind, repo_path.as_deref())?;
+    let expected = expected_codex_config_assets(&target.root, &source)?;
+
+    fs::create_dir_all(&target.root)
+        .with_context(|| format!("failed to create {}", target.root.display()))?;
+
+    let mut entries = Vec::new();
+    for asset in expected {
         let target_path = target.root.join(&asset.relative_path);
         let status = if target_path.exists() {
             let existing = fs::read(&target_path)
@@ -5195,6 +5341,226 @@ fn load_codex_assets_for_source(
     }
 }
 
+fn release_codex_config_source() -> CodexConfigSource {
+    CodexConfigSource {
+        portable_config: CodexAssetDefinition {
+            name: "config".to_string(),
+            relative_path: CODEX_CONFIG_PORTABLE_REL_PATH.to_string(),
+            source_path: None,
+            contents: include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../codex/user/config/config.portable.toml"
+            ))
+            .to_vec(),
+        },
+        role_configs: vec![
+            CodexAssetDefinition {
+                name: "fast".to_string(),
+                relative_path: "agents/fast.toml".to_string(),
+                source_path: None,
+                contents: include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../codex/user/config/agents/fast.toml.example"
+                ))
+                .to_vec(),
+            },
+            CodexAssetDefinition {
+                name: "planner".to_string(),
+                relative_path: "agents/planner.toml".to_string(),
+                source_path: None,
+                contents: include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../codex/user/config/agents/planner.toml.example"
+                ))
+                .to_vec(),
+            },
+            CodexAssetDefinition {
+                name: "researcher".to_string(),
+                relative_path: "agents/researcher.toml".to_string(),
+                source_path: None,
+                contents: include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../codex/user/config/agents/researcher.toml.example"
+                ))
+                .to_vec(),
+            },
+        ],
+    }
+}
+
+fn load_repo_codex_config_source(repo_path: &Path) -> Result<CodexConfigSource> {
+    let root = repo_codex_user_dir(repo_path);
+    let portable_path = root.join(CODEX_CONFIG_PORTABLE_REL_PATH);
+    let portable_config = CodexAssetDefinition {
+        name: "config".to_string(),
+        relative_path: CODEX_CONFIG_PORTABLE_REL_PATH.to_string(),
+        source_path: Some(portable_path.clone()),
+        contents: fs::read(&portable_path)
+            .with_context(|| format!("failed to read {}", portable_path.display()))?,
+    };
+
+    let role_dir = root.join(CODEX_ROLE_CONFIG_SOURCE_DIR);
+    let mut role_configs = Vec::new();
+    if role_dir.exists() {
+        for entry in fs::read_dir(&role_dir)
+            .with_context(|| format!("failed to read {}", role_dir.display()))?
+        {
+            let entry = entry.with_context(|| format!("failed to read {}", role_dir.display()))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(role_file_name) = file_name.strip_suffix(".toml.example") else {
+                continue;
+            };
+            let target_relative = format!("{CODEX_ROLE_CONFIG_TARGET_DIR}/{role_file_name}.toml");
+            role_configs.push(CodexAssetDefinition {
+                name: role_file_name.to_string(),
+                relative_path: target_relative,
+                source_path: Some(path.clone()),
+                contents: fs::read(&path)
+                    .with_context(|| format!("failed to read {}", path.display()))?,
+            });
+        }
+    }
+    role_configs.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+    Ok(CodexConfigSource {
+        portable_config,
+        role_configs,
+    })
+}
+
+fn load_codex_config_source(
+    source_kind: &SkillSourceKind,
+    repo_path: Option<&Path>,
+) -> Result<CodexConfigSource> {
+    match source_kind {
+        SkillSourceKind::RepoCheckout => {
+            let path =
+                repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
+            load_repo_codex_config_source(path)
+        }
+        SkillSourceKind::Release => Ok(release_codex_config_source()),
+    }
+}
+
+fn expected_codex_config_assets(
+    target_root: &Path,
+    source: &CodexConfigSource,
+) -> Result<Vec<CodexAssetDefinition>> {
+    let portable = String::from_utf8(source.portable_config.contents.clone())
+        .context("portable Codex config was not UTF-8")?;
+    let target_config_path = target_root.join(CODEX_CONFIG_TARGET_REL_PATH);
+    let existing_config = if target_config_path.exists() {
+        fs::read_to_string(&target_config_path)
+            .with_context(|| format!("failed to read {}", target_config_path.display()))?
+    } else {
+        String::new()
+    };
+    let merged = merge_managed_codex_config(&existing_config, &portable)?;
+
+    let mut assets = Vec::with_capacity(source.role_configs.len() + 1);
+    assets.push(CodexAssetDefinition {
+        name: "config".to_string(),
+        relative_path: CODEX_CONFIG_TARGET_REL_PATH.to_string(),
+        source_path: source.portable_config.source_path.clone(),
+        contents: merged.into_bytes(),
+    });
+    assets.extend(source.role_configs.iter().cloned());
+    Ok(assets)
+}
+
+fn merge_managed_codex_config(existing: &str, portable: &str) -> Result<String> {
+    let fragment = managed_codex_config_fragment(portable)?;
+    let managed_sections = managed_codex_section_names(&fragment);
+    let retained = remove_toml_sections(existing, &managed_sections);
+    Ok(join_codex_config_fragments(&retained, &fragment))
+}
+
+fn managed_codex_config_fragment(portable: &str) -> Result<String> {
+    let wanted = portable
+        .lines()
+        .filter_map(toml_section_name)
+        .filter(|name| is_managed_codex_config_section(name))
+        .collect::<BTreeSet<_>>();
+    if wanted.is_empty() {
+        bail!("portable Codex config does not contain managed config sections");
+    }
+    Ok(select_toml_sections(portable, &wanted))
+}
+
+fn managed_codex_section_names(fragment: &str) -> BTreeSet<String> {
+    fragment.lines().filter_map(toml_section_name).collect()
+}
+
+fn is_managed_codex_config_section(name: &str) -> bool {
+    name == "features.multi_agent_v2" || name.starts_with("agents.")
+}
+
+fn select_toml_sections(body: &str, wanted: &BTreeSet<String>) -> String {
+    let mut out = String::new();
+    let mut include = false;
+    for line in body.lines() {
+        if let Some(section) = toml_section_name(line) {
+            include = wanted.contains(&section);
+            if include && !out.trim().is_empty() {
+                out.push('\n');
+            }
+        }
+        if include {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out.trim().to_string() + "\n"
+}
+
+fn remove_toml_sections(body: &str, removed: &BTreeSet<String>) -> String {
+    let mut out = String::new();
+    let mut keep = true;
+    for line in body.lines() {
+        if let Some(section) = toml_section_name(line) {
+            keep = !removed.contains(&section);
+        }
+        if keep {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out.trim().to_string()
+}
+
+fn join_codex_config_fragments(retained: &str, fragment: &str) -> String {
+    let retained = retained.trim();
+    let fragment = fragment.trim();
+    match (retained.is_empty(), fragment.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => format!("{fragment}\n"),
+        (false, true) => format!("{retained}\n"),
+        (false, false) => format!("{retained}\n\n{fragment}\n"),
+    }
+}
+
+fn toml_section_name(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return None;
+    }
+    if trimmed.starts_with("[[") || trimmed.ends_with("]]") {
+        return None;
+    }
+    Some(
+        trimmed
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string(),
+    )
+}
+
 fn select_codex_assets(
     defs: Vec<CodexAssetDefinition>,
     assets: &[CodexAssetArg],
@@ -6517,6 +6883,100 @@ mod tests {
                 "embedded release payload drifted from repo codex asset for {name}"
             );
         }
+    }
+
+    #[test]
+    fn managed_codex_config_merge_preserves_local_sections_and_replaces_managed_blocks() {
+        let existing = r#"personality = "pragmatic"
+
+[projects."/tmp/local"]
+trust_level = "trusted"
+
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = true
+tool_namespace = "old"
+
+[agents.researcher]
+description = "Old researcher"
+config_file = "agents/old.toml"
+
+[plugins."github@openai-curated"]
+enabled = true
+"#;
+        let portable = r#"model = "gpt-5.4"
+
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = "agents"
+
+[agents.researcher]
+description = "Deep research agent"
+config_file = "agents/researcher.toml"
+
+[agents.planner]
+description = "Planning agent"
+config_file = "agents/planner.toml"
+
+[plugins."github@openai-curated"]
+enabled = true
+"#;
+
+        let merged = merge_managed_codex_config(existing, portable).expect("merge config");
+
+        assert!(merged.contains("[projects.\"/tmp/local\"]\ntrust_level = \"trusted\""));
+        assert!(merged.contains("[plugins.\"github@openai-curated\"]\nenabled = true"));
+        assert!(merged.contains("[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\""));
+        assert!(merged.contains("[agents.researcher]\ndescription = \"Deep research agent\"\nconfig_file = \"agents/researcher.toml\""));
+        assert!(merged.contains("[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\""));
+        assert!(!merged.contains("tool_namespace = \"old\""));
+        assert!(!merged.contains("Old researcher"));
+        assert!(!merged.contains("model = \"gpt-5.4\""));
+    }
+
+    #[test]
+    fn codex_config_install_merges_config_and_installs_role_files() {
+        let repo_root = temp_path("codex-config-repo");
+        let source_root = repo_root.join(REPO_CODEX_USER_SUBPATH);
+        fs::create_dir_all(source_root.join("config/agents")).expect("create source dirs");
+        fs::write(
+            source_root.join("config/config.portable.toml"),
+            "model = \"gpt-5.4\"\n\n[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\"\n\n[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\"\n",
+        )
+        .expect("write portable config");
+        fs::write(
+            source_root.join("config/agents/planner.toml.example"),
+            "model = \"gpt-5.6\"\nmodel_reasoning_effort = \"medium\"\npersonality = \"sol\"\n",
+        )
+        .expect("write planner role");
+
+        let target_root = temp_path("codex-config-target");
+        fs::create_dir_all(&target_root).expect("create target");
+        fs::write(
+            target_root.join("config.toml"),
+            "personality = \"pragmatic\"\n\n[projects.\"/tmp/local\"]\ntrust_level = \"trusted\"\n",
+        )
+        .expect("write target config");
+
+        let result = codex_config_install(CodexConfigArgs {
+            target: format!("path:{}", target_root.display()),
+            source: Some(SkillSourceArg::Repo),
+            repo_path: Some(repo_root.clone()),
+        })
+        .expect("install config");
+
+        assert_eq!(result.assets.len(), 2);
+        let config = fs::read_to_string(target_root.join("config.toml")).expect("read config");
+        assert!(config.contains("[projects.\"/tmp/local\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[features.multi_agent_v2]"));
+        assert!(config.contains("[agents.planner]"));
+        assert!(!config.contains("model = \"gpt-5.4\""));
+        assert_eq!(
+            fs::read_to_string(target_root.join("agents/planner.toml")).expect("read role"),
+            "model = \"gpt-5.6\"\nmodel_reasoning_effort = \"medium\"\npersonality = \"sol\"\n"
+        );
+
+        let _ = fs::remove_dir_all(repo_root);
+        let _ = fs::remove_dir_all(target_root);
     }
 
     #[test]

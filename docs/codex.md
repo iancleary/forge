@@ -496,6 +496,8 @@ Preferred workflow:
 - `forge codex render` to show the rendered user-scoped Codex assets from Forge-owned sources
 - `forge codex diff` to compare rendered output with the live local files
 - `forge codex install` to apply the rendered output explicitly
+- `forge codex config diff` to preview the targeted config merge for multi-agent roles
+- `forge codex config install` to merge only Forge-managed config sections and role files into the local Codex config
 
 Design constraints:
 
@@ -515,10 +517,11 @@ This supports speed and low prompt count without broadening destructive defaults
 
 It does not manage:
 
-- live `~/.codex/config.toml`
 - auth and installation files
 - session history, caches, or plugin state
 - profile or character switching
+
+It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features.multi_agent_v2]` and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
 
 Target model:
 
