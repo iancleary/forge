@@ -8,6 +8,7 @@ pub(super) enum Target {
     UvTools,
     CargoInstalls,
     Gum,
+    Tea,
     Codegraph,
 }
 
@@ -46,6 +47,11 @@ pub(super) const TARGET_CATALOG: &[TargetCatalogEntry] = &[
     TargetCatalogEntry {
         target: Target::Gum,
         id: "gum",
+        aliases: &[],
+    },
+    TargetCatalogEntry {
+        target: Target::Tea,
+        id: "tea",
         aliases: &[],
     },
     TargetCatalogEntry {
@@ -106,6 +112,7 @@ mod tests {
             "uv-installed tools",
             "cargo-installed commands",
             "`gum`",
+            "Tea",
             "--bootstrap-tools-dry-run",
             "--bootstrap-tools",
             "Project dependency updates are intentionally out of scope",

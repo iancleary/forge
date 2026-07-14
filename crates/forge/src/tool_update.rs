@@ -97,6 +97,7 @@ pub(crate) fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResul
             Target::UvTools => entries.push(run_plan(uv_tools_plan(), args.dry_run)),
             Target::CargoInstalls => entries.push(update_cargo_installs(args.dry_run)),
             Target::Gum => entries.push(update_gum(args.dry_run)),
+            Target::Tea => entries.push(update_tea(args.dry_run)),
             Target::Codegraph => entries.push(update_codegraph(args.dry_run)),
         }
     }
@@ -133,6 +134,7 @@ fn target_progress_message(target: Target, dry_run: bool) -> &'static str {
             Target::UvTools => "Planning uv-installed tool updates",
             Target::CargoInstalls => "Planning cargo-installed binary updates",
             Target::Gum => "Planning gum command install",
+            Target::Tea => "Planning Tea command install",
             Target::Codegraph => "Planning CodeGraph command install or upgrade",
         };
     }
@@ -144,6 +146,7 @@ fn target_progress_message(target: Target, dry_run: bool) -> &'static str {
         Target::UvTools => "Updating uv-installed tools",
         Target::CargoInstalls => "Updating cargo-installed binaries",
         Target::Gum => "Ensuring gum command is installed",
+        Target::Tea => "Ensuring Tea command is installed",
         Target::Codegraph => "Ensuring CodeGraph command is installed or upgraded",
     }
 }
@@ -411,6 +414,53 @@ fn update_gum(dry_run: bool) -> Entry {
         items: vec!["gum".to_string()],
         exit_code: None,
         detail: Some("no supported installer was available for gum".to_string()),
+    })
+}
+
+fn update_tea(dry_run: bool) -> Entry {
+    let tea = env::var("FORGE_TOOL_UPDATE_TEA_BIN").unwrap_or_else(|_| "tea".to_string());
+    if command_succeeds(&tea, &["--version"]) {
+        return Entry {
+            id: "tea".to_string(),
+            label: "Tea command".to_string(),
+            source: "existing_path".to_string(),
+            status: "skipped".to_string(),
+            command: vec![tea, "--version".to_string()],
+            env: Vec::new(),
+            items: vec!["tea".to_string()],
+            exit_code: Some(0),
+            detail: Some("Tea is already installed".to_string()),
+        };
+    }
+
+    let brew = env::var("FORGE_TOOL_UPDATE_BREW_BIN").unwrap_or_else(|_| "brew".to_string());
+    match tea_install_plan_for(env::consts::OS, brew) {
+        Some(plan) => run_plan(plan, dry_run),
+        None => Entry {
+            id: "tea".to_string(),
+            label: "Tea command".to_string(),
+            source: "none".to_string(),
+            status: "skipped".to_string(),
+            command: Vec::new(),
+            env: Vec::new(),
+            items: vec!["tea".to_string()],
+            exit_code: None,
+            detail: Some(
+                "Tea installation is supported through Homebrew on macOS and Linux".to_string(),
+            ),
+        },
+    }
+}
+
+fn tea_install_plan_for(os: &str, brew_bin: String) -> Option<Plan> {
+    matches!(os, "macos" | "linux").then(|| Plan {
+        id: "tea".to_string(),
+        label: "Tea command".to_string(),
+        source: "homebrew".to_string(),
+        program: brew_bin,
+        args: vec!["install".to_string(), "tea".to_string()],
+        env: Vec::new(),
+        items: vec!["tea".to_string()],
     })
 }
 
@@ -777,6 +827,13 @@ mod tests {
         assert_eq!(gum[1].source, "go_install");
         assert_eq!(gum[1].args, vec!["install", GUM_GO_PACKAGE]);
 
+        let tea =
+            tea_install_plan_for("macos", "brew-test".to_string()).expect("macOS Tea install plan");
+        assert_eq!(tea.id, "tea");
+        assert_eq!(tea.source, "homebrew");
+        assert_eq!(tea.program, "brew-test");
+        assert_eq!(tea.args, vec!["install", "tea"]);
+
         let codegraph = codegraph_install_plan_for("macos", Some("/tmp/cargo/bin".to_string()));
         assert_eq!(codegraph.id, "codegraph");
         assert_eq!(codegraph.source, "codegraph_standalone_installer");
@@ -813,6 +870,7 @@ mod tests {
                 "uv-tools",
                 "cargo-installs",
                 "gum",
+                "tea",
                 "codegraph"
             ]
         );
@@ -825,6 +883,7 @@ mod tests {
             "uv-tools".to_string(),
             "cargo".to_string(),
             "cargo-installs".to_string(),
+            "tea".to_string(),
             "code-graph".to_string(),
             "codegraph".to_string(),
         ];
@@ -841,6 +900,7 @@ mod tests {
                 "uv",
                 "uv-tools",
                 "cargo-installs",
+                "tea",
                 "codegraph"
             ]
         );
@@ -891,6 +951,8 @@ mod tests {
                 "--accept-source-agreements",
             ]
         );
+
+        assert!(tea_install_plan_for("windows", "brew-test".to_string()).is_none());
 
         let codegraph = codegraph_install_plan_for("windows", Some("ignored".to_string()));
         assert_eq!(codegraph.source, "codegraph_standalone_installer");
