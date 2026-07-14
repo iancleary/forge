@@ -129,6 +129,8 @@ Important boundary:
 - after install, `forge self update` migrates declared legacy Forge-managed skill installs and updates their recorded names in local state
 - when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
 - after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
+- human-readable output includes a short `changed paths` manifest for managed binaries, skill roots, and Codex assets reconciled by the update, followed by the exact GitHub release URL
+- JSON output adds `changed_paths` entries with `action` and `path`, plus `release_url`; the existing migration counters remain the record for directory migrations and removals
 
 ### Release Installer Tool Bootstrap
 

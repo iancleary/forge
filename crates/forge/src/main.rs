@@ -685,7 +685,9 @@ struct UpdateResult {
     artifact_name: Option<String>,
     artifact_sha256_expected: Option<String>,
     artifact_sha256_downloaded: Option<String>,
+    release_url: String,
     changed: bool,
+    changed_paths: Vec<UpdateChangedPath>,
     installed_binaries: Vec<String>,
     skills_reconciled: usize,
     codex_reconciled: usize,
@@ -693,6 +695,12 @@ struct UpdateResult {
     legacy_binaries_removed: usize,
     obsolete_root_files_removed: usize,
     legacy_skill_installs_migrated: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+struct UpdateChangedPath {
+    action: String,
+    path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -719,6 +727,7 @@ struct ReconcileSummary {
     skills_reconciled: usize,
     codex_reconciled: usize,
     changed: bool,
+    changed_paths: Vec<UpdateChangedPath>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -1551,6 +1560,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let mut artifact_sha256_expected = None;
     let mut artifact_sha256_downloaded = None;
     let mut installed_binaries = Vec::new();
+    let mut changed_paths = Vec::new();
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
             progress.step(format!(
@@ -1570,6 +1580,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             artifact_sha256_expected = install.artifact_sha256_expected;
             artifact_sha256_downloaded = install.artifact_sha256_downloaded;
             installed_binaries = install.installed_binaries;
+            changed_paths.extend(update_changed_binary_paths(&installed_binaries)?);
             let after_version = Some(target_version.clone());
             progress.step(format!(
                 "[6/{total_steps}] Applying release migration contract"
@@ -1592,6 +1603,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             )?;
             skills_reconciled = delegated.skills_reconciled;
             codex_reconciled = delegated.codex_reconciled;
+            changed_paths.extend(delegated.changed_paths);
             let reconcile_changed = delegated.changed
                 || local_contract.config_dirs_migrated > 0
                 || local_contract.legacy_binaries_removed > 0
@@ -1667,6 +1679,8 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         save_state(&state_file_path()?, &state)?;
         skills_reconciled = installs.len();
         codex_reconciled = codex_result.assets.len();
+        changed_paths.extend(update_changed_skill_paths(&installs));
+        changed_paths.extend(update_changed_codex_paths(&codex_result.assets));
         reconcile_changed = installs.iter().any(|item| item.status != "unchanged")
             || codex_result
                 .assets
@@ -1674,6 +1688,8 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
                 .any(|item| item.status != "unchanged");
     }
 
+    changed_paths.sort();
+    changed_paths.dedup();
     let changed = before_head != after_head || before_version != after_version || reconcile_changed;
 
     Ok(UpdateResult {
@@ -1690,7 +1706,9 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         artifact_name,
         artifact_sha256_expected,
         artifact_sha256_downloaded,
+        release_url: release_page_url(&target_version),
         changed,
+        changed_paths,
         installed_binaries,
         skills_reconciled,
         codex_reconciled,
@@ -1699,6 +1717,68 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         obsolete_root_files_removed: local_contract.obsolete_root_files_removed,
         legacy_skill_installs_migrated: local_contract.legacy_skill_installs_migrated,
     })
+}
+
+fn release_page_url(version: &str) -> String {
+    format!("{FORGE_REPO_URL}/releases/tag/{version}")
+}
+
+fn update_changed_binary_paths(binaries: &[String]) -> Result<Vec<UpdateChangedPath>> {
+    let root = cargo_bin_dir()?;
+    Ok(binaries
+        .iter()
+        .map(|binary| UpdateChangedPath {
+            action: "updated".to_string(),
+            path: root
+                .join(format!("{binary}{}", env::consts::EXE_SUFFIX))
+                .display()
+                .to_string(),
+        })
+        .collect())
+}
+
+fn update_changed_skill_paths(installs: &[SkillInstallEntry]) -> Vec<UpdateChangedPath> {
+    installs
+        .iter()
+        .filter(|entry| entry.status != "unchanged")
+        .map(|entry| UpdateChangedPath {
+            action: entry.status.clone(),
+            path: entry.target_path.clone(),
+        })
+        .collect()
+}
+
+fn update_changed_codex_paths(assets: &[CodexInstallEntry]) -> Vec<UpdateChangedPath> {
+    assets
+        .iter()
+        .filter(|entry| entry.status != "unchanged")
+        .map(|entry| UpdateChangedPath {
+            action: entry.status.clone(),
+            path: entry.target_path.clone(),
+        })
+        .collect()
+}
+
+fn update_changed_paths_from_json(entries: &[serde_json::Value]) -> Result<Vec<UpdateChangedPath>> {
+    let mut changed_paths = Vec::new();
+    for entry in entries {
+        let status = entry
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("command JSON entry missing string status"))?;
+        if status == "unchanged" {
+            continue;
+        }
+        let path = entry
+            .get("target_path")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("changed command JSON entry missing string target_path"))?;
+        changed_paths.push(UpdateChangedPath {
+            action: status.to_string(),
+            path: path.to_string(),
+        });
+    }
+    Ok(changed_paths)
 }
 
 fn inspect_permissions(apply_fixes: bool) -> Result<PermissionsResult> {
@@ -3148,6 +3228,14 @@ fn format_update_human(result: &UpdateResult) -> String {
     for (label, value) in rows {
         let _ = writeln!(out, "{:<width$} | {}", label, value, width = label_width);
     }
+
+    if !result.changed_paths.is_empty() {
+        let _ = writeln!(out, "\nchanged paths:");
+        for change in &result.changed_paths {
+            let _ = writeln!(out, "  [{}] {}", change.action.to_uppercase(), change.path);
+        }
+    }
+    let _ = writeln!(out, "\nrelease details: {}", result.release_url);
 
     out.trim_end().to_string()
 }
@@ -5211,6 +5299,9 @@ fn reconcile_release_with_installed_forge(
             let value = run_json_command(&forge_bin, &arg_refs)?;
             let installs = json_command_entries(&value, "installs")?;
             summary.skills_reconciled += installs.len();
+            summary
+                .changed_paths
+                .extend(update_changed_paths_from_json(installs)?);
             summary.changed |= installs.iter().any(|entry| {
                 entry
                     .get("status")
@@ -5232,6 +5323,9 @@ fn reconcile_release_with_installed_forge(
     )?;
     let assets = json_command_entries(&value, "assets")?;
     summary.codex_reconciled = assets.len();
+    summary
+        .changed_paths
+        .extend(update_changed_paths_from_json(assets)?);
     summary.changed |= assets.iter().any(|entry| {
         entry
             .get("status")
@@ -7799,6 +7893,75 @@ EOF
         assert!(rendered.starts_with("forge error [invalid_usage]"));
         assert!(rendered.contains("provide a skill name or --all"));
         assert!(!rendered.contains("{\"ok\":false"));
+    }
+
+    #[test]
+    fn update_output_includes_changed_path_manifest_and_release_url() {
+        let result = UpdateResult {
+            source_kind: "release".to_string(),
+            repo_path: None,
+            branch: None,
+            before_head: None,
+            after_head: None,
+            before_version: Some("20260711.0.0".to_string()),
+            after_version: Some("20260714.0.0".to_string()),
+            install_method: Some("source_build".to_string()),
+            artifact_target: None,
+            attestation_verified: Some(false),
+            artifact_name: None,
+            artifact_sha256_expected: None,
+            artifact_sha256_downloaded: None,
+            release_url: "https://github.com/iancleary/forge/releases/tag/20260714.0.0".to_string(),
+            changed: true,
+            changed_paths: vec![UpdateChangedPath {
+                action: "installed".to_string(),
+                path: "/tmp/codex/AGENTS.md".to_string(),
+            }],
+            installed_binaries: vec!["forge".to_string()],
+            skills_reconciled: 1,
+            codex_reconciled: 1,
+            config_dirs_migrated: 0,
+            legacy_binaries_removed: 0,
+            obsolete_root_files_removed: 0,
+            legacy_skill_installs_migrated: 0,
+        };
+
+        let rendered = format_update_human(&result);
+        assert!(rendered.contains("changed paths:"));
+        assert!(rendered.contains("[INSTALLED] /tmp/codex/AGENTS.md"));
+        assert!(rendered.contains(
+            "release details: https://github.com/iancleary/forge/releases/tag/20260714.0.0"
+        ));
+
+        let value = serde_json::to_value(result).expect("serialize update result");
+        assert_eq!(
+            value["release_url"],
+            "https://github.com/iancleary/forge/releases/tag/20260714.0.0"
+        );
+        assert_eq!(value["changed_paths"][0]["action"], "installed");
+        assert_eq!(value["changed_paths"][0]["path"], "/tmp/codex/AGENTS.md");
+    }
+
+    #[test]
+    fn update_changed_paths_from_json_excludes_unchanged_entries() {
+        let entries = vec![
+            serde_json::json!({
+                "status": "unchanged",
+                "target_path": "/tmp/skills/unchanged",
+            }),
+            serde_json::json!({
+                "status": "installed",
+                "target_path": "/tmp/skills/installed",
+            }),
+        ];
+
+        assert_eq!(
+            update_changed_paths_from_json(&entries).expect("parse changed paths"),
+            vec![UpdateChangedPath {
+                action: "installed".to_string(),
+                path: "/tmp/skills/installed".to_string(),
+            }]
+        );
     }
 
     #[test]
