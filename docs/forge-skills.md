@@ -39,7 +39,7 @@ Current Forge-managed skills:
 - `effective-loop-writer`
 - `bytefield-diagrams`
 - `codegraph`
-- `gh-body-file`
+- `git-forge-body-file`
 - `linear-cli`
 - `mermaid-diagrams`
 - `typst-documents`
