@@ -1,54 +1,37 @@
 ---
 name: gh-body-file
-description: Use when creating or updating GitHub issue bodies, pull request bodies, or substantial markdown comments with the gh CLI. Prefer a local markdown file and gh --body-file for multiline or markdown-heavy content; keep inline bodies only for short low-risk text.
+description: Use when creating or updating issue bodies, pull request bodies, or substantial Markdown comments on GitHub or Gitea. Detect the Git remote host, use `gh` for GitHub and `tea` for a configured Gitea server, and keep substantial body content in a reviewed local file before submission.
 ---
 
-# gh body-file
+# Hosted Git Body File
 
-Use this skill for `gh` workflows that send substantial markdown to GitHub.
+Use a file-backed workflow for substantial Markdown sent to GitHub or Gitea.
 
-## Use This When
+## Select The CLI
 
-- creating a GitHub issue with more than a short one-line body
-- editing an existing issue body
-- creating or editing a pull request body
-- adding a substantial pull-request or issue comment, especially when it contains backticks or markdown examples
-- preparing a substantial markdown comment or update where a file-backed workflow is safer and easier to review
+Inspect the repository remote before composing the command:
 
-## Do Not Use This When
+```sh
+git remote get-url origin
+```
 
-- the body is a short one-liner with no quoting risk
-- the task is about general GitHub triage, review, or CI debugging rather than composing a body payload
-- the CLI path does not support file-backed body input and the content is simple enough to keep inline safely
+- Use `gh` when the remote host is `github.com`.
+- Use `tea` when the remote host is a Gitea server configured in `tea`; pass `--remote origin` when repository discovery needs to be explicit.
+- Do not treat every non-GitHub remote as Gitea. If the host is not recognizable, inspect the configured remotes and logins or ask which service owns it.
+- Verify authentication with the selected CLI before treating an auth failure as authoritative.
 
 ## Working Rules
 
-- Write substantial markdown content to a local file first.
-- Prefer `--body-file` when the `gh` command supports it.
-- For `gh pr comment` and similar comment flows, prefer `--body-file` whenever the comment includes backticks, fenced code, or inline command examples.
-- Keep inline `--body` only for short low-risk text.
-- Avoid shell-interpolated multiline markdown when it contains backticks, `$HOME`-style paths, angle brackets, fenced code blocks, or other content likely to break quoting.
-- Backticks inside a double-quoted shell command can trigger command substitution before `gh` ever sees the text.
-- Prefer a local file because it is reviewable before submission and more deterministic for Codex.
+- Write substantial Markdown to a deterministic file under `/tmp` with `apply_patch`.
+- Inspect the file before sending it.
+- Keep short, low-risk one-line bodies inline.
+- Avoid heredocs and directly embedding multiline Markdown in shell commands.
+- When `tea` lacks file input, use the documented quoted `$(cat /tmp/file.md)` fallback; shell output is passed as one argument and is not evaluated again as shell syntax.
+- Prefer the hosting CLI's native file or stdin option when available.
 
-### Preferred File Creation
+## GitHub
 
-Default to creating the body file with `apply_patch` into a deterministic path under `/tmp`, then pass it to `gh --body-file`.
-
-Reasons:
-
-- avoids brittle shell quoting
-- avoids extra approval prompts for shell-wrapped commands
-- makes the markdown easy to review before submission
-
-Recommended pattern:
-
-1. Write `/tmp/forge-gh-body.md` (or `/tmp/forge-gh-issue.md`, `/tmp/forge-gh-pr.md`) via `apply_patch`.
-2. Run the `gh` command with `--body-file /tmp/...`.
-
-Avoid generating multi-line markdown bodies with `printf`, heredocs, or shell interpolation unless the user explicitly requests it.
-
-## Common Patterns
+Use `--body-file` for substantial bodies:
 
 ```sh
 gh issue create --title "..." --body-file /tmp/issue.md
@@ -58,22 +41,35 @@ gh pr edit 456 --body-file /tmp/pr.md
 gh pr comment 456 --body-file /tmp/comment.md
 ```
 
+## Gitea
+
+Current `tea` releases use `--description` for issue and pull-request bodies rather than a body-file flag. Author and inspect the file first, then pass its contents as one quoted argument:
+
+```sh
+tea issues create --remote origin --title "..." --description "$(cat /tmp/issue.md)"
+tea issues edit --remote origin --description "$(cat /tmp/issue.md)" 123
+tea pulls create --remote origin --title "..." --description "$(cat /tmp/pr.md)"
+tea pulls edit --remote origin --description "$(cat /tmp/pr.md)" 456
+tea comments add --remote origin 456 "$(cat /tmp/comment.md)"
+```
+
+For comment editing, prefer the supported stdin path:
+
+```sh
+tea comments edit --remote origin 789 < /tmp/comment.md
+```
+
+Check the relevant `tea ... --help` before relying on a newer file-input flag. If the installed version adds one, prefer it over command substitution.
+
 ## Expected Outcome
 
-When using this skill, the resulting GitHub body workflow should be:
-
-- file-backed for substantial markdown
-- easy to inspect before submission
-- resistant to shell quoting and interpolation errors
-
-## Inputs
-
-- issue/PR target + markdown body (or outline)
-
-## Output
-
-- `/tmp/...md` body file + `gh ... --body-file /tmp/...md`
+- substantial Markdown remains file-backed and reviewable before submission
+- GitHub remotes use `gh`; configured Gitea remotes use `tea`
+- the selected command preserves real newlines and literal Markdown
+- unknown hosting services are not guessed from a non-GitHub URL
 
 ## Checks
 
-- verify the file content before running `gh`
+- verify the remote host and selected CLI
+- verify the body file contents before submission
+- verify the created or updated issue, pull request, or comment afterward
