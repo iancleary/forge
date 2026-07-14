@@ -5702,7 +5702,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("effective-loop-writer"),
         embedded_skill!("bytefield-diagrams"),
         embedded_skill!("codegraph"),
-        embedded_skill!("gh-body-file"),
+        embedded_skill!("git-forge-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!(
             "mermaid-diagrams",
@@ -7742,6 +7742,18 @@ EOF
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn release_skill_contract_migrates_gh_body_file_name() {
+        let contract = release_skills_contract().expect("release skills contract");
+        let skill = contract
+            .skills
+            .iter()
+            .find(|skill| skill.name == "git-forge-body-file")
+            .expect("git-forge-body-file release skill");
+
+        assert_eq!(skill.legacy_names, vec!["gh-body-file"]);
     }
 
     #[test]

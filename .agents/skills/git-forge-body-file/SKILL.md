@@ -1,5 +1,5 @@
 ---
-name: gh-body-file
+name: git-forge-body-file
 description: Use when creating or updating issue bodies, pull request bodies, or substantial Markdown comments on GitHub or Gitea. Detect the Git remote host, use `gh` for GitHub and `tea` for a configured Gitea server, and keep substantial body content in a reviewed local file before submission.
 ---
 

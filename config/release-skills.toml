@@ -37,7 +37,8 @@ name = "bytefield-diagrams"
 name = "codegraph"
 
 [[skills]]
-name = "gh-body-file"
+name = "git-forge-body-file"
+legacy_names = ["gh-body-file"]
 
 [[skills]]
 name = "linear-cli"
