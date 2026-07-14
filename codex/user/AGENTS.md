@@ -78,6 +78,16 @@ Ask first:
 - Prefer narrow, testable increments.
 - Optimize for speed with bounded risk, not for motion alone.
 
+### Model Delegation
+
+- Use the highest-reasoning model available to frame ambiguous, consequential, or cross-cutting work before implementation begins.
+- Let that planner define the goal, affected files or systems, constraints, acceptance criteria, and verification needed for each delegated task.
+- Delegate clear, bounded implementation work to lower-reasoning or cheaper models more often when the contract is explicit and the result can be reviewed and verified cheaply.
+- Good delegation candidates include codebase inventory, targeted research, mechanical refactors, isolated implementations with a known design, test or fixture drafting, and documentation updates with supplied facts.
+- Keep the planner accountable for architecture, task boundaries, integration, final review, and deciding whether the verification proves the result.
+- Do not delegate unresolved product or policy decisions, security or privacy judgment, credential handling, destructive or public mutations, or work whose acceptance criteria are still unclear.
+- Do not delegate merely to avoid understanding the change; raise the model tier or take the work directly when coordination cost, uncertainty, or blast radius outweighs the savings.
+
 ### Code Review
 
 - Review diffs for bugs, regressions, missing tests, style drift, and unsafe assumptions.
