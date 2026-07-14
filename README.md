@@ -165,7 +165,7 @@ forge tool update --dry-run
 forge tool update
 ```
 
-Use `forge self update` for Forge itself and Forge-managed Codex assets. Use `forge tool update` for global tools owned outside the current project: the platform package manager, Rust toolchains through `rustup`, uv, uv-installed tools, cargo-installed commands, `gum`, and CodeGraph.
+Use `forge self update` for Forge itself and Forge-managed Codex assets. Use `forge tool update` for global tools owned outside the current project: the platform package manager, Rust toolchains through `rustup`, uv, uv-installed tools, cargo-installed commands, `gum`, Tea, and CodeGraph.
 
 Project dependency updates are intentionally out of scope for `forge tool update`; keep those in each repo's own package manager or release workflow.
 
@@ -200,7 +200,7 @@ The most common commands and their intent:
 - `forge self update [--build-from-source]`
   updates Forge and managed assets when behind.
 - `forge tool update [--dry-run]`
-  updates global command-line tools through the platform package manager, rustup, uv, uv-installed tools, cargo-installed crates, and ensures `gum` and CodeGraph are installed.
+  updates global command-line tools through the platform package manager, rustup, uv, uv-installed tools, cargo-installed crates, and ensures `gum`, Tea, and CodeGraph are installed.
 - `forge version [--json] [--update]`  
   reports the current hash/version plus release state; `--update` runs `forge self update` directly when an update is available.
 - `forge skills install --all`  
@@ -236,6 +236,7 @@ forge self update
 forge tool update --dry-run
 forge tool update
 forge tool update codegraph
+forge tool update tea
 forge version
 forge skills status
 forge codex diff

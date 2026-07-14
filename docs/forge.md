@@ -166,6 +166,7 @@ Default targets:
 - `uv-tools`: runs `uv tool upgrade --all`
 - `cargo-installs`: reads `cargo install --list`, extracts top-level installed crate names, then runs `cargo install <crate>...`
 - `gum`: ensures the `gum` command exists; if missing, installs from Homebrew on macOS/Linux, from WinGet on Windows, and can fall back to `go install github.com/charmbracelet/gum@latest` where appropriate
+- `tea`: ensures the official Gitea `tea` command exists; if missing, installs the Homebrew formula on macOS/Linux
 - `codegraph`: upgrades an existing CodeGraph CLI with `codegraph upgrade`; if missing, installs the standalone CLI from the official CodeGraph installer
 
 Install/update sources:
@@ -178,6 +179,7 @@ Install/update sources:
 | `uv-tools` | uv tool manager (`uv tool upgrade --all`) | uv tool manager (`uv tool upgrade --all`) |
 | `cargo-installs` | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) |
 | `gum` | Homebrew first, Go install fallback | WinGet (`winget install --id charmbracelet.gum -e`) |
+| `tea` | Homebrew (`brew install tea`) | Unsupported (reported as skipped) |
 | `codegraph` | existing `codegraph upgrade`, otherwise standalone installer (`curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh \| sh`) | existing `codegraph upgrade`, otherwise standalone installer (`powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 \| iex"`) |
 
 Behavior:
@@ -207,6 +209,9 @@ forge tool update packages
 
 # Ensure gum is installed
 forge tool update gum
+
+# Ensure Tea is installed
+forge tool update tea
 
 # Ensure CodeGraph is installed or upgraded
 forge tool update codegraph
