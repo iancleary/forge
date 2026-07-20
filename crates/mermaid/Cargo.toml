@@ -2,7 +2,11 @@
 name = "mermaid"
 version = "20260714.0.2"
 edition = "2024"
+description = "Mermaid diagram rendering helpers for Forge workflows"
 license = "MIT"
+repository = "https://github.com/iancleary/forge"
+readme = "../../README.md"
+publish = false
 
 [dependencies]
 anyhow = "1"
