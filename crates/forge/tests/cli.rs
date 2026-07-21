@@ -314,6 +314,98 @@ fn cli_version_is_available_human() {
 }
 
 #[test]
+fn cli_windows_terminal_preferences_diff_and_apply_are_json_stable() {
+    let root = temp_path("windows-terminal-preferences");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let settings = root.join("settings.json");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+    fs::write(
+        &settings,
+        "{\n  // retained\n  \"profiles\": { \"list\": [] },\n  \"unmanaged\": true\n}\n",
+    )
+    .expect("write settings");
+    let settings_str = settings.to_string_lossy().into_owned();
+
+    let diff = run_forge(
+        &[
+            "--json",
+            "preference",
+            "diff",
+            "windows-terminal",
+            "--settings",
+            settings_str.as_str(),
+            "--font-face",
+            "Test Mono",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(
+        diff.status.success(),
+        "{}",
+        String::from_utf8_lossy(&diff.stderr)
+    );
+    let body: Value = serde_json::from_slice(&diff.stdout).expect("diff json");
+    assert_eq!(body["data"]["target"], "windows-terminal");
+    assert_eq!(body["data"]["compliant"], false);
+    assert_eq!(body["data"]["would_change"], true);
+    assert_eq!(body["data"]["changed"], false);
+    assert!(body["data"]["changes"].as_array().unwrap().len() >= 4);
+
+    let apply = run_forge(
+        &[
+            "--json",
+            "preference",
+            "apply",
+            "windows-terminal",
+            "--settings",
+            settings_str.as_str(),
+            "--font-face",
+            "Test Mono",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(
+        apply.status.success(),
+        "{}",
+        String::from_utf8_lossy(&apply.stderr)
+    );
+    let body: Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(body["data"]["compliant"], true);
+    assert_eq!(body["data"]["would_change"], true);
+    assert_eq!(body["data"]["changed"], true);
+    let rendered = fs::read_to_string(&settings).expect("read applied settings");
+    assert!(rendered.contains("// retained"));
+    assert!(rendered.contains("\"unmanaged\": true"));
+    assert!(rendered.contains("Test Mono"));
+
+    let check = run_forge(
+        &[
+            "--json",
+            "preference",
+            "check",
+            "windows-terminal",
+            "--settings",
+            settings_str.as_str(),
+            "--font-face",
+            "Test Mono",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    let body: Value = serde_json::from_slice(&check.stdout).expect("check json");
+    assert_eq!(body["data"]["compliant"], true);
+    assert_eq!(body["data"]["would_change"], false);
+    assert_eq!(body["data"]["changed"], false);
+    assert!(body["data"]["changes"].as_array().unwrap().is_empty());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cli_self_update_rejects_repo_mode_flags() {
     let root = temp_path("self-update-release-only");
     let config_dir = root.join("config");

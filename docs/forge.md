@@ -14,6 +14,8 @@ When Forge is being used as the first-party source of truth for Codex behavior, 
 
 Forge also owns the explicit deployment path for the narrow set of user-scoped Codex files it manages in v1. Those commands are top-level `forge codex` subcommands rather than part of the skills lifecycle.
 
+Targeted cross-platform user preferences are documented in [preferences.md](preferences.md). They use a separate `forge preference` lifecycle because Forge owns only named invariants inside application-owned files.
+
 ## Commands
 
 Default output contract for every `forge` command:
