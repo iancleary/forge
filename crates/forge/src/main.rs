@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 
 mod tool_update;
+mod windows_terminal;
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const FORGE_REPO_URL: &str = "https://github.com/iancleary/forge";
@@ -200,6 +201,11 @@ enum Command {
     #[command(about = "Update globally installed command-line tools", subcommand)]
     Tool(ToolCommand),
     #[command(
+        about = "Check, preview, and apply portable user preferences",
+        subcommand
+    )]
+    Preference(PreferenceCommand),
+    #[command(
         about = "Render, diff, and install Forge-managed Codex user config",
         subcommand
     )]
@@ -264,6 +270,47 @@ enum SkillsCommand {
 enum ToolCommand {
     #[command(about = "Update known globally installed tools and tool-provided commands")]
     Update(tool_update::UpdateArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum PreferenceCommand {
+    #[command(about = "Check whether preferences are satisfied")]
+    Check(PreferenceArgs),
+    #[command(about = "Preview the targeted preference changes")]
+    Diff(PreferenceArgs),
+    #[command(about = "Apply targeted preference changes")]
+    Apply(PreferenceArgs),
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum PreferenceTargetArg {
+    WindowsTerminal,
+}
+
+#[derive(Args, Debug)]
+struct PreferenceArgs {
+    #[arg(value_enum, help = "Preference target to reconcile")]
+    target: PreferenceTargetArg,
+    #[arg(long, help = "Absolute path to settings.json (required off Windows)")]
+    settings: Option<PathBuf>,
+    #[arg(
+        long,
+        default_value = windows_terminal::DEFAULT_THEME,
+        help = "Windows Terminal application theme"
+    )]
+    theme: String,
+    #[arg(
+        long,
+        default_value = windows_terminal::DEFAULT_FONT_FACE,
+        help = "Default Windows Terminal profile font face"
+    )]
+    font_face: String,
+    #[arg(
+        long,
+        default_value = windows_terminal::DEFAULT_GIT_BASH_COMMANDLINE,
+        help = "Git Bash profile command line"
+    )]
+    git_bash_commandline: String,
 }
 
 #[derive(Subcommand, Debug)]
@@ -986,6 +1033,16 @@ struct CodexInstallEntry {
 }
 
 #[derive(Debug, Serialize)]
+struct PreferenceResult {
+    target: String,
+    settings_path: String,
+    compliant: bool,
+    would_change: bool,
+    changed: bool,
+    changes: Vec<windows_terminal::PreferenceChange>,
+}
+
+#[derive(Debug, Serialize)]
 struct BytefieldInstallResult {
     runner: String,
     package_spec: String,
@@ -1246,6 +1303,18 @@ fn run(cli: Cli) -> Result<()> {
         Command::Tool(ToolCommand::Update(args)) => {
             let data = tool_update::update(args, output)?;
             emit_output(output, data, tool_update::format_human)?;
+        }
+        Command::Preference(PreferenceCommand::Check(args)) => {
+            let data = preference_reconcile(args, false)?;
+            emit_output(output, data, |data| format_preference_human("check", data))?;
+        }
+        Command::Preference(PreferenceCommand::Diff(args)) => {
+            let data = preference_reconcile(args, false)?;
+            emit_output(output, data, |data| format_preference_human("diff", data))?;
+        }
+        Command::Preference(PreferenceCommand::Apply(args)) => {
+            let data = preference_reconcile(args, true)?;
+            emit_output(output, data, |data| format_preference_human("apply", data))?;
         }
         Command::Codex(CodexCommand::Render(args)) => {
             let data = codex_render(args)?;
@@ -3344,6 +3413,73 @@ fn format_skills_validate_human(result: &SkillsValidateResult) -> String {
     out.trim_end().to_string()
 }
 
+fn preference_reconcile(args: PreferenceArgs, apply: bool) -> Result<PreferenceResult> {
+    let settings_path = windows_terminal::resolve_settings_path(args.settings.as_deref())?;
+    let preferences = windows_terminal::Preferences {
+        theme: args.theme,
+        font_face: args.font_face,
+        git_bash_commandline: args.git_bash_commandline,
+    };
+    let result = match args.target {
+        PreferenceTargetArg::WindowsTerminal => {
+            windows_terminal::reconcile(&settings_path, &preferences)?
+        }
+    };
+    let changed = !result.changes.is_empty();
+    if apply && changed {
+        windows_terminal::apply(&settings_path, &result.original, &result.rendered)?;
+    }
+    Ok(PreferenceResult {
+        target: "windows-terminal".to_string(),
+        settings_path: result.settings_path,
+        compliant: apply || result.compliant,
+        would_change: changed,
+        changed: apply && changed,
+        changes: result.changes,
+    })
+}
+
+fn format_preference_human(command: &str, result: &PreferenceResult) -> String {
+    let mut out = String::new();
+    let status = if command == "apply" {
+        if result.changed {
+            "changed"
+        } else {
+            "unchanged"
+        }
+    } else if result.compliant {
+        "compliant"
+    } else {
+        "different"
+    };
+    let _ = writeln!(
+        out,
+        "forge preference {command}: {} ({status})",
+        result.target
+    );
+    let _ = writeln!(out, "settings: {}", result.settings_path);
+    if result.changes.is_empty() {
+        let _ = writeln!(out, "[OK] all managed preferences are satisfied");
+    } else {
+        for change in &result.changes {
+            let current = change.current.as_deref().unwrap_or("<missing>");
+            let _ = writeln!(
+                out,
+                "[{}] {}: {} -> {}",
+                if command == "apply" {
+                    "CHANGED"
+                } else {
+                    "DIFF"
+                },
+                change.path,
+                current,
+                change.desired
+            );
+        }
+    }
+    out.trim_end().to_string()
+}
+
 fn format_skills_install_human(command: &str, result: &SkillsInstallResult) -> String {
     let mut out = String::new();
     let _ = writeln!(
@@ -5345,6 +5481,12 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         msg if msg.contains("invalid target:") || msg.contains("path target must be absolute:") => {
             "invalid_target"
         }
+        msg if msg.contains("Windows Terminal settings path must be absolute:") => "invalid_target",
+        msg if msg
+            .contains("Windows Terminal settings changed while preferences were being applied") =>
+        {
+            "config_conflict"
+        }
         msg if msg.contains("repo source requires a Forge repo checkout")
             || msg.contains("forge_repo target requires --repo-path")
             || msg.contains("repo_path is not a Forge repo root:") =>
@@ -5361,7 +5503,9 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         }
         msg if msg.contains("failed to run git") => "git_unavailable",
         msg if msg.contains("failed to read config file")
-            || msg.contains("failed to parse config file") =>
+            || msg.contains("failed to parse config file")
+            || msg.contains("failed to read Windows Terminal settings")
+            || msg.contains("failed to parse Windows Terminal settings") =>
         {
             "config_error"
         }

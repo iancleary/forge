@@ -213,6 +213,12 @@ The most common commands and their intent:
   compares managed `~/.codex` files with installed versions.
 - `forge codex render`  
   applies templated policy artifacts from managed files into local state.
+- `forge preference check windows-terminal`
+  checks targeted Windows Terminal preferences without owning the complete `settings.json`.
+- `forge preference diff windows-terminal`
+  previews changes for the theme, default font, and Git Bash profile.
+- `forge preference apply windows-terminal`
+  explicitly applies those changes while preserving unrelated JSONC settings and comments.
 - `mermaid doctor`
   checks whether the local Mermaid render toolchain is ready.
 - `mermaid render --input diagram.mmd --output diagram.svg`
