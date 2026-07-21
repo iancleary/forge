@@ -1,6 +1,6 @@
 [package]
 name = "slack-core"
-version = "20260714.0.2"
+version = "20260720.0.0"
 edition = "2024"
 description = "Shared Slack API helpers for Forge command-line tools"
 license = "MIT"

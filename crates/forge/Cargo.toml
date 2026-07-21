@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "20260714.0.2"
+version = "20260720.0.0"
 edition = "2024"
 description = "Ian Cleary's personal command-line toolbox and release installer"
 license = "MIT"
