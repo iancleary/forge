@@ -2,7 +2,11 @@
 name = "cli-core"
 version = "20260714.0.2"
 edition = "2024"
+description = "Shared CLI helpers for Forge command-line tools"
 license = "MIT"
+repository = "https://github.com/iancleary/forge"
+readme = "../../README.md"
+publish = false
 
 [dependencies]
 anyhow = "1"

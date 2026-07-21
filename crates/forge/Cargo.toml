@@ -2,7 +2,11 @@
 name = "forge"
 version = "20260714.0.2"
 edition = "2024"
+description = "Ian Cleary's personal command-line toolbox and release installer"
 license = "MIT"
+repository = "https://github.com/iancleary/forge"
+readme = "../../README.md"
+publish = false
 
 [dependencies]
 anyhow = "1"
