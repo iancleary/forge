@@ -262,6 +262,7 @@ Update it when:
 - adding or removing a Forge-managed release skill
 - renaming a managed skill directory under `.agents/skills`
 - preserving a legacy managed skill name that should migrate during `forge self update`
+- pinning or refreshing upstream provenance for an adapted managed skill
 
 This file should declare only explicit, deterministic migrations. Do not infer skill renames in code.
 
