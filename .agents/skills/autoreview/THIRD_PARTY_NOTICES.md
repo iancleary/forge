@@ -2,14 +2,14 @@
 
 The `autoreview` skill and helper scripts are adapted from:
 
-- Repository: https://github.com/steipete/agent-scripts
-- Upstream commit inspected for this import: `b4035ab710dd7c32d45864fe9e8ad5125ade5cc0`
+- Repository: https://github.com/openclaw/agent-skills
+- Upstream commit inspected for this import: `66cf3dfbf560e7a93b6525b0cd2c26d012099ad6`
 - Upstream skill path: `skills/autoreview`
 - License: MIT
 
 ## MIT License Notice
 
-Copyright (c) 2026 Peter Steinberger
+Copyright (c) 2026 openclaw
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

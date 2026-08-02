@@ -126,7 +126,7 @@ States:
 ### `forge skills validate`
 
 ```sh
-forge skills validate [<skill>|--all] [--source repo|release] [--repo-path <path>] [--json]
+forge skills validate [<skill>|--all] [--source repo|release] [--repo-path <path>] [--check-upstream] [--json]
 ```
 
 Checks:
@@ -136,8 +136,22 @@ Checks:
 - frontmatter includes `name` and `description`
 - frontmatter `name` matches the managed skill name, which is the repo folder name for repo-sourced skills
 - router references point to skills that exist in the current Forge source
+- with `--check-upstream`, configured pinned GitHub tree URLs still resolve to their expected Git tree hash
 
 The intent is to keep the user-scope skill surface deterministic. Codex App skill routing uses the frontmatter `name`, while Codex CLI routing uses the skill folder name, so Forge-managed skills keep those identifiers identical. Descriptions and router references are part of the maintained contract, not free-form text.
+
+Upstream checks are opt-in because they fetch the network. Release skills can declare `upstream_url` and `upstream_hash` together in `config/release-skills.toml`; the URL must be a GitHub tree URL pinned to a concrete commit hash. JSON output includes an `upstream` object for checked skills with configured provenance:
+
+```json
+{
+  "url": "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview",
+  "expected_hash": "be0750c0949d270193ffe3048d8ee4465f9886c9",
+  "actual_hash": "be0750c0949d270193ffe3048d8ee4465f9886c9",
+  "status": "up_to_date"
+}
+```
+
+If the actual hash differs, validation marks the skill invalid with status `out_of_date`. If the fetch fails, status is `unknown` and validation fails closed so the caller can retry or inspect the upstream manually.
 
 ### `forge skills install`
 

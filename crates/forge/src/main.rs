@@ -254,7 +254,7 @@ enum SkillsCommand {
     List(SkillsListArgs),
     #[command(about = "Show managed install status; defaults to mainline targets only")]
     Status(SkillsStatusArgs),
-    #[command(about = "Validate SKILL.md metadata and router references")]
+    #[command(about = "Validate SKILL.md metadata, router references, and optional upstream refs")]
     Validate(SkillsValidateArgs),
     #[command(about = "Install Forge-managed skills to a target location")]
     Install(SkillsInstallArgs),
@@ -461,6 +461,11 @@ struct SkillsValidateArgs {
     source: Option<SkillSourceArg>,
     #[arg(long, help = "Override the forge repo path")]
     repo_path: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Fetch configured upstream refs and compare expected hashes"
+    )]
+    check_upstream: bool,
 }
 
 #[derive(Args, Debug)]
@@ -819,6 +824,29 @@ struct ReleaseSkillEntry {
     name: String,
     #[serde(default)]
     legacy_names: Vec<String>,
+    #[serde(default)]
+    upstream_url: Option<String>,
+    #[serde(default)]
+    upstream_hash: Option<String>,
+}
+
+#[derive(Debug)]
+struct SkillUpstreamRef {
+    url: String,
+    expected_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubTreeResponse {
+    tree: Vec<GithubTreeEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubTreeEntry {
+    path: String,
+    sha: String,
+    #[serde(rename = "type")]
+    entry_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -934,6 +962,15 @@ struct SkillValidationEntry {
     valid: bool,
     path: Option<String>,
     issues: Vec<String>,
+    upstream: Option<SkillUpstreamValidation>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillUpstreamValidation {
+    url: String,
+    expected_hash: String,
+    actual_hash: Option<String>,
+    status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1130,7 +1167,6 @@ const EMBEDDED_RELEASE_TOOLS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../config/release-tools.toml"
 ));
-#[cfg(test)]
 const EMBEDDED_RELEASE_SKILLS_CONTRACT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../config/release-skills.toml"
@@ -1923,6 +1959,11 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
         .iter()
         .map(|def| def.name.clone())
         .collect::<BTreeSet<_>>();
+    let upstream_refs = if args.check_upstream {
+        release_skill_upstream_refs(&source_kind, repo_path.as_deref())?
+    } else {
+        BTreeMap::new()
+    };
     let selected = select_skill_defs(skills, args.skill.as_deref(), args.all)?;
 
     let mut results = Vec::new();
@@ -1981,12 +2022,48 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 }
             }
         }
+        let upstream = if args.check_upstream {
+            match upstream_refs.get(&def.name) {
+                Some(upstream_ref) => match fetch_github_tree_hash(&upstream_ref.url) {
+                    Ok(actual_hash) => {
+                        let status = if actual_hash == upstream_ref.expected_hash {
+                            "up_to_date"
+                        } else {
+                            issues.push(format!(
+                                "upstream hash changed: expected {}, actual {}",
+                                upstream_ref.expected_hash, actual_hash
+                            ));
+                            "out_of_date"
+                        };
+                        Some(SkillUpstreamValidation {
+                            url: upstream_ref.url.clone(),
+                            expected_hash: upstream_ref.expected_hash.clone(),
+                            actual_hash: Some(actual_hash),
+                            status: status.to_string(),
+                        })
+                    }
+                    Err(err) => {
+                        issues.push(format!("upstream check failed: {err:#}"));
+                        Some(SkillUpstreamValidation {
+                            url: upstream_ref.url.clone(),
+                            expected_hash: upstream_ref.expected_hash.clone(),
+                            actual_hash: None,
+                            status: "unknown".to_string(),
+                        })
+                    }
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
 
         results.push(SkillValidationEntry {
             name: def.name.clone(),
             valid: issues.is_empty(),
             path: def.source_path.map(|path| path.display().to_string()),
             issues,
+            upstream,
         });
     }
 
@@ -3406,6 +3483,14 @@ fn format_skills_validate_human(result: &SkillsValidateResult) -> String {
         if let Some(path) = entry.path.as_ref() {
             let _ = writeln!(out, "  path: {path}");
         }
+        if let Some(upstream) = entry.upstream.as_ref() {
+            let _ = writeln!(out, "  upstream: {}", upstream.status);
+            let _ = writeln!(out, "  upstream_url: {}", upstream.url);
+            let _ = writeln!(out, "  upstream_expected_hash: {}", upstream.expected_hash);
+            if let Some(actual_hash) = upstream.actual_hash.as_ref() {
+                let _ = writeln!(out, "  upstream_actual_hash: {actual_hash}");
+            }
+        }
         for issue in &entry.issues {
             let _ = writeln!(out, "  issue: {issue}");
         }
@@ -4346,16 +4431,121 @@ fn parse_release_skills_contract(body: &str) -> Result<ReleaseSkillsContract> {
                 );
             }
         }
+        match (&skill.upstream_url, &skill.upstream_hash) {
+            (Some(url), Some(hash)) => {
+                if url.trim().is_empty() {
+                    bail!("release skill {} has an empty upstream_url", skill.name);
+                }
+                parse_github_tree_url(url).with_context(|| {
+                    format!("release skill {} upstream_url invalid", skill.name)
+                })?;
+                validate_git_tree_hash(hash).with_context(|| {
+                    format!("release skill {} upstream_hash invalid", skill.name)
+                })?;
+            }
+            (None, None) => {}
+            _ => bail!(
+                "release skill {} must set upstream_url and upstream_hash together",
+                skill.name
+            ),
+        }
     }
 
     Ok(contract)
+}
+
+fn validate_git_tree_hash(hash: &str) -> Result<()> {
+    if hash.len() != 40 || !hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        bail!("expected a 40-character Git object hash");
+    }
+    Ok(())
+}
+
+fn release_skill_upstream_refs(
+    source_kind: &SkillSourceKind,
+    repo_path: Option<&Path>,
+) -> Result<BTreeMap<String, SkillUpstreamRef>> {
+    let contract = match source_kind {
+        SkillSourceKind::RepoCheckout => {
+            let path =
+                repo_path.ok_or_else(|| anyhow!("repo source requires a Forge repo checkout"))?;
+            release_skills_contract_from_repo(path)?
+        }
+        SkillSourceKind::Release => release_skills_contract()?,
+    };
+    let refs = contract
+        .skills
+        .into_iter()
+        .filter_map(|skill| {
+            let url = skill.upstream_url?;
+            let expected_hash = skill.upstream_hash?;
+            Some((skill.name, SkillUpstreamRef { url, expected_hash }))
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(refs)
+}
+
+fn fetch_github_tree_hash(url: &str) -> Result<String> {
+    let parsed = parse_github_tree_url(url)?;
+    let api_url = format!(
+        "https://api.github.com/repos/{}/{}/git/trees/{}?recursive=1",
+        parsed.owner, parsed.repo, parsed.git_ref
+    );
+    let output = run_command_capture("curl", &["-fsSL", &api_url])?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("curl GitHub tree fetch failed for {url}: {detail}");
+    }
+    let body = String::from_utf8(output.stdout).context("GitHub tree response was not UTF-8")?;
+    let response: GithubTreeResponse =
+        serde_json::from_str(&body).context("GitHub tree response was not valid JSON")?;
+    response
+        .tree
+        .into_iter()
+        .find(|entry| entry.entry_type == "tree" && entry.path == parsed.path)
+        .map(|entry| entry.sha)
+        .ok_or_else(|| anyhow!("GitHub tree response did not contain {}", parsed.path))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GithubTreeUrl {
+    owner: String,
+    repo: String,
+    git_ref: String,
+    path: String,
+}
+
+fn parse_github_tree_url(url: &str) -> Result<GithubTreeUrl> {
+    let rest = url
+        .strip_prefix("https://github.com/")
+        .ok_or_else(|| anyhow!("upstream_url must start with https://github.com/"))?;
+    let parts = rest.split('/').collect::<Vec<_>>();
+    if parts.len() < 5 || parts[2] != "tree" {
+        bail!("upstream_url must be a GitHub tree URL with a path");
+    }
+    let owner = parts[0];
+    let repo = parts[1];
+    let git_ref = parts[3];
+    validate_manifest_name(owner, "GitHub owner")?;
+    validate_manifest_name(repo, "GitHub repo")?;
+    validate_git_tree_hash(git_ref)
+        .context("upstream_url must be pinned to a 40-character commit hash")?;
+    let path = parts[4..].join("/");
+    if path.trim().is_empty() || path.contains("..") {
+        bail!("upstream_url path is invalid");
+    }
+    Ok(GithubTreeUrl {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+        git_ref: git_ref.to_string(),
+        path,
+    })
 }
 
 fn release_tools_contract() -> Result<ReleaseToolsContract> {
     parse_release_tools_contract(EMBEDDED_RELEASE_TOOLS)
 }
 
-#[cfg(test)]
 fn release_skills_contract() -> Result<ReleaseSkillsContract> {
     parse_release_skills_contract(EMBEDDED_RELEASE_SKILLS_CONTRACT)
 }
@@ -4553,6 +4743,8 @@ fn fallback_release_skills_contract_for_version(version: &str) -> Result<Release
         .map(|name| ReleaseSkillEntry {
             name,
             legacy_names: Vec::new(),
+            upstream_url: None,
+            upstream_hash: None,
         })
         .collect::<Vec<_>>();
     Ok(ReleaseSkillsContract { version: 1, skills })
@@ -5886,6 +6078,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
                 ("scripts/test-review-harness", executable = true),
                 ("scripts/test-review-harness.ps1", executable = false),
                 ("scripts/test-review-harness.py", executable = true),
+                ("scripts/autoreview_test.py", executable = false),
                 ("THIRD_PARTY_NOTICES.md", executable = false),
             ]
         ),
@@ -6957,10 +7150,14 @@ mod tests {
                     ReleaseSkillEntry {
                         name: "learning-systems".to_string(),
                         legacy_names: Vec::new(),
+                        upstream_url: None,
+                        upstream_hash: None,
                     },
                     ReleaseSkillEntry {
                         name: "brand-new-skill".to_string(),
                         legacy_names: Vec::new(),
+                        upstream_url: None,
+                        upstream_hash: None,
                     },
                 ],
             },
@@ -7751,6 +7948,7 @@ EOF
             all: true,
             source: Some(SkillSourceArg::Repo),
             repo_path: Some(repo_root.clone()),
+            check_upstream: false,
         })
         .expect("validate skills");
 
@@ -7774,6 +7972,7 @@ EOF
             all: false,
             source: Some(SkillSourceArg::Release),
             repo_path: None,
+            check_upstream: false,
         })
         .expect("validate forge-tools");
 
@@ -7898,6 +8097,51 @@ EOF
             .expect("git-forge-body-file release skill");
 
         assert_eq!(skill.legacy_names, vec!["gh-body-file"]);
+    }
+
+    #[test]
+    fn release_skill_contract_tracks_autoreview_upstream() {
+        let contract = release_skills_contract().expect("release skills contract");
+        let skill = contract
+            .skills
+            .iter()
+            .find(|skill| skill.name == "autoreview")
+            .expect("autoreview release skill");
+
+        assert_eq!(
+            skill.upstream_url.as_deref(),
+            Some(
+                "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview"
+            )
+        );
+        assert_eq!(
+            skill.upstream_hash.as_deref(),
+            Some("be0750c0949d270193ffe3048d8ee4465f9886c9")
+        );
+    }
+
+    #[test]
+    fn parse_github_tree_url_requires_pinned_commit() {
+        let parsed = parse_github_tree_url(
+            "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview",
+        )
+        .expect("parse pinned tree URL");
+
+        assert_eq!(
+            parsed,
+            GithubTreeUrl {
+                owner: "openclaw".to_string(),
+                repo: "agent-skills".to_string(),
+                git_ref: "66cf3dfbf560e7a93b6525b0cd2c26d012099ad6".to_string(),
+                path: "skills/autoreview".to_string(),
+            }
+        );
+        assert!(
+            parse_github_tree_url(
+                "https://github.com/openclaw/agent-skills/tree/main/skills/autoreview"
+            )
+            .is_err()
+        );
     }
 
     #[test]
