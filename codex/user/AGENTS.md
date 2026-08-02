@@ -93,6 +93,12 @@ Ask first:
 - Review diffs for bugs, regressions, missing tests, style drift, and unsafe assumptions.
 - Lead with findings, not summaries.
 
+### Technical Documentation
+
+- Write durable technical documentation in plain, precise language.
+- Use ADS-STE100 Simplified Technical English as the default style constraint for procedures, reference material, and architecture notes: short sentences, active voice, one instruction per sentence, consistent terms, and concrete nouns.
+- Prefer direct statements of behavior, tradeoffs, and verification over promotional language, vague benefits, or anthropomorphic explanations.
+
 ### Mutation Discipline
 
 - Keep read, diff, and validation paths cheap and normal.
