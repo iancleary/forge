@@ -5928,7 +5928,7 @@ fn managed_codex_section_names(fragment: &str) -> BTreeSet<String> {
 }
 
 fn is_managed_codex_config_section(name: &str) -> bool {
-    name == "features.multi_agent_v2" || name.starts_with("agents.")
+    name == "features" || name == "features.multi_agent_v2" || name.starts_with("agents.")
 }
 
 fn select_toml_sections(body: &str, wanted: &BTreeSet<String>) -> String {
@@ -7331,6 +7331,9 @@ trust_level = "trusted"
 hide_spawn_agent_metadata = true
 tool_namespace = "old"
 
+[features]
+default_mode_request_user_input = false
+
 [agents.researcher]
 description = "Old researcher"
 config_file = "agents/old.toml"
@@ -7339,6 +7342,9 @@ config_file = "agents/old.toml"
 enabled = true
 "#;
         let portable = r#"model = "gpt-5.4"
+
+[features]
+default_mode_request_user_input = true
 
 [features.multi_agent_v2]
 hide_spawn_agent_metadata = false
@@ -7360,10 +7366,12 @@ enabled = true
 
         assert!(merged.contains("[projects.\"/tmp/local\"]\ntrust_level = \"trusted\""));
         assert!(merged.contains("[plugins.\"github@openai-curated\"]\nenabled = true"));
+        assert!(merged.contains("[features]\ndefault_mode_request_user_input = true"));
         assert!(merged.contains("[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\""));
         assert!(merged.contains("[agents.researcher]\ndescription = \"Deep research agent\"\nconfig_file = \"agents/researcher.toml\""));
         assert!(merged.contains("[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\""));
         assert!(!merged.contains("tool_namespace = \"old\""));
+        assert!(!merged.contains("default_mode_request_user_input = false"));
         assert!(!merged.contains("Old researcher"));
         assert!(!merged.contains("model = \"gpt-5.4\""));
     }
@@ -7375,7 +7383,7 @@ enabled = true
         fs::create_dir_all(source_root.join("config/agents")).expect("create source dirs");
         fs::write(
             source_root.join("config/config.portable.toml"),
-            "model = \"gpt-5.4\"\n\n[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\"\n\n[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\"\n",
+            "model = \"gpt-5.4\"\n\n[features]\ndefault_mode_request_user_input = true\n\n[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\"\n\n[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\"\n",
         )
         .expect("write portable config");
         fs::write(
@@ -7402,6 +7410,7 @@ enabled = true
         assert_eq!(result.assets.len(), 2);
         let config = fs::read_to_string(target_root.join("config.toml")).expect("read config");
         assert!(config.contains("[projects.\"/tmp/local\"]\ntrust_level = \"trusted\""));
+        assert!(config.contains("[features]\ndefault_mode_request_user_input = true"));
         assert!(config.contains("[features.multi_agent_v2]"));
         assert!(config.contains("[agents.planner]"));
         assert!(!config.contains("model = \"gpt-5.4\""));

@@ -521,7 +521,7 @@ It does not manage:
 - session history, caches, or plugin state
 - profile or character switching
 
-It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features.multi_agent_v2]` and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
+It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features]`, `[features.multi_agent_v2]`, and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
 
 Target model:
 
