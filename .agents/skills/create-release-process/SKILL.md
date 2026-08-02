@@ -52,6 +52,7 @@ Make the repo-local release process explicit about:
 - release notes format and source, such as `--notes-file`, generated notes, or a checked-in template
 - files the runner may mutate, including manifests and lockfiles
 - validation commands that must pass before publishing
+- lifecycle ordering, with tests and all required builds before irreversible publication and tag/release creation last when the platform permits it
 - branch, clean-tree, tag, and remote requirements
 - final public-facing action, such as `gh release create`, registry publish, deploy, or manual stop point
 - dry-run behavior and read-only version query commands, when useful
@@ -84,7 +85,9 @@ When this skill is used inside Forge itself:
 - use `just cut-release --dry-run` before the real release when validating the next version or sequence
 - the script owns `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
 - omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
-- the final publish step is `gh release create`
+- the runner pushes the version commit, dispatches `.github/workflows/release-artifacts.yml`, and waits for it to finish
+- the same runner resumes a clean, already-versioned but unpublished `main` after a failed workflow
+- the workflow runs contributor checks, builds every supported platform, assembles and verifies artifacts and attestations, then uses `gh release create` as its final step so the tag and published release do not exist for a failed build
 - if the Forge release flow changes, update `scripts/cut-release.sh`, `docs/release.md`, `AGENTS.md`, this skill, and the `cut-release` skill together
 
 ## Output

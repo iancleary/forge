@@ -40,7 +40,7 @@ const RELEASE_BINARIES_END_MARKER: &str = "  # END FORGE_BINARIES";
 const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
 const RELEASE_ARTIFACT_VERIFICATION_WORKFLOW: &str = ".github/workflows/release-artifacts.yml";
 const RELEASE_ATTESTATION_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
-const RELEASE_ATTESTATION_SOURCE_REF_PREFIX: &str = "refs/tags/";
+const RELEASE_ATTESTATION_SOURCE_REF: &str = "refs/heads/main";
 const BYTEFIELD_DEFAULT_PACKAGE_SPEC: &str = "bytefield-svg@1.11.0";
 const BYTEFIELD_EXECUTABLE: &str = "bytefield-svg";
 
@@ -4845,7 +4845,27 @@ fn verify_release_asset_attestation(version: &str, archive_path: &Path) -> Resul
 
 fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Path) -> Result<()> {
     let archive_path_string = archive_path.display().to_string();
-    let source_ref = format!("{RELEASE_ATTESTATION_SOURCE_REF_PREFIX}{version}");
+    let release_ref = format!("repos/{FORGE_REPO_SLUG}/git/ref/tags/{version}");
+    let release_commit_output =
+        run_command_capture("gh", &["api", &release_ref, "--jq", ".object.sha"])?;
+    if !release_commit_output.status.success() {
+        let detail = output_failure_detail(&release_commit_output)
+            .unwrap_or_else(|| "unknown error".to_string());
+        return Err(AttestationVerificationFailure {
+            detail: format!("failed to resolve release tag commit for {version}: {detail}"),
+        }
+        .into());
+    }
+    let release_commit = String::from_utf8(release_commit_output.stdout)
+        .context("release tag commit was not UTF-8")?
+        .trim()
+        .to_string();
+    if let Err(err) = validate_git_tree_hash(&release_commit) {
+        return Err(AttestationVerificationFailure {
+            detail: format!("release tag did not resolve to a full commit hash: {err}"),
+        }
+        .into());
+    }
     let signer_workflow = format!("{FORGE_REPO_SLUG}/{RELEASE_ARTIFACT_VERIFICATION_WORKFLOW}");
     let args = vec![
         "attestation".to_string(),
@@ -4854,7 +4874,9 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
         "--repo".to_string(),
         FORGE_REPO_SLUG.to_string(),
         "--source-ref".to_string(),
-        source_ref,
+        RELEASE_ATTESTATION_SOURCE_REF.to_string(),
+        "--source-digest".to_string(),
+        release_commit,
         "--signer-workflow".to_string(),
         signer_workflow,
         "--predicate-type".to_string(),

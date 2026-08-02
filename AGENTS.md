@@ -79,6 +79,7 @@ Before committing:
 - use `just cut-release --print-next-version` when you need the inferred next release version without starting the release flow
 - prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
 - the release script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
+- the release script pushes the version commit and dispatches the release-artifacts workflow; that workflow must pass checks, build every supported platform, stage and verify artifacts, and create the tag and GitHub release only in its final step
 - the deployed release-process skills provide portable defaults, while this repo's `AGENTS.md`, `docs/release.md`, `just cut-release`, and `scripts/cut-release.sh` tailor the Forge-specific CalVer, notes, validation, and publish behavior
 - if the release flow changes, update the script, [docs/release.md](docs/release.md), and the release-process skills together
 
@@ -114,6 +115,7 @@ For adapted third-party skills, also add `THIRD_PARTY_NOTICES.md` with the upstr
 - normal validation path is:
   - `just cut-release --dry-run`
   - `just cut-release`
+- release ordering is checks, all-platform builds, artifact assembly and verification, then tag and GitHub release creation
 - use the repo-local release script instead of reconstructing release commands by hand
 - use the `create-release-process` skill to maintain the release process; use the `cut-release` skill to execute the release through `just cut-release`
 

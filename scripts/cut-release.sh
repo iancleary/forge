@@ -11,6 +11,7 @@ PRINT_CURRENT_VERSION=0
 PRINT_NEXT_VERSION=0
 VERSION=""
 NOTES_FILE=""
+RELEASE_WORKFLOW="release-artifacts.yml"
 
 usage() {
   cat <<'EOF'
@@ -45,6 +46,34 @@ run() {
   if [ "$DRY_RUN" -eq 0 ]; then
     "$@"
   fi
+}
+
+find_release_run() {
+  version="$1"
+  release_sha="$2"
+  display_title="Release $version from $release_sha"
+  attempt=1
+
+  while [ "$attempt" -le 30 ]; do
+    run_id="$(
+      gh run list \
+        --workflow "$RELEASE_WORKFLOW" \
+        --event workflow_dispatch \
+        --limit 20 \
+        --json databaseId,displayTitle \
+        --jq "[.[] | select(.displayTitle == \"$display_title\")][0].databaseId // empty" \
+        2>/dev/null || true
+    )"
+    if [ -n "$run_id" ]; then
+      printf '%s\n' "$run_id"
+      return
+    fi
+
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  die "timed out waiting for $RELEASE_WORKFLOW run for $release_sha"
 }
 
 resolve_next_version() {
@@ -181,18 +210,17 @@ if [ -z "$VERSION" ]; then
   VERSION="$(resolve_next_version)"
 fi
 
-case "$VERSION" in
-  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].0.[0-9]*)
-    ;;
-  *)
-    die "version must match YYYYMMDD.0.N"
-    ;;
-esac
+printf '%s\n' "$VERSION" | grep -Eq '^[0-9]{8}\.0\.[0-9]+$' ||
+  die "version must match YYYYMMDD.0.N"
 
 echo "resolved release version: $VERSION"
 
-[ "$VERSION" != "$(current_release_version)" ] ||
-  die "version $VERSION already matches the current crate version"
+if [ "$VERSION" = "$(current_release_version)" ]; then
+  RESUME_RELEASE=1
+  echo "resuming unpublished release version: $VERSION"
+else
+  RESUME_RELEASE=0
+fi
 
 if git -C "$ROOT" rev-parse -q --verify "refs/tags/$VERSION" >/dev/null 2>&1; then
   die "local tag $VERSION already exists"
@@ -204,29 +232,54 @@ fi
 
 [ -z "$NOTES_FILE" ] || [ -f "$NOTES_FILE" ] || die "notes file not found: $NOTES_FILE"
 
-run just -f "$ROOT/justfile" bump-version "$VERSION"
-run cargo check --manifest-path "$ROOT/Cargo.toml"
+if [ "$RESUME_RELEASE" -eq 1 ]; then
+  run just -f "$ROOT/justfile" ci
+  release_sha="$(git -C "$ROOT" rev-parse HEAD)"
+else
+  run just -f "$ROOT/justfile" bump-version "$VERSION"
+  run just -f "$ROOT/justfile" ci
 
-if [ "$DRY_RUN" -eq 0 ]; then
-  validate_release_diff
+  if [ "$DRY_RUN" -eq 0 ]; then
+    validate_release_diff
+  fi
+
+  run git -C "$ROOT" add Cargo.lock crates/*/Cargo.toml
+  run git -C "$ROOT" commit -m "chore: bump version to $VERSION"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    release_sha="<release-commit-sha>"
+  else
+    release_sha="$(git -C "$ROOT" rev-parse HEAD)"
+  fi
 fi
 
-run git -C "$ROOT" add Cargo.lock crates/*/Cargo.toml
-run git -C "$ROOT" commit -m "chore: bump version to $VERSION"
 run git -C "$ROOT" push origin "$DEFAULT_BRANCH"
 
-if [ -n "$NOTES_FILE" ]; then
-  if [ "$LATEST" -eq 1 ]; then
-    run gh release create "$VERSION" --title "$VERSION" --notes-file "$NOTES_FILE" --latest
-  else
-    run gh release create "$VERSION" --title "$VERSION" --notes-file "$NOTES_FILE"
-  fi
+if [ "$LATEST" -eq 1 ]; then
+  latest="true"
 else
-  if [ "$LATEST" -eq 1 ]; then
-    run gh release create "$VERSION" --title "$VERSION" --generate-notes --latest
-  else
-    run gh release create "$VERSION" --title "$VERSION" --generate-notes
-  fi
+  latest="false"
+fi
+
+if [ -n "$NOTES_FILE" ]; then
+  run gh workflow run "$RELEASE_WORKFLOW" \
+    --ref "$DEFAULT_BRANCH" \
+    -f "version=$VERSION" \
+    -f "target_sha=$release_sha" \
+    -f "latest=$latest" \
+    -F "notes=@$NOTES_FILE"
+else
+  run gh workflow run "$RELEASE_WORKFLOW" \
+    --ref "$DEFAULT_BRANCH" \
+    -f "version=$VERSION" \
+    -f "target_sha=$release_sha" \
+    -f "latest=$latest"
+fi
+
+if [ "$DRY_RUN" -eq 0 ]; then
+  run_id="$(find_release_run "$VERSION" "$release_sha")"
+  echo "release workflow run: $run_id"
+  gh run watch "$run_id" --compact --exit-status
 fi
 
 echo "release ready: $VERSION"
