@@ -6,6 +6,9 @@ model = "gpt-5.4"
 model_reasoning_effort = "medium"
 personality = "pragmatic"
 
+[features]
+default_mode_request_user_input = true
+
 [features.multi_agent_v2]
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
