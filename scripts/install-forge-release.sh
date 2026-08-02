@@ -171,9 +171,17 @@ verify_artifact_attestation() {
     return 2
   fi
 
+  release_commit="$(
+    gh api "repos/$REPO_SLUG/git/ref/tags/$REF" --jq .object.sha 2>/dev/null || true
+  )"
+  if ! printf '%s\n' "$release_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+    return 3
+  fi
+
   if gh attestation verify "$archive_path" \
     --repo "$REPO_SLUG" \
-    --source-ref "refs/tags/$REF" \
+    --source-ref refs/heads/main \
+    --source-digest "$release_commit" \
     --signer-workflow "$REPO_SLUG/.github/workflows/release-artifacts.yml" \
     --predicate-type https://slsa.dev/provenance/v1 \
     >/dev/null 2>&1

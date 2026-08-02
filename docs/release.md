@@ -83,11 +83,15 @@ The script currently enforces:
 - omitted `--version` resolves the next Phoenix-date CalVer automatically after fetching `main` and tags from `origin`
 - `--print-next-version` prints that inferred next version and exits without mutating the repo
 - version bumping happens through `just bump-version`
-- `cargo check` must pass and the release commit must include `Cargo.lock`
+- if the version is already present on a clean `main` but has no tag or GitHub release, rerunning the same command resumes the unpublished release instead of creating another bump commit
+- the full `just ci` contributor suite must pass locally and in the release workflow
+- the release commit must include `Cargo.lock`
 - release diff must be limited to `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
-- the script commits, pushes `main`, and creates the GitHub release
+- the script commits and pushes `main`, dispatches `.github/workflows/release-artifacts.yml`, and waits for the workflow result
+- the workflow builds every supported platform before assembling and verifying the release artifacts and attestations
+- the workflow's final step creates the tag, uploads all assets, and publishes the GitHub release atomically through `gh release create`
 
-After the release is published, GitHub Actions builds and uploads the supported release artifacts plus verification metadata.
+If checks, any platform build, artifact assembly, or attestation verification fails, no release tag or GitHub release is created.
 
 The underlying GitHub release step still uses GitHub CLI.
 
@@ -99,7 +103,7 @@ just cut-release
 ```
 Shell note:
 
-- the script keeps the `gh release create` invocation on one command line, which avoids the zsh split-command footgun
+- the runner uses `gh workflow run` and `gh run watch` so local execution does not return success before the remote release workflow finishes
 
 Why:
 
@@ -134,7 +138,8 @@ Target behavior:
 2. Verify versions match
 3. Run release checks
 4. Push `main`
-5. Create the GitHub release
+5. Dispatch and wait for the release workflow
+6. Create the tag and GitHub release as the workflow's final step
 
 ### 1. Verify git state
 
@@ -231,12 +236,13 @@ Recommended online verification for a downloaded archive (strict path):
 ```sh
 gh attestation verify ./forge-20260415.0.2-aarch64-apple-darwin.tar.gz \
   --repo iancleary/forge \
-  --source-ref refs/tags/20260415.0.2 \
+  --source-ref refs/heads/main \
+  --source-digest <release-commit-sha> \
   --signer-workflow iancleary/forge/.github/workflows/release-artifacts.yml \
   --predicate-type https://slsa.dev/provenance/v1
 ```
 
-That verification path uses the published GitHub attestation associated with the release asset and checks that the asset matches the release provenance.
+That verification path uses the published GitHub attestation associated with the release asset and pins provenance to the immutable commit targeted by the release tag. The installer and `forge self update` resolve that commit automatically.
 
 For offline workflows, the release also publishes `*.attestation.json` bundle files that correspond to the built artifacts and release metadata.
 
@@ -274,12 +280,29 @@ Push before creating the release:
 git push origin main
 ```
 
-### 5. Create the release
+### 5. Dispatch and wait for the release workflow
 
-Use GitHub CLI under the hood:
+The runner dispatches the checked-in workflow for the pushed release commit, then waits for it to finish:
 
 ```sh
-gh release create <version> --target main --title <version> --generate-notes --latest
+gh workflow run release-artifacts.yml --ref main \
+  -f version=<version> \
+  -f target_sha=<release-commit-sha>
+gh run watch <run-id> --exit-status
+```
+
+The workflow runs `just ci`, builds every target in the release matrix, assembles the manifest and checksums, and verifies attestations before publication.
+
+### 6. Create the tag and release
+
+The workflow's final step uses GitHub CLI. Supplying the release commit with `--target` lets `gh release create` create the tag only after every prerequisite succeeds:
+
+```sh
+gh release create <version> <assets...> \
+  --target <release-commit-sha> \
+  --title <version> \
+  --generate-notes \
+  --latest
 ```
 
 ## Suggested Flags

@@ -30,7 +30,10 @@ test:
 install-list-check:
   sh "{{root}}/scripts/check-forge-binaries.sh"
 
-ci: fmt-check clippy test install-list-check
+release-process-check:
+  sh "{{root}}/scripts/check-release-process.sh"
+
+ci: fmt-check clippy test install-list-check release-process-check
 
 doc:
   cargo doc --no-deps

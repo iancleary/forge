@@ -1,8 +1,26 @@
 name: Release Artifacts
+run-name: Release ${{ inputs.version }} from ${{ inputs.target_sha }}
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Phoenix-date CalVer to publish
+        required: true
+        type: string
+      target_sha:
+        description: Full release commit SHA
+        required: true
+        type: string
+      latest:
+        description: Mark the release as latest
+        required: true
+        default: true
+        type: boolean
+      notes:
+        description: Optional curated release notes
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -11,7 +29,56 @@ permissions:
   artifact-metadata: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target_sha }}
+      - name: Validate release inputs
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ inputs.target_sha }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_VERSION" =~ ^[0-9]{8}\.0\.[0-9]+$ ]] || {
+            echo "version must match YYYYMMDD.0.N"
+            exit 1
+          }
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "target_sha must be a full commit SHA"
+            exit 1
+          }
+          git fetch origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main || {
+            echo "target_sha must be on main"
+            exit 1
+          }
+          while IFS= read -r manifest; do
+            manifest_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$manifest" | head -n 1)"
+            [ "$manifest_version" = "$RELEASE_VERSION" ] || {
+              echo "$manifest must have version $RELEASE_VERSION, got $manifest_version"
+              exit 1
+            }
+          done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | sort)
+
+  checks:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: taiki-e/install-action@just
+      - name: Run contributor checks
+        run: just ci
+
   build:
+    needs: checks
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.target_sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -33,10 +100,10 @@ jobs:
         shell: bash
         run: |
           scripts/build-forge-release-artifact.sh \
-            --version "${{ github.event.release.tag_name }}" \
+            --version "${{ inputs.version }}" \
             --target "${{ matrix.target }}" \
             --output-dir dist
-          echo "name=forge-${{ github.event.release.tag_name }}-${{ matrix.target }}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "name=forge-${{ inputs.version }}-${{ matrix.target }}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Attest Release Artifact
         id: attest_artifact
@@ -49,18 +116,19 @@ jobs:
           cp \
             "${{ steps.attest_artifact.outputs.bundle-path }}" \
             "dist/${{ steps.artifact.outputs.name }}.attestation.json"
-      - uses: actions/upload-artifact@v7
+      - name: Upload Build Outputs
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
           path: dist/*
 
-  publish:
+  release:
     needs: build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.target_sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v8
         with:
@@ -70,7 +138,7 @@ jobs:
         shell: bash
         run: |
           scripts/build-forge-release-manifest.sh \
-            --version "${{ github.event.release.tag_name }}" \
+            --version "${{ inputs.version }}" \
             --artifacts-dir dist
       - name: Attest Release Metadata
         id: attest_metadata
@@ -85,26 +153,15 @@ jobs:
           cp \
             "${{ steps.attest_metadata.outputs.bundle-path }}" \
             dist/forge-release-metadata.attestation.json
-      - name: Upload Release Assets
+      - name: Verify staged attestations
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            dist/*.tar.gz \
-            dist/*.attestation.json \
-            dist/forge-release-manifest.json \
-            dist/forge-release-sha256sums.txt \
-            --clobber
-
-      - name: Verify attestation visibility for published assets
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ inputs.target_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do
-            asset_name="forge-${{ github.event.release.tag_name }}-${target}.tar.gz"
-            source_ref="refs/tags/${{ github.event.release.tag_name }}"
+            asset_name="forge-${RELEASE_VERSION}-${target}.tar.gz"
             if [ ! -f "dist/$asset_name" ]; then
               echo "missing release asset for verification: dist/$asset_name"
               exit 1
@@ -112,7 +169,8 @@ jobs:
             for attempt in 1 2 3; do
               if gh attestation verify "dist/$asset_name" \
                 --repo "${{ github.repository }}" \
-                --source-ref "$source_ref" \
+                --source-ref "refs/heads/main" \
+                --source-digest "$RELEASE_SHA" \
                 --signer-workflow "${{ github.repository }}/.github/workflows/release-artifacts.yml" \
                 --predicate-type https://slsa.dev/provenance/v1; then
                 break
@@ -124,3 +182,35 @@ jobs:
               sleep "$((attempt * 2))"
             done
           done
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_LATEST: ${{ inputs.latest }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+          RELEASE_SHA: ${{ inputs.target_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          release_args=(
+            "$RELEASE_VERSION"
+            --target "$RELEASE_SHA"
+            --title "$RELEASE_VERSION"
+          )
+          release_args+=(
+            dist/*.tar.gz
+            dist/*.attestation.json
+            dist/forge-release-manifest.json
+            dist/forge-release-sha256sums.txt
+          )
+          if [ -n "$RELEASE_NOTES" ]; then
+            release_args+=(--notes "$RELEASE_NOTES")
+          else
+            release_args+=(--generate-notes)
+          fi
+          if [ "$RELEASE_LATEST" = "true" ]; then
+            release_args+=(--latest)
+          else
+            release_args+=(--latest=false)
+          fi
+          gh release create "${release_args[@]}"

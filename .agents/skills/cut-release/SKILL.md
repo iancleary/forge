@@ -79,7 +79,9 @@ When this skill is used inside Forge itself:
 - use `just cut-release --print-next-version` for a read-only next-version query
 - the script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
 - omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
-- the final publish step is `gh release create`
+- a clean `main` already carrying the unpublished version is resumable through the same runner after a failed workflow
+- the runner pushes the version commit, dispatches the release-artifacts workflow, and waits for its result
+- the workflow must pass contributor checks, build every supported platform, assemble and verify artifacts and attestations, and only then create the tag and published GitHub release in its final `gh release create` step
 
 ## Output
 
@@ -89,7 +91,7 @@ Report:
 - the version that was printed or cut
 - how release notes were supplied
 - whether the repo runner succeeded
-- the release URL or failing step if publication did not complete
+- the workflow run and release URLs, or the failing step if publication did not complete
 
 ## Safety
 
