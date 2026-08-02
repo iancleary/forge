@@ -586,6 +586,49 @@ fn cli_tool_update_dry_run_reports_global_commands() {
 
 #[cfg(unix)]
 #[test]
+fn cli_tool_update_rustup_runs_rustup_update() {
+    let root = temp_path("tool-update-rustup");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let fake_rustup = root.join("fake-rustup");
+    let log_path = root.join("tool.log");
+    write_executable_script(&fake_rustup, fake_tool_success_script());
+    let fake_rustup_str = fake_rustup.to_string_lossy().into_owned();
+    let log_path_str = log_path.to_string_lossy().into_owned();
+
+    let output = run_forge_with_env(
+        &["--json", "tool", "update", "rustup"],
+        &config_dir,
+        &home_dir,
+        &[
+            ("FORGE_TOOL_UPDATE_RUSTUP_BIN", fake_rustup_str.as_str()),
+            ("FORGE_TEST_TOOL_LOG", log_path_str.as_str()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let body: Value = serde_json::from_str(stdout.trim()).expect("tool update json");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["data"]["summary"]["succeeded"], 1);
+    assert_eq!(body["data"]["entries"][0]["id"], "rustup");
+    assert_eq!(
+        fs::read_to_string(&log_path).expect("read tool log"),
+        format!("{fake_rustup_str} update\n")
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
 fn cli_tool_update_cargo_installs_runs_parsed_packages() {
     let root = temp_path("tool-update-cargo");
     let config_dir = root.join("config");
