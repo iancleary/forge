@@ -88,9 +88,9 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Te
         & $Root/scripts/install-forge-release.ps1 -Tag $Version -SkipCodex @Arguments
         if ($LASTEXITCODE -ne 0) { throw "installer exited with $LASTEXITCODE" }
     } catch {
-        return @{ Success = $false; Home = $TestHome; Log = $log; GhLog = $ghLog }
+        return @{ Success = $false; Home = $TestHome; Log = $log; GhLog = $ghLog; Error = $_.Exception.Message }
     }
-    return @{ Success = $true; Home = $TestHome; Log = $log; GhLog = $ghLog }
+    return @{ Success = $true; Home = $TestHome; Log = $log; GhLog = $ghLog; Error = $null }
 }
 
 function Expect-Failure([string]$Fixture, [string[]]$Arguments = @(), [string]$TestHome = $null) {
@@ -119,7 +119,7 @@ exit /b 1
 
     $valid = New-Fixture "valid"
     $result = Run-Installer $valid
-    if (-not $result.Success) { Fail "valid Windows install failed" }
+    if (-not $result.Success) { Fail "valid Windows install failed: $($result.Error)" }
     if (-not (Test-Path -LiteralPath (Join-Path $result.Home "localappdata\Forge\bin\forge.exe") -PathType Leaf)) { Fail "valid Windows install did not install forge.exe" }
     if ((Get-Content -LiteralPath $result.Log -Raw).Trim()) { Fail "default Windows install invoked a toolchain command" }
     if ((Get-Content -LiteralPath $result.GhLog -Raw).Trim()) { Fail "default Windows install invoked GitHub CLI" }
@@ -148,7 +148,7 @@ exit /b 1
     }
 
     $result = Run-Installer (New-Fixture "rollback")
-    if (-not $result.Success) { Fail "rollback setup failed" }
+    if (-not $result.Success) { Fail "rollback setup failed: $($result.Error)" }
     $destination = Join-Path $result.Home "localappdata\Forge\bin"
     foreach ($name in @("forge.exe", "codex-threads.exe", "linear.exe", "mermaid.exe", "slack-agent.exe", "slack-query.exe")) {
         Set-Content -LiteralPath (Join-Path $destination $name) -Value "old-$name"
