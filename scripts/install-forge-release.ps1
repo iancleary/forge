@@ -133,6 +133,15 @@ function Get-ForgeChecksum([string]$ManifestPath, [string]$AssetName) {
 function Test-ReparsePoint([string]$Path) {
     $item = $null
     try {
+        $fileSystemInfo = [IO.DirectoryInfo]::new($Path)
+        if (-not [string]::IsNullOrWhiteSpace([string]$fileSystemInfo.LinkTarget) -or
+            $null -ne $fileSystemInfo.ResolveLinkTarget($false)) {
+            return $true
+        }
+    } catch {
+        # Fall through to the provider and attribute checks.
+    }
+    try {
         $parentPath = Split-Path -LiteralPath $Path -Parent
         $leafName = Split-Path -LiteralPath $Path -Leaf
         $item = Get-ChildItem -LiteralPath $parentPath -Force -ErrorAction Stop |
