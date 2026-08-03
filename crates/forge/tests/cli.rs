@@ -264,6 +264,31 @@ fn cli_parse_errors_honor_json_flag() {
 }
 
 #[test]
+fn cli_version_flag_prints_package_version() {
+    let root = temp_path("version-flag");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    for flag in ["--version", "-V"] {
+        let output = run_forge(&[flag], &config_dir, &home_dir);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("stdout utf8"),
+            format!("forge {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(output.stderr.is_empty());
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cli_version_is_available_in_json() {
     let root = temp_path("version-json");
     let config_dir = root.join("config");

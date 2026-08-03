@@ -24,6 +24,13 @@ Default output contract for every `forge` command:
 - compact JSON envelope with `--json`
 - no pretty-printed JSON on the agent path
 
+Global informational flags:
+
+- `forge --version` (or `forge -V`) prints the running binary's package version and exits without network access or other side effects
+- `forge --help` prints command help
+
+Use `forge version` when you need release metadata or an update check.
+
 ### `forge doctor`
 
 ```sh
