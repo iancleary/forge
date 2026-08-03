@@ -71,7 +71,7 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Te
         $forgeDirectory = Join-Path $localAppData "Forge"
         $redirect = Join-Path $TestHome "redirect"
         New-Item -ItemType Directory -Path $forgeDirectory, $redirect -Force | Out-Null
-        New-Item -ItemType Junction -Path (Join-Path $forgeDirectory "bin") -Target $redirect | Out-Null
+        New-Item -ItemType SymbolicLink -Path (Join-Path $forgeDirectory "bin") -Target $redirect | Out-Null
     }
     $log = Join-Path $TestHome "tool.log"
     $ghLog = Join-Path $TestHome "gh.log"
@@ -131,7 +131,7 @@ exit /b 1
         $junctionProbeAppData = Join-Path $junctionProbeHome "localappdata"
         $junctionProbeForge = Join-Path $junctionProbeAppData "Forge"
         New-Item -ItemType Directory -Path $junctionProbeForge, (Join-Path $junctionProbeHome "redirect") -Force | Out-Null
-        New-Item -ItemType Junction -Path (Join-Path $junctionProbeForge "bin") -Target (Join-Path $junctionProbeHome "redirect") | Out-Null
+        New-Item -ItemType SymbolicLink -Path (Join-Path $junctionProbeForge "bin") -Target (Join-Path $junctionProbeHome "redirect") | Out-Null
         $junctionFixtureReady = $true
     } catch {
         Write-Host "reparse-point destination fixture unavailable; native Windows installer contract remains covered by the POSIX fixture"
