@@ -87,7 +87,8 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Te
     $env:Path = "$FakeBin;$OriginalPath"
     try {
         $global:LASTEXITCODE = 0
-        & $Root/scripts/install-forge-release.ps1 -Tag $Version -SkipCodex @Arguments
+        $installerArguments = @("-Tag", $Version, "-SkipCodex") + $Arguments
+        & $Root/scripts/install-forge-release.ps1 @installerArguments
         if ($LASTEXITCODE -ne 0) { throw "installer exited with $LASTEXITCODE" }
     } catch {
         return @{ Success = $false; Home = $TestHome; Log = $log; GhLog = $ghLog; Error = $_.Exception.Message }
