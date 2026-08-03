@@ -132,6 +132,18 @@ function Get-ForgeChecksum([string]$ManifestPath, [string]$AssetName) {
 
 function Test-ReparsePoint([string]$Path) {
     try {
+        $parentPath = Split-Path -LiteralPath $Path -Parent
+        $leafName = Split-Path -LiteralPath $Path -Leaf
+        $reparseItem = Get-ChildItem -LiteralPath $parentPath -Force -Attributes ReparsePoint -ErrorAction Stop |
+            Where-Object { $_.Name -eq $leafName } |
+            Select-Object -First 1
+        if ($null -ne $reparseItem) {
+            return $true
+        }
+    } catch {
+        # Fall through to the .NET and provider metadata checks.
+    }
+    try {
         $attributes = [IO.File]::GetAttributes($Path)
         if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             return $true
