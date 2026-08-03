@@ -122,8 +122,8 @@ exit /b 1
     $result = Run-Installer $valid
     if (-not $result.Success) { Fail "valid Windows install failed: $($result.Error)" }
     if (-not (Test-Path -LiteralPath (Join-Path $result.Home "localappdata\Forge\bin\forge.exe") -PathType Leaf)) { Fail "valid Windows install did not install forge.exe" }
-    if ((Get-Content -LiteralPath $result.Log -Raw).Trim()) { Fail "default Windows install invoked a toolchain command" }
-    if ((Get-Content -LiteralPath $result.GhLog -Raw).Trim()) { Fail "default Windows install invoked GitHub CLI" }
+    if (-not [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $result.Log -Raw))) { Fail "default Windows install invoked a toolchain command" }
+    if (-not [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $result.GhLog -Raw))) { Fail "default Windows install invoked GitHub CLI" }
 
     $junctionFixtureReady = $false
     try {
