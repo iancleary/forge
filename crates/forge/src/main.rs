@@ -4456,11 +4456,15 @@ fn parse_release_artifact_manifest(body: &str) -> Result<ReleaseArtifactManifest
                 artifact.target
             );
         }
-        if artifact.name.trim().is_empty()
-            || (!artifact.name.ends_with(".tar.gz") && !artifact.name.ends_with(".zip"))
-        {
+        let valid_archive_name = release_artifact_extension_for_target(&artifact.target)
+            .map(|extension| artifact.name.ends_with(extension))
+            .unwrap_or_else(|| {
+                artifact.name.ends_with(".tar.gz") || artifact.name.ends_with(".zip")
+            });
+        if artifact.name.trim().is_empty() || !valid_archive_name {
             bail!(
-                "release artifact name must end with .tar.gz or .zip: {}",
+                "release artifact name has an unsupported extension for target {}: {}",
+                artifact.target,
                 artifact.name
             );
         }
@@ -4643,13 +4647,17 @@ fn release_artifact_target_for(os: &str, arch: &str) -> Option<&'static str> {
     }
 }
 
+fn release_artifact_extension_for_target(target: &str) -> Option<&'static str> {
+    match target {
+        "aarch64-apple-darwin" | "x86_64-unknown-linux-gnu" => Some(".tar.gz"),
+        "x86_64-pc-windows-msvc" => Some(".zip"),
+        _ => None,
+    }
+}
+
 fn release_artifact_name(version: &str, target: &str) -> String {
-    let extension = if target == "x86_64-pc-windows-msvc" {
-        "zip"
-    } else {
-        "tar.gz"
-    };
-    format!("forge-{version}-{target}.{extension}")
+    let extension = release_artifact_extension_for_target(target).unwrap_or(".tar.gz");
+    format!("forge-{version}-{target}{extension}")
 }
 
 fn release_asset_url(version: &str, asset_name: &str) -> String {
@@ -8181,6 +8189,59 @@ EOF
             Some("x86_64-pc-windows-msvc")
         );
         assert_eq!(release_artifact_target_for("linux", "aarch64"), None);
+    }
+
+    #[test]
+    fn parse_release_artifact_manifest_accepts_target_archive_formats() {
+        let body = r#"{
+  "version": "20260802.0.1",
+  "source_commit": "abcdef123456",
+  "cargo_lock_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rust_toolchain": "rustc 1.89.0",
+  "artifacts": [
+    {
+      "target": "aarch64-apple-darwin",
+      "name": "forge-20260802.0.1-aarch64-apple-darwin.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 123
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "name": "forge-20260802.0.1-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size_bytes": 456
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "name": "forge-20260802.0.1-x86_64-pc-windows-msvc.zip",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "size_bytes": 789
+    }
+  ]
+}"#;
+
+        let manifest = parse_release_artifact_manifest(body).expect("supported manifest");
+        assert_eq!(
+            manifest
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.target == "x86_64-pc-windows-msvc")
+                .expect("Windows artifact")
+                .name,
+            "forge-20260802.0.1-x86_64-pc-windows-msvc.zip"
+        );
+
+        let invalid_windows_archive = body.replace(
+            "forge-20260802.0.1-x86_64-pc-windows-msvc.zip",
+            "forge-20260802.0.1-x86_64-pc-windows-msvc.tar.gz",
+        );
+        let error = parse_release_artifact_manifest(&invalid_windows_archive)
+            .expect_err("Windows artifact with a tar archive");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported extension for target x86_64-pc-windows-msvc")
+        );
     }
 
     #[test]
