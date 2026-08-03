@@ -271,7 +271,7 @@ function Install-ForgeArtifact {
         $archive = Join-Path $temp $assetName
         Invoke-ForgeDownload "$ForgeDownloadUrl/$Tag/$assetName" $archive
         $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -ne $expected) { Fail "checksum mismatch for $assetName: expected $expected, got $actual" }
+        if ($actual -ne $expected) { Fail "checksum mismatch for ${assetName}: expected $expected, got $actual" }
         if ($VerifyAttestation) {
             if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Fail "gh is required for explicit attestation verification" }
             & gh attestation verify $archive --repo $ForgeRepoSlug --source-ref "refs/tags/$Tag" --signer-workflow $ForgeReleaseWorkflow --predicate-type "https://slsa.dev/provenance/v1"
