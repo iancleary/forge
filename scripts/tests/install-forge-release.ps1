@@ -17,6 +17,12 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-OptionalProperty([object]$InputObject, [string]$Name) {
+    $property = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $property) { return "<missing>" }
+    return [string]$property.Value
+}
+
 function New-Zip([string]$Files, [string]$ArchivePath, [string]$Mode) {
     $stream = [IO.File]::Create($ArchivePath)
     $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
@@ -131,7 +137,15 @@ exit /b 1
         $junctionProbeAppData = Join-Path $junctionProbeHome "localappdata"
         $junctionProbeForge = Join-Path $junctionProbeAppData "Forge"
         New-Item -ItemType Directory -Path $junctionProbeForge, (Join-Path $junctionProbeHome "redirect") -Force | Out-Null
-        New-Item -ItemType SymbolicLink -Path (Join-Path $junctionProbeForge "bin") -Target (Join-Path $junctionProbeHome "redirect") | Out-Null
+        $junctionProbePath = Join-Path $junctionProbeForge "bin"
+        New-Item -ItemType SymbolicLink -Path $junctionProbePath -Target (Join-Path $junctionProbeHome "redirect") | Out-Null
+        $junctionProbeInfo = Get-Item -LiteralPath $junctionProbePath -Force
+        Write-Host ("reparse fixture: attributes={0}; mode={1}; linkType={2}; target={3}; linkTarget={4}" -f
+            (Get-OptionalProperty $junctionProbeInfo "Attributes"),
+            (Get-OptionalProperty $junctionProbeInfo "Mode"),
+            (Get-OptionalProperty $junctionProbeInfo "LinkType"),
+            (Get-OptionalProperty $junctionProbeInfo "Target"),
+            (Get-OptionalProperty $junctionProbeInfo "LinkTarget"))
         $junctionFixtureReady = $true
     } catch {
         Write-Host "reparse-point destination fixture unavailable; native Windows installer contract remains covered by the POSIX fixture"
