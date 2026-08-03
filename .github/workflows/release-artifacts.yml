@@ -85,8 +85,13 @@ jobs:
         include:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
+            archive: tar.gz
           - runner: macos-15
             target: aarch64-apple-darwin
+            archive: tar.gz
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: zip
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -103,7 +108,7 @@ jobs:
             --version "${{ inputs.version }}" \
             --target "${{ matrix.target }}" \
             --output-dir dist
-          echo "name=forge-${{ inputs.version }}-${{ matrix.target }}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "name=forge-${{ inputs.version }}-${{ matrix.target }}.${{ matrix.archive }}" >> "$GITHUB_OUTPUT"
 
       - name: Attest Release Artifact
         id: attest_artifact
@@ -160,8 +165,13 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
-          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do
-            asset_name="forge-${RELEASE_VERSION}-${target}.tar.gz"
+          for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            if [ "$target" = "x86_64-pc-windows-msvc" ]; then
+              extension="zip"
+            else
+              extension="tar.gz"
+            fi
+            asset_name="forge-${RELEASE_VERSION}-${target}.${extension}"
             if [ ! -f "dist/$asset_name" ]; then
               echo "missing release asset for verification: dist/$asset_name"
               exit 1
@@ -199,6 +209,7 @@ jobs:
           )
           release_args+=(
             dist/*.tar.gz
+            dist/*.zip
             dist/*.attestation.json
             dist/forge-release-manifest.json
             dist/forge-release-sha256sums.txt

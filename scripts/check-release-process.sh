@@ -4,6 +4,7 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="$ROOT/.github/workflows/release-artifacts.yml"
+TARGETS="$ROOT/config/release-targets.toml"
 LOG="$(mktemp)"
 STUBS="$(mktemp -d)"
 
@@ -36,8 +37,21 @@ if grep -Eq 'types: \[published\]|gh release upload' "$WORKFLOW"; then
 fi
 grep -Eq 'x86_64-unknown-linux-gnu' "$WORKFLOW" || fail "missing Linux release target"
 grep -Eq 'aarch64-apple-darwin' "$WORKFLOW" || fail "missing macOS release target"
+grep -Eq 'windows-2025' "$WORKFLOW" || fail "missing native Windows runner"
+grep -Eq 'x86_64-pc-windows-msvc' "$WORKFLOW" || fail "missing Windows x64 release target"
+grep -Eq 'dist/\*\.zip' "$WORKFLOW" || fail "release publication must include Windows ZIP assets"
+for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+  grep -Fq "triple = \"$target\"" "$TARGETS" || fail "release target contract is missing $target"
+done
+grep -Fq 'triple = "x86_64-pc-windows-msvc"' "$TARGETS" || fail "target contract must include native Windows x64"
+if grep -Eq 'x86_64-apple-darwin|aarch64-pc-windows-msvc|i686-pc-windows' "$TARGETS"; then
+  fail "target contract includes an excluded platform"
+fi
+grep -Eq 'forge-release-sha256sums.txt' "$ROOT/scripts/build-forge-release-manifest.sh" || fail "manifest builder must emit checksums"
+grep -Eq 'forge-release-manifest.json' "$ROOT/scripts/build-forge-release-manifest.sh" || fail "manifest builder must emit release metadata"
 grep -Eq -- '--source-digest "\$RELEASE_SHA"' "$WORKFLOW" || fail "workflow attestations must be pinned to the release commit"
-grep -Eq -- '--source-digest "\$release_commit"' "$ROOT/scripts/install-forge-release.sh" || fail "installer attestations must be pinned to the tagged release commit"
+grep -Eq 'forge-release-sha256sums.txt' "$ROOT/scripts/install-forge-release.sh" || fail "installer must download the published checksum manifest"
+grep -Eq 'checksum mismatch' "$ROOT/scripts/install-forge-release.sh" || fail "installer must reject checksum mismatches"
 assert_before 'Validate release inputs' 'Run contributor checks'
 assert_before 'Run contributor checks' 'Build Release Artifact'
 assert_before 'Build Release Artifact' 'Upload Build Outputs'

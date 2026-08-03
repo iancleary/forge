@@ -1,381 +1,108 @@
 # forge
 
-Agent-friendly CLIs built as Rust binaries.
+First-party AI workflow tools, skills, and harness support.
 
-## Install (User-First)
+Forge makes portable agent behavior deterministic and reviewable. It owns the source and validation contracts for Codex configuration, shared agent skills, AI harnesses, and narrow agent-facing CLIs. Claude is part of the product scope, but its managed configuration adapter is not implemented yet.
 
-On supported macOS and Linux targets, the fast release install path uses attested release artifacts. That fast path uses local attestation verification through GitHub CLI.
+Forge does not manage general dotfiles, application preferences, operating-system settings, global packages, or language toolchains. Use Nix and Home Manager for those concerns. See [docs/scope.md](docs/scope.md).
 
-Rust and Cargo are still required when:
+## Install
 
-- you pass `--build-from-source`
-- no attested release artifact is available for your platform
-- `gh` attestation verification support is unavailable locally, which causes an explicit tagged source-build fallback (artifact path disabled; source build only)
-- you are developing Forge from source
-
-This section is the primary path: using Forge as an installed tool on a machine.
-
-Recommended patterns:
-
-1. platform bootstrap prerequisites
-2. simplest bootstrap on a new machine
-3. deterministic bootstrap pinned to a specific release when needed
-4. steady-state updates through `forge self update-check`, `forge self update`, and `forge tool update`
-
-### 1. Platform Bootstrap Prerequisites
-
-Install only the platform-level prerequisites first. The intended flow is:
-
-1. install the platform package manager where needed
-2. install Rust/Cargo through the official rustup bootstrap
-3. install Forge
-4. let Forge bootstrap the rest of the global tool surface
-5. use Forge for steady-state maintenance
-
-macOS preferred Homebrew bootstrap:
-
-```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-if [ -x /opt/homebrew/bin/brew ]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-elif [ -x /usr/local/bin/brew ]; then
-  eval "$(/usr/local/bin/brew shellenv)"
-fi
-brew --version
-```
-
-WinGet is Windows-only. On macOS, Homebrew is the platform package manager that `forge tool update packages` uses.
-
-macOS/Linux preferred Rust bootstrap:
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-. "$HOME/.cargo/env"
-rustup default stable
-cargo --version
-```
-
-Prefer sourcing rustup's generated `~/.cargo/env` file from your shell startup file. It adds `~/.cargo/bin` only when needed.
-
-For zsh:
-
-```sh
-# load rustup and cargo
-[[ ! -f "$HOME/.cargo/env" ]] || source "$HOME/.cargo/env" 1>/dev/null
-```
-
-For bash or POSIX shell profiles:
-
-```sh
-# load rustup and cargo
-[ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
-```
-
-Windows preferred:
-
-```powershell
-winget install -e --id Rustlang.Rustup
-rustup default stable
-cargo --version
-```
-
-On Windows, Rust source builds also need the MSVC linker and Windows SDK. If `cargo` reports missing MSVC build tools, install the Visual Studio C++ tools through WinGet before building Forge from source.
-
-### 2. Simplest Bootstrap
-
-Use `curl` as the bootstrap path on a new machine:
+Nix and Home Manager are the preferred ownership layer for macOS, WSL Arch Linux, and NixOS systems. The initial Nix packaging and Home Manager module are follow-up work. Until they exist, install a release with the portable installer:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh
 ```
 
-That installer:
+Native Windows x64 uses PowerShell:
 
-- resolves the latest published Forge release tag by default
-- re-executes the installer script from the exact release tag it is about to install
-- uses attested release artifacts for supported platforms when local attestation verification is available
-- verifies artifact SHA-256 against the published release checksums
-- verifies the GitHub release attestation before installing an artifact
-- falls back to a tagged source build with `--locked` when attestation verification cannot run or no attested artifact is available (artifact path disabled, source build only)
-- installs Forge-managed skills into `~/.agents/skills` by default
-- installs the managed Codex baseline into `~/.codex/` by default
+```powershell
+irm https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.ps1 | iex
+```
 
-After installation, a good first verification step is:
+Forge publishes only `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
+`x86_64-pc-windows-msvc`. WSL uses the Linux installer. Windows ARM and
+32-bit Windows are not supported.
+
+The installer:
+
+- resolves the latest published release by default
+- downloads the platform archive and checksum manifest from one release tag
+- verifies the archive SHA-256 before extraction
+- validates the complete archive before replacement
+- replaces the complete binary set atomically
+- fails without installing if no matching binary artifact is available
+- installs Forge-managed skills under `~/.agents/skills`
+- installs the Forge-managed Codex baseline under `~/.codex`
+
+Pin a release when deterministic recovery is required:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260802.0.0/scripts/install-forge-release.sh | sh -s -- --tag 20260802.0.0
+```
+
+Use `--skip-codex` to install binaries and skills without changing the Codex baseline. Use `--build-from-source` only for an explicit development or recovery build. The default deployment path never installs or requires a Rust toolchain.
+
+Use `--verify-attestation` for explicit GitHub provenance verification. It
+requires `gh` and fails closed if verification is unavailable or fails. The
+POSIX destination is `~/.cargo/bin`. The Windows destination is
+`%LOCALAPPDATA%\Forge\bin`; neither installer changes `PATH` automatically.
+
+## Managed AI surfaces
+
+Forge directly supports:
+
+- portable user-scoped agent skills
+- Codex user policy and targeted configuration fragments
+- AI harnesses such as autoreview, autoresearch, and restartable loops
+- local Codex session search through `codex-threads`
+- narrow agent-facing Linear and Slack CLIs
+- skill-backed artifact tools such as Mermaid and bytefield rendering
+
+Claude configuration and shared cross-agent policy are intended first-party surfaces. Their command and file contracts must be designed before implementation.
+
+## Common commands
 
 ```sh
 forge doctor
-forge skills status
-forge codex diff
-```
-
-Then let Forge preview and apply the rest of the global tool bootstrap:
-
-```sh
-forge tool update --dry-run
-forge tool update
-```
-
-For a one-step Forge install plus global tool handoff, use an explicit installer mode:
-
-```sh
-# Install Forge, then preview global tool bootstrap
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --bootstrap-tools-dry-run
-
-# After reviewing the preview
-forge tool update
-
-# Install Forge, then run global tool bootstrap
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --bootstrap-tools
-```
-
-If you want to verify a downloaded release archive against the published GitHub provenance attestation:
-
-```sh
-gh attestation verify ./forge-20260412.0.7-aarch64-apple-darwin.tar.gz \
-  --repo iancleary/forge \
-  --source-ref refs/tags/20260412.0.7 \
-  --signer-workflow iancleary/forge/.github/workflows/release-artifacts.yml \
-  --predicate-type https://slsa.dev/provenance/v1
-```
-
-That command is the strictest and explicit check used for release artifact trust.
-
-### 3. Deterministic Bootstrap
-
-If you want a deterministic install pinned to a specific release:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260412.0.7/scripts/install-forge-release.sh | sh -s -- --tag 20260412.0.7
-```
-
-If you want the binaries but not the Codex baseline:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh -s -- --skip-codex
-```
-
-### 4. Steady-State Updates
-
-After bootstrap, prefer the Forge-managed update path:
-
-```sh
-forge self update-check
-forge self update
-forge tool update --dry-run
-forge tool update
-```
-
-Use `forge self update` for Forge itself and Forge-managed Codex assets. Use `forge tool update` for global tools owned outside the current project: the platform package manager, Rust toolchains through `rustup`, uv, uv-installed tools, cargo-installed commands, `gum`, Tea, and CodeGraph.
-
-Project dependency updates are intentionally out of scope for `forge tool update`; keep those in each repo's own package manager or release workflow.
-
-In release mode, that path now:
-
-- checks GitHub release tags by querying the Forge repo tags
-- uses attested release artifacts for supported platforms when local attestation verification is available
-- verifies artifacts against the published release manifest, checksums, and GitHub release attestation
-- falls back to a tagged source build with `--locked` when attestation verification cannot run or an attested artifact is unavailable (artifact path disabled, source build only)
-- reconciles Forge-managed skills
-- reapplies the managed Codex baseline
-
-The `curl` installer remains useful for first install and recovery, but it is no longer the steady-state update path.
-
-## What Gets Installed
-
-Forge installs two managed surfaces by default:
-
-- skills under `~/.agents/skills` (`forge skills install --all`)
-- Codex user baseline under `~/.codex/` (`forge codex install`)
-
-These are intentionally narrower than taking ownership of all local Codex state.
-
-## Common Commands
-
-The most common commands and their intent:
-
-- `forge doctor`  
-  checks your local Forge health and state files.
-- `forge self update-check`  
-  compares the installed Forge version to the latest GitHub release.
-- `forge self update [--build-from-source]`
-  updates Forge and managed assets when behind.
-- `forge tool update [--dry-run]`
-  updates global command-line tools through the platform package manager, rustup, uv, uv-installed tools, cargo-installed crates, and ensures `gum`, Tea, and CodeGraph are installed.
-- `forge version [--json] [--update]`  
-  reports the current hash/version plus release state; `--update` runs `forge self update` directly when an update is available.
-- `forge skills install --all`  
-  reconciles all managed skills from the release catalog.
-- `forge skills status`  
-  shows managed/unmanaged and health status for skills.
-- `forge codex install`  
-  installs the managed Forge baseline under `~/.codex`.
-- `forge codex diff`  
-  compares managed `~/.codex` files with installed versions.
-- `forge codex render`  
-  applies templated policy artifacts from managed files into local state.
-- `forge preference check windows-terminal`
-  checks targeted Windows Terminal preferences without owning the complete `settings.json`.
-- `forge preference diff windows-terminal`
-  previews changes for the theme, default font, and Git Bash profile.
-- `forge preference apply windows-terminal`
-  explicitly applies those changes while preserving unrelated JSONC settings and comments.
-- `mermaid doctor`
-  checks whether the local Mermaid render toolchain is ready.
-- `mermaid render --input diagram.mmd --output diagram.svg`
-  renders a Mermaid definition through the Forge-managed wrapper.
-- `forge bytefield install`
-  verifies and prefetches the pinned `bytefield-svg` runner through Forge.
-- `forge bytefield render --source <file> --output <file>`
-  renders a bytefield source file to SVG through the Forge wrapper.
-
-Bytefield note:
-
-- `forge bytefield` is the SVG-first contract
-- web sizing and the planned Typst-facing wrapper belong above that layer rather than inside the raw renderer
-
-Quick reference:
-
-```sh
-forge doctor
-forge self update-check
-forge self update
-forge tool update --dry-run
-forge tool update
-forge tool update codegraph
-forge tool update tea
 forge version
+forge self update-check
 forge skills status
-forge codex diff
-mermaid doctor
-forge bytefield install
-```
-
-Common maintenance commands:
-
-```sh
-forge skills list --source all
 forge skills validate --all
-forge skills diff design-algorithm --target user
-forge skills diff linear-cli --target user
-forge skills status --scope all
-forge codex render
-forge skills install --all --source repo
-forge skills revert --all --target user
-```
-
-## Codex Notes
-
-If you want Codex to use these CLIs and the Forge-managed consumer skills outside local development, install the binaries and then install the skills into the Codex `USER` skill directory at `~/.agents/skills`.
-
-If Forge is your first-party Codex source of truth, treat the repo docs plus the Forge-managed skills as the canonical portable policy surface. Repo-local `AGENTS.md` guidance can reinforce that behavior, but it should not be the only place where cross-repo routing rules live.
-
-From a local checkout:
-
-```sh
-just install-dev-local
-forge skills install --all --source repo
-```
-
-When adding or removing CLIs, update the embedded list in `scripts/install-forge-release.sh` and ensure the repo check passes:
-
-```sh
-just install-list-check
-```
-
-From an installed Forge release or after pointing an agent at this repo:
-
-```sh
-forge skills install --all
-forge skills status
 forge codex diff
-forge codex install
+codex-threads --json sync
+linear --help
+slack-query --help
+slack-agent --help
+mermaid --help
 ```
 
-Forge-managed Codex user config is intentionally narrower than the skills surface. In v1, `forge codex render`, `forge codex diff`, and `forge codex install` manage only:
-
-- `~/.codex/AGENTS.md`
-- `~/.codex/rules/user-policy.rules`
-
-They do not take ownership of live `~/.codex/config.toml`, session history, auth state, or plugin caches.
-
-The important mental model:
-
-- `forge` owns the portable, user-scoped Codex behavior you want available everywhere
-- skill `description` frontmatter is part of the routing contract, not incidental prose
-- router skills such as `forge-tools` tell Codex which narrower skill to use next
-- machine-local or private details should stay out of the Forge-managed surface
-
-If Forge reports that `~/.config/forge/state.toml` cannot be parsed after a local schema change during development, remove that file and reinstall the managed skills you want Forge to track.
-
-If you use a non-user target as part of your primary managed install set, mark it explicitly:
-
-```sh
-forge skills install --all --source repo --target path:/opt/forge-skills --target-role mainline
-forge skills status --target path:/opt/forge-skills
-```
-
-If you temporarily install skills from a local checkout and want to switch back to the standard release-backed install:
-
-```sh
-forge skills revert --all --target user
-```
+`forge self update` is the portable non-Nix update path. A future Nix package must leave binary and package updates to Nix while retaining Forge's read, render, diff, validation, and asset contracts.
 
 ## Development
 
-Local development lifecycle is documented in `docs/development.md`.
+Read the relevant spec under `docs/` before changing a command. Then run:
 
-## Reference
+```sh
+cargo check
+cargo test
+just install-list-check
+```
 
-Repo layout:
+Install a development checkout with:
 
-- `docs/` contains product and design specs for each CLI
-- `crates/` contains Rust crates for each CLI implementation
+```sh
+cargo run -p forge -- dev install --repo-path "$(pwd)"
+forge skills install --all --source repo --repo-path "$(pwd)"
+```
 
-Current CLIs:
+## Workspace binaries
 
-- `forge` for shared config and self-management
-- `codex-threads` for local Codex session archive search and retrieval
-- `slack-agent` for stricter assistant Slack workflows
-- `slack-query` for Slack research workflows
-- `linear` for Linear issue, project, and milestone workflows
-- `mermaid` for Mermaid diagram rendering and tool bootstrap
+- `forge`: managed AI assets, releases, diagnostics, and skill-backed helpers
+- `codex-threads`: local Codex session retrieval
+- `linear`: agent-friendly Linear operations
+- `slack-query`: deterministic Slack retrieval
+- `slack-agent`: assistant-oriented Slack operations
+- `mermaid`: deterministic Mermaid rendering
 
-Internal support crates:
-
-- `slack-core` as a shared library crate for Slack auth/config/client code used by `slack-query` and `slack-agent`
-
-Key design notes:
-
-- `docs/agent-friendly-clis.md` for the cross-repo CLI contract
-- `docs/algorithm.md` for the Forge design sequence: question, delete, simplify, accelerate, automate
-- `docs/codex.md` for Forge as the first-party source of truth for Codex skills, routing, and portable policy
-
-Versioning:
-
-- format: `YYYYMMDD.0.N` (America/Phoenix calendar day)
-
-## Recommended Codex Companions
-
-Forge covers the Forge-authored CLIs and their managed skills. For adjacent work, a minimal high-value Codex setup should also include:
-
-- `openai-docs` for OpenAI product, model, and API questions that need current official documentation
-- GitHub plugin skills plus the `gh` CLI for issues, PR review threads, CI triage, and release-adjacent repository workflows
-
-These are recommended companions, not part of Forge's managed skill lifecycle. Keep the boundary narrow:
-
-- use Forge skills for Forge-authored CLIs and local Forge management
-- use `openai-docs` when the task is about OpenAI products rather than the Forge toolchain
-- prefer `gh`-driven GitHub workflows and GitHub plugin skills when the task is about repository hosting, PRs, issues, reviews, or CI
-- for substantial issue or PR bodies, prefer local markdown files with `gh ... --body-file` over inline multiline shell strings
-- avoid direct use of the native GitHub Codex app path when an equivalent `gh` or plugin-skill workflow exists, because it is less deterministic and more likely to trigger extra permission prompts
-
-## Forge Command Policy
-
-For Forge-managed tools, prefer the Forge CLI first and use shell tools as fallbacks, not as the primary product interface.
-
-- use Forge commands when the task is part of a stable contract and the output should be reusable, low-token, and deterministic
-- use `jq` for one-off local reshaping after a CLI already returned the right data
-- use `rg` for repository and local-file exploration, not as a substitute for domain-specific CLI reads
-- when the same `jq` cleanup keeps recurring, treat that as a signal to add a narrow Forge flag, subcommand, or output mode
-
-The pattern is: repeated pain in agent runs should first be observed, then named as a narrow task, then folded into Forge as the smallest stable primitive that removes the repeated shell shaping.
+All read-oriented CLI surfaces should provide stable compact JSON for agents and useful human output by default.

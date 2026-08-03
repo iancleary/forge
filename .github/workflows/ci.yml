@@ -23,3 +23,11 @@ jobs:
       - uses: taiki-e/install-action@just
       - name: Run contributor checks
         run: just ci
+
+  windows-installer:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run native Windows installer fixtures
+        shell: pwsh
+        run: ./scripts/tests/install-forge-release.ps1

@@ -4,6 +4,8 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_INSTALLER="$ROOT/scripts/install-forge-release.sh"
+RELEASE_WINDOWS_INSTALLER="$ROOT/scripts/install-forge-release.ps1"
+RELEASE_TOOLS="$ROOT/config/release-tools.toml"
 
 fail() {
   echo "error: $*" >&2
@@ -40,6 +42,19 @@ echo "$bins" | while IFS= read -r bin; do
   [ -f "$crate_dir/Cargo.toml" ] || fail "missing crate Cargo.toml for $bin at $crate_dir/Cargo.toml"
   [ -f "$crate_dir/src/main.rs" ] || fail "expected binary crate for $bin at $crate_dir/src/main.rs"
 done
+
+contract_bins="$(sed -n 's/^binary = "\([^"]*\)"$/\1/p' "$RELEASE_TOOLS")"
+[ -n "$contract_bins" ] || fail "failed to extract binaries from $RELEASE_TOOLS"
+[ "$(printf '%s\n' "$bins" | sort)" = "$(printf '%s\n' "$contract_bins" | sort)" ] ||
+  fail "POSIX installer binary list differs from $RELEASE_TOOLS"
+
+[ -f "$RELEASE_WINDOWS_INSTALLER" ] || fail "missing native Windows installer: $RELEASE_WINDOWS_INSTALLER"
+windows_bins="$(sed -n '/^\$ForgeBinaryNames = @($/,/^)$/p' "$RELEASE_WINDOWS_INSTALLER" |
+  sed -e '1d' -e '$d' -e 's/[",]//g' -e 's/\.exe$//' -e 's/[[:space:]]*//g' |
+  sed -e '/^$/d' || true)"
+[ -n "$windows_bins" ] || fail "failed to extract native Windows binary list"
+[ "$(printf '%s\n' "$bins" | sort)" = "$(printf '%s\n' "$windows_bins" | sort)" ] ||
+  fail "native Windows installer binary list differs from $RELEASE_INSTALLER"
 
 # Ensure every binary crate in crates/ is listed.
 # This prevents silently forgetting to ship a new CLI.

@@ -4,7 +4,7 @@ Operating guidance for contributors and coding agents working in `forge`.
 
 ## Purpose
 
-`forge` is a Rust workspace for agent-friendly CLIs.
+`forge` is a Rust workspace for first-party AI workflow tools, skills, harnesses, and agent-friendly CLIs.
 
 The repo has two layers:
 
@@ -12,6 +12,8 @@ The repo has two layers:
 - `crates/` for CLI implementations
 
 Do not treat `docs/` as the implementation area.
+
+Nix and Home Manager own packages, toolchains, general dotfiles, application preferences, and host state. Forge owns portable AI workflow behavior. Read [docs/scope.md](docs/scope.md) before adding a new top-level management surface.
 
 ## Before Changing Code
 

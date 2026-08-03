@@ -4,32 +4,17 @@ This document defines the top-level `forge` manager CLI.
 
 ## Goal
 
-Provide shared configuration and self-management commands for the local Forge toolchain.
+Manage Forge's first-party AI workflow surfaces. These surfaces include portable skills, Codex configuration, harness support, release lifecycle, and narrow helpers used by managed skills.
 
-This is where update-check and update behavior should live, rather than embedding self-update logic independently inside every tool.
+Forge does not manage general packages, language toolchains, dotfiles, terminal preferences, editor preferences, or operating-system state. Nix and Home Manager own those concerns on managed systems. See [scope.md](scope.md).
 
-Forge also owns the lifecycle of Forge-managed consumer skills. The detailed skill management contract lives in `docs/forge-skills.md`.
+Claude support is within the product boundary but is not implemented by the current CLI.
 
-When Forge is being used as the first-party source of truth for Codex behavior, the higher-level routing and ownership model lives in `docs/codex.md`.
+## Output contract
 
-Forge also owns the explicit deployment path for the narrow set of user-scoped Codex files it manages in v1. Those commands are top-level `forge codex` subcommands rather than part of the skills lifecycle.
-
-Targeted cross-platform user preferences are documented in [preferences.md](preferences.md). They use a separate `forge preference` lifecycle because Forge owns only named invariants inside application-owned files.
+Commands use human-readable output by default. `--json` emits a compact stable envelope for agent consumption. Errors use the same mode selected by the caller.
 
 ## Commands
-
-Default output contract for every `forge` command:
-
-- human-readable text by default
-- compact JSON envelope with `--json`
-- no pretty-printed JSON on the agent path
-
-Global informational flags:
-
-- `forge --version` (or `forge -V`) prints the running binary's package version and exits without network access or other side effects
-- `forge --help` prints command help
-
-Use `forge version` when you need release metadata or an update check.
 
 ### `forge doctor`
 
@@ -37,194 +22,9 @@ Use `forge version` when you need release metadata or an update check.
 forge doctor [--json]
 ```
 
-Checks whether the local Forge environment is ready for agent workflows.
+Checks whether Forge and its supported agent workflows can run. Checks include required commands, configured Forge integration credentials, the Forge config directory, and optional GitHub attestation capability.
 
-Current checks:
-
-- required tools: `cargo`, `git`, `gh`, `rg`, `jq`
-- GitHub CLI auth readiness via `gh auth status`
-- Linear token-source presence via `LINEAR_API_KEY`, `~/.config/forge/linear/config.toml`, and `~/.config/forge/linear/token`
-- Slack agent token-source presence via `SLACK_AGENT_API_TOKEN`, `~/.config/forge/slack-agent/config.toml`, and `~/.config/forge/slack-agent/token`
-- Slack query token-source presence via `SLACK_QUERY_API_TOKEN`, `~/.config/forge/slack-query/config.toml`, and `~/.config/forge/slack-query/token`
-- Forge config directory presence at `~/.config/forge/` or `FORGE_CONFIG_DIR`
-
-Behavior:
-
-- default output is optimized for fast, effective visual scanning by a human reader
-- `--json` emits deterministic machine-readable output with minimal tokens for agent handoff and chaining
-- `--json` should stay compact rather than pretty-printed because token efficiency matters more than readability on the agent path
-- errors follow the same contract: human-readable by default, compact JSON with `--json`
-- agent skills should prefer `--json` when chaining Forge output into later reasoning or commands
-- remediation is included for failing or warning checks
-- upgrade commands may also be included for installed tools
-- auth checks are advisory and should not block Codex from continuing
-- `gh` auth should warn gracefully when it cannot be confirmed from a non-interactive subprocess
-- when that happens, the primary remediation is to ask the user to run `gh auth status` in an interactive terminal
-- file-based auth tools such as `linear`, `slack-query`, and `slack-agent` should report configured token sources, not claim a verified logged-in session
-- for those file-based tools, doctor should surface the exact CLI commands and docs to use next, such as `linear config`, `linear auth login`, `slack-query auth login`, and `slack-agent auth login`
-- Windows install hints should prefer `winget` for `git` and `gh`
-- Windows upgrade hints should prefer `winget upgrade --id ...` for `git` and `gh`
-- on macOS and Linux, use `cargo` for tools that support it such as `rg` and `jq`
-
-### `forge permissions check`
-
-```sh
-forge permissions check [--json]
-```
-
-Audits known Forge-managed config directories and secret files, including:
-
-- `~/.config/forge/`
-- `~/.config/forge/slack-agent/`
-- `~/.config/forge/slack-query/`
-- `~/.config/forge/linear/`
-
-It reports whether directories and token files match the expected owner-only modes.
-
-### `forge permissions fix`
-
-```sh
-forge permissions fix [--json]
-```
-
-Applies the expected local permissions:
-
-- directories: `0700`
-- token and config files: `0600`
-
-### `forge self update-check`
-
-```sh
-forge self update-check [--json]
-```
-
-Checks whether the local Forge install is out of date.
-
-Behavior:
-
-- always checks the latest Forge release live
-- checks Forge release drift and Forge-managed skill drift
-- checks `mainline` Forge-managed skill drift by default
-- uses the installed Forge release as the canonical source for managed skills
-
-### `forge self update`
-
-```sh
-forge self update [--build-from-source] [--json]
-```
-
-Updates to the newest published Forge release and reconciles Forge-managed surfaces.
-
-Important boundary:
-
-- `forge self update-check` compares the running Forge version to the newest release tag from the Forge repo
-- `forge self update` resolves the target tag's binary list from that tag's release installer
-- `forge self update` resolves the target tag's tool contract from `config/release-tools.toml`
-- `forge self update` resolves the target tag's skill contract from `config/release-skills.toml`
-- `forge self update` uses an attested platform release artifact only when one is published for the current platform and local attestation verification is available
-- `forge self update` verifies artifact SHA-256 before install
-- `forge self update` verifies the GitHub release attestation before installing an artifact
-- `forge self update --attestation-failure <prompt|source|fail>` controls attestation failure behavior:
-  - `prompt` (default): prompt in interactive mode; fallback in non-interactive mode
-  - `source`: always fallback to tagged source build
-  - `fail`: abort on attestation failure
-- `forge self update` falls back to a tagged source build with `--locked` when attestation verification cannot run (including unsupported `gh attestation verify` command), when attested artifacts are unavailable, or when `--build-from-source` is passed. In all of these cases, source build is the only install path.
-- checksum mismatch is a hard failure; Forge does not silently weaken the trust model after verification fails
-- attestation verification failure is not silent: Forge prompts to build from tagged source (or automatically falls back in non-interactive contexts)
-- in human-readable mode, `forge self update` shows a spinner while long-running steps are in progress
-- in interactive human mode, `forge self update` prompts for each unmanaged skill collision to overwrite or skip
-- in JSON or other non-interactive mode, unmanaged skill collisions still fail explicitly
-- after install, `forge self update` migrates declared legacy tool config dirs, removes declared legacy binaries when their replacements exist, and removes declared obsolete root files under `~/.config/forge`
-- after install, `forge self update` migrates declared legacy Forge-managed skill installs and updates their recorded names in local state
-- when a release update installs a new Forge binary, the newly installed binary performs release-sourced skill and Codex reconciliation so embedded payloads match the target tag
-- after source update, Forge reconciles managed skills and reapplies the managed Codex baseline
-- human-readable output includes a short `changed paths` manifest for managed binaries, skill roots, and Codex assets reconciled by the update, followed by the exact GitHub release URL
-- JSON output adds `changed_paths` entries with `action` and `path`, plus `release_url`; the existing migration counters remain the record for directory migrations and removals
-
-### Release Installer Tool Bootstrap
-
-```sh
-scripts/install-forge-release.sh [--bootstrap-tools-dry-run|--bootstrap-tools]
-```
-
-The release installer can hand off to `forge tool update` after Forge itself, managed skills, and optional Codex assets are installed.
-
-Behavior:
-
-- default installer behavior does not run global tool maintenance
-- `--bootstrap-tools-dry-run` runs `forge tool update --dry-run` after install
-- `--bootstrap-tools` runs `forge tool update` after install
-- both modes preserve the `forge tool update` boundary: no project dependencies, manifests, lockfiles, virtual environments, or repo-local package state are updated
-- installer handoff to the pinned release installer preserves the selected tool-bootstrap mode
-
-### `forge tool update`
-
-```sh
-forge tool update [tool]... [--dry-run] [--json]
-```
-
-Updates global command-line tools and installed command surfaces owned outside the current project.
-
-Default targets:
-
-- `packages`: runs the platform package-manager update:
-  - macOS/Linux: `brew upgrade`
-  - Windows: `winget upgrade --all --accept-package-agreements --accept-source-agreements`
-- `rustup`: runs `rustup update` to update installed Rust toolchains
-- `uv`: runs `UV_NO_MODIFY_PATH=1 uv self update` when `uv` is already on `PATH`; if missing, installs via uv's standalone installer
-- `uv-tools`: runs `uv tool upgrade --all`
-- `cargo-installs`: reads `cargo install --list`, extracts top-level installed crate names, then runs `cargo install <crate>...`
-- `gum`: ensures the `gum` command exists; if missing, installs from Homebrew on macOS/Linux, from WinGet on Windows, and can fall back to `go install github.com/charmbracelet/gum@latest` where appropriate
-- `tea`: ensures the official Gitea `tea` command exists; if missing, installs the Homebrew formula on macOS/Linux
-- `codegraph`: upgrades an existing CodeGraph CLI with `codegraph upgrade`; if missing, installs the standalone CLI from the official CodeGraph installer
-
-Install/update sources:
-
-| Target | macOS/Linux | Windows |
-| --- | --- | --- |
-| `packages` | Homebrew (`brew upgrade`) | WinGet (`winget upgrade --all`) |
-| `rustup` | Rustup toolchains (`rustup update`) | Rustup toolchains (`rustup update`) |
-| `uv` | existing uv self-update, otherwise standalone installer (`curl -LsSf https://astral.sh/uv/install.sh \| sh`) | existing uv self-update, otherwise standalone installer (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"`) |
-| `uv-tools` | uv tool manager (`uv tool upgrade --all`) | uv tool manager (`uv tool upgrade --all`) |
-| `cargo-installs` | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) | Cargo registry install tracking (`cargo install --list` then `cargo install <crate>...`) |
-| `gum` | Homebrew first, Go install fallback | WinGet (`winget install --id charmbracelet.gum -e`) |
-| `tea` | Homebrew (`brew install tea`) | Unsupported (reported as skipped) |
-| `codegraph` | existing `codegraph upgrade`, otherwise standalone installer (`curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh \| sh`) | existing `codegraph upgrade`, otherwise standalone installer (`powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 \| iex"`) |
-
-Behavior:
-
-- does not inspect or mutate the current repo's project dependencies, manifests, lockfiles, virtual environments, or `node_modules`
-- installs or upgrades the CodeGraph CLI only; project indexing through `codegraph init` and agent MCP wiring through `codegraph install` remain explicit separate actions
-- each target returns an entry with `source` and `planned`, `skipped`, `succeeded`, or `failed`
-- `--dry-run` shows the planned global commands without running mutating update/install commands
-- unknown requested targets fail as invalid usage
-- in human mode, `forge tool update` shows a spinner while each selected global update target is in progress
-- `uv self update` can fail when uv was installed through a package manager; that failure is reported as a target result rather than rewritten into a project dependency update
-
-Examples:
-
-```sh
-# Preview global tool maintenance
-forge tool update --dry-run
-
-# Run all default global updates
-forge tool update
-
-# Only update Rust toolchains, cargo-installed crates, and uv-installed tools
-forge tool update rustup cargo-installs uv-tools
-
-# Run only the platform package-manager update
-forge tool update packages
-
-# Ensure gum is installed
-forge tool update gum
-
-# Ensure Tea is installed
-forge tool update tea
-
-# Ensure CodeGraph is installed or upgraded
-forge tool update codegraph
-```
+Doctor reports missing dependencies and remediation. It does not install or update global packages.
 
 ### `forge version`
 
@@ -232,217 +32,86 @@ forge tool update codegraph
 forge version [--json] [--update]
 ```
 
-Shows release/version metadata for the running Forge binary, including:
+Reports the running release, latest release, update state, Git hash, binary path, and platform. `--update` invokes the portable Forge self-update path when an update exists.
 
-- `release_version`
-- `latest_version`
-- `update_available`
-- `git_hash`
-- binary path
-- platform
-
-Behavior:
-
-- in human mode, when `update_available` is true, Forge prompts before running `forge self update`
-- in non-interactive contexts (`--json`, no tty), `forge version` reports availability but does not prompt
-- `--update` runs `forge self update` immediately when an update is available (useful for automation)
-
-Examples:
+### `forge self update-check`
 
 ```sh
-# Informational output
-forge version
-
-# Machine-readable output
-forge version --json
-
-# Directly trigger an update check/apply when newer release is available
-forge version --update
+forge self update-check [--json]
 ```
 
-If `forge self update` reports an unmanaged collision, take ownership once (example):
+Checks release drift, managed skill drift, and managed Codex asset drift. It does not mutate state.
+
+### `forge self update`
 
 ```sh
-forge skills install learning-systems --source release --force-unmanaged
-forge self update
+forge self update [--build-from-source] [--verify-attestation] [--json]
 ```
+
+Updates a non-Nix Forge installation from the checksum-verified release artifact for the current supported target, or from a tagged source build only when `--build-from-source` is explicit. `--verify-attestation` requests optional GitHub provenance verification and fails closed if `gh` or verification is unavailable. It reconciles installed Forge-managed skills and Codex assets only after binary replacement succeeds.
+
+The release artifact path does not compile or use a POSIX archive tool on native Windows. Native Windows installs use the ZIP artifact and `%LOCALAPPDATA%\Forge\bin`. Windows ARM and 32-bit Windows are not supported.
+
+Nix-managed installations must use Nix to update binaries and packages. Forge asset rendering, validation, status, and diff operations remain valid in that environment. Nix ownership detection and Home Manager activation are not implemented yet.
 
 ### `forge dev install`
 
 ```sh
-forge dev install [--repo-path <path>] [--no-force] [--json]
+forge dev install --repo-path <path> [--no-force] [--json]
 ```
 
-Installs Forge binaries from a local checkout for explicit development workflows.
+Builds and installs Forge workspace binaries from a local checkout for development.
 
-Behavior:
-
-- defaults `--repo-path` to the current Git worktree root when available, otherwise the current directory
-- reads the managed binary list from `scripts/install-forge-release.sh` in that checkout
-- builds the managed binaries in one workspace release build and installs them into `~/.cargo/bin`
-- `--no-force` means do not overwrite an existing installed binary
-- does not affect `forge self update` source-of-truth behavior
-
-### `forge codex render`
+### `forge permissions check|fix`
 
 ```sh
-forge codex render [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+forge permissions check [--json]
+forge permissions fix [--json]
 ```
 
-Renders the Forge-managed Codex user assets for the selected target root without writing them.
+Checks or repairs permissions only for Forge-owned configuration and credential paths. These commands do not manage unrelated user files.
 
-V1 managed assets:
-
-- `AGENTS.md`
-- `rules/user-policy.rules`
-
-Behavior:
-
-- defaults to all managed assets
-- defaults to `user`, which maps to `~/.codex`
-- supports `path:<abs-path>` targets for testing and explicit non-default installs
-- `--source repo` requires `--repo-path <path>`
-- default output renders human-readable file sections
-- `--json` emits deterministic compact JSON that includes rendered content and the resolved target paths
-
-### `forge codex diff`
+### `forge skills`
 
 ```sh
-forge codex diff [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+forge skills list
+forge skills status
+forge skills validate [<skill>|--all]
+forge skills install [<skill>|--all]
+forge skills diff <skill>
+forge skills revert [<skill>|--all]
 ```
 
-Compares the rendered Forge-managed Codex user assets against the selected live target root.
+Lists, validates, compares, and installs Forge-managed agent skills. The detailed source, target, collision, and state contracts are in [forge-skills.md](forge-skills.md).
 
-Behavior:
+Home Manager should eventually materialize release-selected skills declaratively. The imperative install commands remain the portable non-Nix path and the development path.
 
-- reports `same`, `changed`, or `missing` per managed asset
-- does not touch unrelated files under `~/.codex`
-- is intended to be the cheap preview step before install
-
-### `forge codex install`
+### `forge codex`
 
 ```sh
-forge codex install [--asset agents|rules]... [--target user|path:<abs-path>] [--source repo|release] [--repo-path <path>] [--json]
+forge codex render
+forge codex diff
+forge codex install
+forge codex config diff
+forge codex config install
 ```
 
-Writes the selected Forge-managed Codex user assets into the selected target root.
+Renders, compares, and installs Forge-managed Codex user assets. These commands own only the files and targeted fragments defined in [codex.md](codex.md).
 
-Behavior:
-
-- writes only the selected managed files
-- creates parent directories when needed
-- leaves unrelated files in the target tree untouched
-- returns `installed`, `updated`, or `unchanged` per managed asset
-- keeps `~/.codex/config.toml`, auth state, session history, and plugin caches out of scope
-
-### `forge bytefield install`
+### `forge bytefield`
 
 ```sh
-forge bytefield install [--package <spec>] [--json]
+forge bytefield install
+forge bytefield render --source <path> --output <path>
 ```
 
-Verifies and prefetches the pinned `bytefield-svg` runner through `pnpm dlx`.
+Provides the pinned bytefield renderer used by the managed bytefield skill. This is a skill-backed AI artifact primitive, not a general package manager.
 
-Behavior:
+## Removed commands
 
-- keeps the external tool behind the Forge CLI contract
-- defaults to the pinned package spec `bytefield-svg@1.11.0`
-- allows `--package <spec>` only for advanced override and testing flows
-- requires local `pnpm` and Node.js availability
-- downloads package contents into pnpm-managed cache state when needed
+The following commands were removed because their owner is the machine configuration layer:
 
-### `forge bytefield render`
+- `forge tool update`
+- `forge preference check|diff|apply`
 
-```sh
-forge bytefield render --source <path> --output <path> [--embedded] [--package <spec>] [--json]
-```
-
-Renders a checked-in `bytefield-svg` source file to SVG.
-
-Behavior:
-
-- uses `pnpm dlx` under the hood but keeps `forge bytefield` as the stable contract
-- writes the SVG to `--output`
-- creates parent directories for the output when needed
-- runs from the source file's directory so relative helper files can resolve predictably
-- `--embedded` maps to the upstream embedded-SVG mode
-- prefers the upstream DSL directly instead of introducing a second Forge-specific diagram language
-
-Current boundary:
-
-- `forge bytefield render` is the SVG-first execution contract
-- render concerns such as theme selection, legend emission, abbreviation maps, and optional metadata may belong on this wrapper over time
-- consumer layout concerns such as `normal|wide|full` should not be treated as intrinsic SVG semantics
-
-Planned follow-up:
-
-- a future Typst-facing wrapper is expected to sit above `forge bytefield render`
-- that wrapper should own page-layout decisions such as figure width, column fit, and pipeline-specific size labels
-- Typst wrapper work is intentionally out of scope for this change, but it is an explicit planned task
-
-## Config
-
-Root Forge config is intentionally narrow.
-
-`forge self update-check` and `forge self update` do not use it.
-
-Current supported root setting:
-
-```text
-~/.config/forge/config.toml
-```
-
-Example:
-
-```toml
-forge_repo_install_subpath = ".agents/skills-installed"
-```
-
-Skill lifecycle configuration is documented in `docs/forge-skills.md`.
-
-Codex user-config lifecycle and ownership boundaries are documented in `docs/codex.md`.
-
-Optional override:
-
-- `FORGE_CONFIG_DIR`
-
-State file:
-
-```text
-~/.config/forge/state.toml
-```
-
-## Notes
-
-- `forge self update-check` is safe to run frequently as a live network check
-- `forge self update` is explicit on purpose
-- Forge-managed skills are deployed artifacts, not peer sources of truth
-- local-checkout workflows should use `forge dev install` and explicit `--repo-path` flags rather than root-config inference
-
-## Forge CLI-First Guidance
-
-Forge should be the primary interface for Forge-managed domains when the task needs stable, reusable output.
-
-- prefer Forge commands when the result should be low-token, deterministic, and ready for a follow-up command
-- use `jq` only for one-off local projection after a Forge command already returned the right records
-- use `rg` for local repo exploration and unstructured file search, not as the main interface to an external system Forge already models
-
-When deciding whether to expand Forge instead of relying on shell shaping, look for repeated pain:
-
-- the same `jq` cleanup appears across multiple sessions
-- the same noisy fields keep being dropped before reasoning can begin
-- the same IDs, summaries, or normalized fields are needed every time
-- the desired shaped output can be described as a stable example in the docs
-
-When those signals are present, fold the pain into Forge as the smallest possible stable primitive: a narrow flag, output mode, or subcommand rather than a broad generic query feature.
-
-## Versioning Policy
-
-Forge uses semver-compatible calendar versioning for crates:
-
-- format: `YYYYMMDD.0.N`
-- first release on April 10, 2026: `20260410.0.0`
-- second release the same day: `20260410.0.1`
-- release dates use the `America/Phoenix` calendar day rather than UTC
-
-This keeps crate versions valid for Cargo while allowing multiple releases per day.
+Use Nix and Home Manager for packages, toolchains, dotfiles, and application preferences. Forge must not add replacement commands for these concerns.
