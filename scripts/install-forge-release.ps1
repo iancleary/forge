@@ -133,6 +133,10 @@ function Get-ForgeChecksum([string]$ManifestPath, [string]$AssetName) {
 function Test-ReparsePoint([string]$Path) {
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) { return $false }
+    if ($item.PSObject.Properties.Name -contains "LinkType" -and
+        -not [string]::IsNullOrWhiteSpace([string]$item.LinkType)) {
+        return $true
+    }
     return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
