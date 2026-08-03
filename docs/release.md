@@ -163,7 +163,7 @@ cargo check
 
 ## User Install And Update Story
 
-The current user-facing release bootstrap path is GitHub-only: the fast verified artifact path requires local GitHub CLI attestation support, and the secure fallback is a tagged source build with `--locked` (if `gh attestation verify` is missing/unsupported, installer artifact path is disabled and source build is the only path).
+The user-facing bootstrap path is a binary deployment path. It resolves one published GitHub release tag, downloads that tag's platform archive and `forge-release-sha256sums.txt`, and verifies the archive before extraction. It does not require GitHub CLI or a Rust toolchain.
 
 New machine install:
 
@@ -175,13 +175,14 @@ That script:
 
 - resolves the latest published Forge release tag by default
 - re-executes the installer script from the exact tag it is about to install
-- uses a verified platform release artifact only when local attestation verification is available
-- supports `--attestation-failure prompt|source|fail` (default: `prompt`)
-- verifies artifact SHA-256 before install
-- falls back to a tagged source build with `--locked` when the verified artifact path is unavailable
+- downloads the platform archive and checksum manifest from the same release tag
+- requires an exact checksum entry for the selected archive
+- verifies artifact SHA-256 before extraction
+- stops without installing when the artifact, checksum manifest, checksum entry, or supported platform is unavailable
+- performs a tagged source build only when `--build-from-source` is explicit
 - installs Forge-managed skills into `~/.agents/skills`
 - installs the managed Codex baseline into `~/.codex/`
-- can explicitly hand off to global tool bootstrap with `--bootstrap-tools-dry-run` or `--bootstrap-tools`
+- does not install or update unrelated global tools; the machine configuration layer owns them
 
 Deterministic install:
 

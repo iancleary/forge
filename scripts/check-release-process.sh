@@ -37,7 +37,8 @@ fi
 grep -Eq 'x86_64-unknown-linux-gnu' "$WORKFLOW" || fail "missing Linux release target"
 grep -Eq 'aarch64-apple-darwin' "$WORKFLOW" || fail "missing macOS release target"
 grep -Eq -- '--source-digest "\$RELEASE_SHA"' "$WORKFLOW" || fail "workflow attestations must be pinned to the release commit"
-grep -Eq -- '--source-digest "\$release_commit"' "$ROOT/scripts/install-forge-release.sh" || fail "installer attestations must be pinned to the tagged release commit"
+grep -Eq 'forge-release-sha256sums.txt' "$ROOT/scripts/install-forge-release.sh" || fail "installer must download the published checksum manifest"
+grep -Eq 'checksum mismatch' "$ROOT/scripts/install-forge-release.sh" || fail "installer must reject checksum mismatches"
 assert_before 'Validate release inputs' 'Run contributor checks'
 assert_before 'Run contributor checks' 'Build Release Artifact'
 assert_before 'Build Release Artifact' 'Upload Build Outputs'

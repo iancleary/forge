@@ -3,42 +3,29 @@
 set -eu
 
 REPO_URL="https://github.com/iancleary/forge"
-REPO_SLUG="iancleary/forge"
 REPO_API_URL="https://api.github.com/repos/iancleary/forge"
 RAW_REPO_URL="https://raw.githubusercontent.com/iancleary/forge"
 RELEASE_DOWNLOAD_URL="${REPO_URL}/releases/download"
 REF="${FORGE_TAG:-}"
 INSTALL_CODEX=1
 BUILD_FROM_SOURCE=0
-TOOL_UPDATE_MODE="${FORGE_TOOL_UPDATE_MODE:-none}"
-ATTESTATION_FAILURE_MODE="${ATTESTATION_FAILURE_MODE:-prompt}"
 
 usage() {
   cat <<'EOF'
 Install Forge CLIs from the latest published release or a specific tagged release.
 
-The fast verified artifact path requires GitHub CLI (`gh`) with
-`gh attestation verify` support.
-Without that, the installer skips the fast artifact path and uses a
-tagged source build with `cargo` and `git` (source build only).
+The default deployment path downloads the platform archive and published
+SHA-256 manifest from the same selected GitHub release tag. It does not
+require a Rust toolchain. Source builds are explicit development or recovery
+operations.
 
 Usage:
   install-forge-release.sh [--tag <release-tag>] [--skip-codex] [--build-from-source]
-  install-forge-release.sh [--bootstrap-tools|--bootstrap-tools-dry-run]
-  install-forge-release.sh [--attestation-failure <prompt|source|fail>]
 
 Examples:
   install-forge-release.sh
   install-forge-release.sh --tag 20260412.0.7
   install-forge-release.sh --tag 20260412.0.7 --build-from-source
-  install-forge-release.sh --bootstrap-tools-dry-run
-  install-forge-release.sh --bootstrap-tools
-  install-forge-release.sh --attestation-failure fail
-
-Tool bootstrap:
-  --bootstrap-tools-dry-run installs Forge, then runs `forge tool update --dry-run`.
-  --bootstrap-tools installs Forge, then runs `forge tool update`.
-  Neither mode updates project dependencies, manifests, lockfiles, or virtual environments.
 EOF
 }
 
@@ -49,27 +36,6 @@ die() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
-
-ensure_source_build_prereqs() {
-  missing=""
-  if ! command -v cargo >/dev/null 2>&1; then
-    missing="cargo"
-  fi
-  if ! command -v git >/dev/null 2>&1; then
-    if [ -n "$missing" ]; then
-      missing="$missing, git"
-    else
-      missing="git"
-    fi
-  fi
-  [ -z "$missing" ] && return 0
-
-  if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
-    die "tagged source builds require: $missing"
-  fi
-
-  die "the fast verified artifact path requires GitHub CLI (gh); tagged source-build fallback requires: $missing"
 }
 
 resolve_latest_tag() {
@@ -83,6 +49,11 @@ resolve_latest_tag() {
 
   [ -n "$tag" ] || die "failed to resolve the latest Forge release tag"
   printf '%s\n' "$tag"
+}
+
+validate_release_tag() {
+  printf '%s\n' "$REF" | grep -Eq '^[0-9]{8}\.0\.[0-9]+$' ||
+    die "invalid Forge release tag: $REF"
 }
 
 default_binaries() {
@@ -135,11 +106,6 @@ sha256_file() {
   die "missing SHA-256 tool (sha256sum, shasum, or openssl)"
 }
 
-can_verify_artifact_attestation() {
-  command -v gh >/dev/null 2>&1 || return 1
-  gh attestation verify --help >/dev/null 2>&1 || return 1
-}
-
 artifact_install_unavailable_reason() {
   if ! command -v curl >/dev/null 2>&1; then
     printf '%s\n' "release artifact download requires curl"
@@ -153,76 +119,7 @@ artifact_install_unavailable_reason() {
     printf '%s\n' "no attested release artifact is published for this platform"
     return 0
   fi
-  if ! command -v gh >/dev/null 2>&1; then
-    printf '%s\n' "fast verified artifact install requires GitHub CLI (gh); source build only"
-    return 0
-  fi
-  if ! gh attestation verify --help >/dev/null 2>&1; then
-    printf '%s\n' "fast verified artifact install requires a GitHub CLI with `gh attestation verify`; source build only"
-    return 0
-  fi
   return 1
-}
-
-verify_artifact_attestation() {
-  archive_path="$1"
-
-  if ! can_verify_artifact_attestation; then
-    return 2
-  fi
-
-  release_commit="$(
-    gh api "repos/$REPO_SLUG/git/ref/tags/$REF" --jq .object.sha 2>/dev/null || true
-  )"
-  if ! printf '%s\n' "$release_commit" | grep -Eq '^[0-9a-f]{40}$'; then
-    return 3
-  fi
-
-  if gh attestation verify "$archive_path" \
-    --repo "$REPO_SLUG" \
-    --source-ref refs/heads/main \
-    --source-digest "$release_commit" \
-    --signer-workflow "$REPO_SLUG/.github/workflows/release-artifacts.yml" \
-    --predicate-type https://slsa.dev/provenance/v1 \
-    >/dev/null 2>&1
-  then
-    return 0
-  fi
-
-  return 3
-}
-
-handle_attestation_failure() {
-  detail="$1"
-
-  case "$ATTESTATION_FAILURE_MODE" in
-    source)
-      echo "$detail; continuing with tagged source build by policy" >&2
-      return 0
-      ;;
-    fail)
-      die "$detail"
-      ;;
-    prompt|*)
-      if [ -t 0 ] && [ -t 2 ]; then
-        printf '%s\n' "$detail" >&2
-        printf 'Build from tagged source instead? [y/N] ' >&2
-        read -r ans
-        case "$ans" in
-          [Yy]|[Yy][Ee][Ss])
-            echo "continuing with tagged source build by policy" >&2
-            return 0
-            ;;
-          *)
-            die "$detail"
-            ;;
-        esac
-      fi
-
-      echo "$detail; continuing with tagged source build by policy" >&2
-      return 0
-      ;;
-  esac
 }
 
 handoff_to_tagged_installer() {
@@ -240,12 +137,7 @@ handoff_to_tagged_installer() {
   [ -n "$REF" ] && set -- "$@" --tag "$REF"
   [ "$INSTALL_CODEX" -eq 0 ] && set -- "$@" --skip-codex
   [ "$BUILD_FROM_SOURCE" -eq 1 ] && set -- "$@" --build-from-source
-  case "$TOOL_UPDATE_MODE" in
-    dry-run) set -- "$@" --bootstrap-tools-dry-run ;;
-    apply) set -- "$@" --bootstrap-tools ;;
-  esac
-
-  ATTESTATION_FAILURE_MODE="$ATTESTATION_FAILURE_MODE" FORGE_TOOL_UPDATE_MODE="$TOOL_UPDATE_MODE" FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" \
+  FORGE_INSTALLER_PINNED=1 FORGE_TAG="$REF" \
     exec "$installer_path" "$@"
 }
 
@@ -268,34 +160,23 @@ install_from_artifact() (
 
   expected_sha="$(grep "  ${asset_name}\$" "$sha256sums_path" | awk '{print $1}' | head -n 1)"
   [ -n "$expected_sha" ] || return 2
-  can_verify_artifact_attestation || return 2
-
+  printf '%s\n' "$expected_sha" | grep -Eq '^[0-9a-fA-F]{64}$' ||
+    die "invalid SHA-256 entry for $asset_name"
   archive_path="$tmp_dir/$asset_name"
   curl -fsSL "${RELEASE_DOWNLOAD_URL}/${REF}/${asset_name}" -o "$archive_path" ||
-    die "failed to download attested release artifact: $asset_name"
+    die "failed to download release artifact: $asset_name"
 
   actual_sha="$(sha256_file "$archive_path")"
   [ "$actual_sha" = "$expected_sha" ] ||
     die "checksum mismatch for $asset_name: expected $expected_sha, got $actual_sha"
 
-  if ! verify_artifact_attestation "$archive_path"; then
-    status=$?
-    if [ "$status" -eq 2 ]; then
-      return 2
-    elif [ "$status" -eq 3 ]; then
-      handle_attestation_failure "GitHub attestation verification failed for $archive_path"
-      return 2
-    fi
-    return "$status"
-  fi
-
   entries="$(tar -tzf "$archive_path")"
   for entry in $entries; do
     case "$entry" in
-      forge|codex-threads|linear|slack-agent|slack-query)
+      forge|codex-threads|linear|mermaid|slack-agent|slack-query)
         ;;
       *)
-        die "attested release artifact contains unexpected entry: $entry"
+        die "release artifact contains unexpected entry: $entry"
         ;;
     esac
   done
@@ -361,26 +242,6 @@ while [ "$#" -gt 0 ]; do
       BUILD_FROM_SOURCE=1
       shift
       ;;
-    --bootstrap-tools-dry-run)
-      TOOL_UPDATE_MODE=dry-run
-      shift
-      ;;
-    --bootstrap-tools)
-      TOOL_UPDATE_MODE=apply
-      shift
-      ;;
-    --attestation-failure)
-      [ "$#" -ge 2 ] || die "missing value for --attestation-failure"
-      ATTESTATION_FAILURE_MODE="$2"
-      case "$ATTESTATION_FAILURE_MODE" in
-        prompt|source|fail)
-          ;;
-        *)
-          die "invalid value for --attestation-failure: $ATTESTATION_FAILURE_MODE (expected prompt|source|fail)"
-          ;;
-      esac
-      shift 2
-      ;;
     -h|--help)
       usage
       exit 0
@@ -391,17 +252,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-case "$TOOL_UPDATE_MODE" in
-  none|dry-run|apply)
-    ;;
-  *)
-    die "invalid FORGE_TOOL_UPDATE_MODE: $TOOL_UPDATE_MODE (expected none|dry-run|apply)"
-    ;;
-esac
-
 if [ -z "$REF" ]; then
   REF="$(resolve_latest_tag)"
 fi
+validate_release_tag
 
 handoff_to_tagged_installer
 
@@ -410,22 +264,19 @@ echo "Installing Forge CLIs from ${REPO_URL} @ ${REF}"
 if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
   artifact_reason="$(artifact_install_unavailable_reason || true)"
   if install_from_artifact; then
-    echo "Installed attested release artifacts for ${REF}"
+    echo "Installed checksum-verified release artifacts for ${REF}"
   else
     status=$?
     if [ "$status" -ne 2 ]; then
       exit "$status"
     fi
     if [ -n "$artifact_reason" ]; then
-      echo "${artifact_reason}; falling back to tagged source build only." >&2
+      die "${artifact_reason}; no binary installation was performed (use --build-from-source explicitly for development or recovery)"
     else
-      echo "Attested release artifact install unavailable; falling back to tagged source build only." >&2
+      die "checksum-verified release artifact install failed; no binary installation was performed (use --build-from-source explicitly for development or recovery)"
     fi
-    ensure_source_build_prereqs
-    install_from_source
   fi
 else
-  ensure_source_build_prereqs
   install_from_source
 fi
 
@@ -438,16 +289,5 @@ if [ "$INSTALL_CODEX" -eq 1 ]; then
   echo "Installing Forge-managed Codex user config into ~/.codex"
   forge codex install
 fi
-
-case "$TOOL_UPDATE_MODE" in
-  dry-run)
-    echo "Previewing global tool bootstrap with forge tool update --dry-run"
-    forge tool update --dry-run
-    ;;
-  apply)
-    echo "Bootstrapping global tools with forge tool update"
-    forge tool update
-    ;;
-esac
 
 echo "Forge install complete."

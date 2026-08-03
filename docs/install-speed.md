@@ -1,188 +1,63 @@
 # Install Speed And Integrity
 
-This document records the completed install and update design for Forge at the current project scope.
+This document records Forge's binary deployment and self-update trust models.
 
-Status:
+## Bootstrap deployment
 
-- complete for the current GitHub-only trust model
-- fast path is implemented for curated macOS and Linux targets
-- secure fallback is implemented for every other case
-- second-site hosting and non-GitHub-native signing are not required for this project right now
+The release installer is a consumer deployment path. It does not provision a Forge development environment.
 
-## Final Decision
+The default path:
 
-Forge uses a GitHub-only release trust model.
+1. Resolves the latest published release tag, or accepts an explicit tag.
+2. Validates the tag as Forge CalVer.
+3. Re-executes the installer from that exact tag.
+4. Detects the supported platform target.
+5. Downloads `forge-release-sha256sums.txt` from that tag's GitHub release.
+6. Selects the exact checksum entry for the target archive.
+7. Downloads the archive from the same release tag.
+8. Verifies SHA-256 before extraction.
+9. Rejects unexpected archive entries.
+10. Installs Forge binaries, skills, and the selected Codex assets.
 
-That means:
+The default path requires `curl`, `tar`, and one supported SHA-256 utility. It does not require `gh`, Rust, Cargo, Git, Node, Python, or uv.
 
-- GitHub Actions builds release artifacts
-- GitHub Releases publishes the artifacts and release metadata
-- GitHub provenance attestations are published for release archives and release metadata
-- the fast install and update path requires GitHub CLI attestation support
-- if that verification path is unavailable locally, Forge falls back to a tagged source build with `--locked` and skips artifact install
+The installer stops without installing binaries when:
 
-This is the intended tradeoff for the project today:
+- the platform has no published artifact
+- the checksum manifest is unavailable
+- the archive has no exact checksum entry
+- the checksum entry is malformed
+- the downloaded checksum does not match
+- the archive contains an unexpected path
 
-- fast on machines that have `gh`
-- still secure on machines that do not
-- no second trust root
-- no second hosting surface
-- no additional signing system to operate yet
+It does not silently build from source. `--build-from-source` is an explicit development or recovery operation and requires Cargo and Git.
 
-## Why This Is Enough
+## Trust boundary
 
-For a solo project, the current model is a fair trade.
+The binary installer obtains the checksum manifest and archive from the same selected release tag over HTTPS. The checksum detects corruption and mismatched assets. It does not provide an independent trust root if the GitHub release and checksum manifest are both replaced by an attacker.
 
-It gives:
+Release CI still creates GitHub provenance attestations and verifies them before publication. Users that require provenance verification can verify the published attestation separately. Local attestation verification is not a prerequisite for the portable bootstrap path.
 
-- materially faster first install and self-update on supported platforms
-- explicit integrity checks for downloaded binaries
-- a checksum-verification hard-fail path and interactive fallback on attestation failure (automatic fallback when non-interactive)
-- a source-built escape hatch when the fast path cannot be verified locally (including missing or unsupported `gh attestation verify`)
+## Self-update
 
-It does not try to defend against every possible GitHub-side compromise. That higher bar is real, but it is not a hard requirement for this project right now.
+`forge self update` retains its existing attestation-aware contract for non-Nix installations. It can use an attested artifact or a tagged source build according to its explicit flags and failure policy.
 
-## Fast Path Requirements
+Nix-managed installations must update the Forge package through Nix. They must not use `forge self update` to replace a store-owned binary.
 
-The fast verified artifact path requires all of the following:
+The bootstrap and self-update contracts are intentionally distinct:
 
-- supported platform artifact
-- GitHub release manifest and checksums for the target release
-- local GitHub CLI with attestation verification via `gh attestation verify`
-- successful checksum verification
-- successful GitHub attestation verification
+- bootstrap optimizes for deploying published binaries without development toolchains
+- self-update preserves the existing non-Nix provenance and recovery policy
+- Forge development uses the repository toolchain and normal Cargo checks
 
-If any of those are missing, Forge does not install the artifact.
+## Published release files
 
-Instead it uses the fallback path:
-
-- clone the exact release tag
-- build the managed binaries once in a single workspace release build
-- use `cargo build --release --locked`
-- install the built binaries into `~/.cargo/bin`
-
-## Security Story
-
-Forge trusts two outputs:
-
-- a locally built binary from a pinned tagged source tree using `--locked`
-- a downloaded release artifact that matches the published manifest/checksum data and passes GitHub attestation verification
-
-The key verified inputs are:
-
-- release tag
-- source commit SHA
-- `Cargo.lock` SHA-256
-- Rust toolchain used for the release build
-- per-artifact SHA-256
-
-Release metadata currently includes:
-
-- `forge-release-manifest.json`
-- `forge-release-sha256sums.txt`
-- per-artifact `*.attestation.json` bundles
-- metadata attestation bundle for the release metadata files
-
-## Install Behavior
-
-Bootstrap uses the release installer script.
-
-Current behavior:
-
-1. Resolve the target release tag.
-2. Re-exec the installer from that exact release tag.
-3. Detect the current platform.
-4. Attempt the verified artifact path only if local attestation verification is available. If the `gh attestation verify` command is missing/unsupported, skip artifact install and use source build only.
-5. Verify artifact SHA-256.
-6. Verify GitHub release attestation.
-7. Install the binaries.
-8. Reconcile Forge-managed skills and Codex assets.
-9. If the verified artifact path is unavailable, fall back to a tagged source build with `--locked` and no artifact install.
-
-Important failure rules:
-
-- checksum mismatch is a hard failure
-- attestation verification failure prompts to continue from source, or falls back automatically when non-interactive
-- `forge self update --attestation-failure fail` enforces hard-fail behavior on attestation mismatch
-- Forge does not silently install an unverified artifact
-
-## Update Behavior
-
-`forge self update` follows the same contract as bootstrap.
-
-Current behavior:
-
-1. Resolve the latest release tag.
-2. Load the release contracts from that release.
-3. Attempt the verified artifact path only if local attestation verification is available.
-4. Verify checksum and attestation before installing an artifact.
-5. Fall back to tagged source build with `--locked` when the verified artifact path is unavailable. This includes missing or unsupported `gh attestation verify`, in which case source build is the only path.
-6. Apply release migrations.
-7. Reconcile Forge-managed skills and Codex assets with the installed release.
-
-The fast path and the fallback path are intentionally aligned so first install and steady-state update use the same trust model.
-
-## Release Publishing
-
-The release workflow now publishes:
+Each release contains:
 
 - one archive per supported target triple
 - `forge-release-manifest.json`
 - `forge-release-sha256sums.txt`
-- GitHub provenance attestations for the archives
-- GitHub provenance attestations for the release metadata
+- per-artifact `*.attestation.json` bundles
+- a metadata attestation bundle
 
-Supported artifact targets are intentionally curated:
-
-- `x86_64-unknown-linux-gnu`
-- `aarch64-apple-darwin`
-
-Broader target coverage is optional future work, not part of the current security requirement.
-
-## Why Not Binary Comparison
-
-Forge does not compare a locally built binary to a downloaded release binary as the primary integrity check.
-
-That is the right choice because Rust release binaries are not guaranteed to be reproducible across user environments. Toolchain patch level, linker behavior, build paths, and platform details can all change the final bytes without implying tampering.
-
-Binary comparison only becomes useful if reproducible builds become an explicit project goal.
-
-## Why `Cargo.lock` Hash Alone Is Not Enough
-
-`Cargo.lock` matters, but it is not a complete trust anchor.
-
-By itself it does not identify:
-
-- the exact Forge source commit
-- the installer logic
-- the release toolchain
-- whether the downloaded artifact actually came from those inputs
-
-Forge uses the `Cargo.lock` hash as one field inside release metadata, not as the only integrity signal.
-
-## What Is Intentionally Out Of Scope
-
-These are optional future hardening directions, not current requirements:
-
-- second-site hosting such as a Vercel mirror
-- non-GitHub-native signed manifests
-- Sigstore or cosign verification inside the installer
-- a second independent trust root
-
-Those become more compelling if:
-
-- other users start depending on Forge binaries
-- offline or non-`gh` verification becomes important
-- GitHub-only distribution stops being an acceptable operational dependency
-- stronger supply-chain guarantees become a concrete project requirement
-
-## Recommendation
-
-Treat the current model as complete for the project today:
-
-- GitHub-only verified artifact fast path
-- `gh` required for that fast path
-- tagged `--locked` source-build fallback
-- hard failure on checksum mismatch; attestation mismatch triggers source fallback after confirmation
-
-If the project grows beyond that threat model later, the next step is a signed release manifest published on GitHub Releases. It is not required now.
+Release CI completes checks, builds every supported target, assembles and verifies release files, and verifies attestations before it creates the tag and GitHub release.
