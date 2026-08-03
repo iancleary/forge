@@ -85,6 +85,7 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Te
     $env:FORGE_TEST_GH_MODE = if ($env:FORGE_TEST_GH_MODE) { $env:FORGE_TEST_GH_MODE } else { "fail" }
     $env:Path = "$FakeBin;$OriginalPath"
     try {
+        $global:LASTEXITCODE = 0
         & $Root/scripts/install-forge-release.ps1 -Tag $Version -SkipCodex @Arguments
         if ($LASTEXITCODE -ne 0) { throw "installer exited with $LASTEXITCODE" }
     } catch {
