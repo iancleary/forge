@@ -17,12 +17,6 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
-function Get-OptionalProperty([object]$InputObject, [string]$Name) {
-    $property = $InputObject.PSObject.Properties[$Name]
-    if ($null -eq $property) { return "<missing>" }
-    return [string]$property.Value
-}
-
 function New-Zip([string]$Files, [string]$ArchivePath, [string]$Mode) {
     $stream = [IO.File]::Create($ArchivePath)
     $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
@@ -69,23 +63,16 @@ function New-Fixture([string]$Label, [string]$ArchiveMode = "valid", [string]$Ch
     return $fixture
 }
 
-function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$TestHome = $null, [switch]$DestinationJunction) {
+function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$TestHome = $null, [switch]$DestinationReparsePoint) {
     if ([string]::IsNullOrWhiteSpace($TestHome)) { $TestHome = Join-Path $TestRoot ("home-" + [Guid]::NewGuid().ToString("N")) }
     $localAppData = Join-Path $TestHome "localappdata"
     New-Item -ItemType Directory -Path $localAppData -Force | Out-Null
-    if ($DestinationJunction) {
+    if ($DestinationReparsePoint) {
         $forgeDirectory = Join-Path $localAppData "Forge"
         $redirect = Join-Path $TestHome "redirect"
         New-Item -ItemType Directory -Path $forgeDirectory, $redirect -Force | Out-Null
         $destinationLink = Join-Path $forgeDirectory "bin"
         New-Item -ItemType SymbolicLink -Path $destinationLink -Target $redirect | Out-Null
-        $destinationInfo = Get-Item -LiteralPath $destinationLink -Force
-        Write-Host ("destination fixture: attributes={0}; mode={1}; linkType={2}; target={3}; linkTarget={4}" -f
-            (Get-OptionalProperty $destinationInfo "Attributes"),
-            (Get-OptionalProperty $destinationInfo "Mode"),
-            (Get-OptionalProperty $destinationInfo "LinkType"),
-            (Get-OptionalProperty $destinationInfo "Target"),
-            (Get-OptionalProperty $destinationInfo "LinkTarget"))
     }
     $log = Join-Path $TestHome "tool.log"
     $ghLog = Join-Path $TestHome "gh.log"
@@ -147,19 +134,12 @@ exit /b 1
         New-Item -ItemType Directory -Path $junctionProbeForge, (Join-Path $junctionProbeHome "redirect") -Force | Out-Null
         $junctionProbePath = Join-Path $junctionProbeForge "bin"
         New-Item -ItemType SymbolicLink -Path $junctionProbePath -Target (Join-Path $junctionProbeHome "redirect") | Out-Null
-        $junctionProbeInfo = Get-Item -LiteralPath $junctionProbePath -Force
-        Write-Host ("reparse fixture: attributes={0}; mode={1}; linkType={2}; target={3}; linkTarget={4}" -f
-            (Get-OptionalProperty $junctionProbeInfo "Attributes"),
-            (Get-OptionalProperty $junctionProbeInfo "Mode"),
-            (Get-OptionalProperty $junctionProbeInfo "LinkType"),
-            (Get-OptionalProperty $junctionProbeInfo "Target"),
-            (Get-OptionalProperty $junctionProbeInfo "LinkTarget"))
         $junctionFixtureReady = $true
     } catch {
         Write-Host "reparse-point destination fixture unavailable; native Windows installer contract remains covered by the POSIX fixture"
     }
     if ($junctionFixtureReady) {
-        $junctionResult = Run-Installer $valid @() $null $true
+        $junctionResult = Run-Installer -Fixture $valid -Arguments @() -DestinationReparsePoint
         if ($junctionResult.Success) { Fail "reparse-point destination was accepted" }
     }
 
