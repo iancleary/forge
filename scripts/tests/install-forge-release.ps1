@@ -63,18 +63,18 @@ function New-Fixture([string]$Label, [string]$ArchiveMode = "valid", [string]$Ch
     return $fixture
 }
 
-function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Home = $null, [switch]$DestinationJunction) {
-    if ([string]::IsNullOrWhiteSpace($Home)) { $Home = Join-Path $TestRoot ("home-" + [Guid]::NewGuid().ToString("N")) }
-    $localAppData = Join-Path $Home "localappdata"
+function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$TestHome = $null, [switch]$DestinationJunction) {
+    if ([string]::IsNullOrWhiteSpace($TestHome)) { $TestHome = Join-Path $TestRoot ("home-" + [Guid]::NewGuid().ToString("N")) }
+    $localAppData = Join-Path $TestHome "localappdata"
     New-Item -ItemType Directory -Path $localAppData -Force | Out-Null
     if ($DestinationJunction) {
         $forgeDirectory = Join-Path $localAppData "Forge"
-        $redirect = Join-Path $Home "redirect"
+        $redirect = Join-Path $TestHome "redirect"
         New-Item -ItemType Directory -Path $forgeDirectory, $redirect -Force | Out-Null
         New-Item -ItemType Junction -Path (Join-Path $forgeDirectory "bin") -Target $redirect | Out-Null
     }
-    $log = Join-Path $Home "tool.log"
-    $ghLog = Join-Path $Home "gh.log"
+    $log = Join-Path $TestHome "tool.log"
+    $ghLog = Join-Path $TestHome "gh.log"
     New-Item -ItemType File -Path $log, $ghLog -Force | Out-Null
     $env:LOCALAPPDATA = $localAppData
     $env:FORGE_INSTALLER_PINNED = "1"
@@ -88,13 +88,13 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Ho
         & $Root/scripts/install-forge-release.ps1 -Tag $Version -SkipCodex @Arguments
         if ($LASTEXITCODE -ne 0) { throw "installer exited with $LASTEXITCODE" }
     } catch {
-        return @{ Success = $false; Home = $Home; Log = $log; GhLog = $ghLog }
+        return @{ Success = $false; Home = $TestHome; Log = $log; GhLog = $ghLog }
     }
-    return @{ Success = $true; Home = $Home; Log = $log; GhLog = $ghLog }
+    return @{ Success = $true; Home = $TestHome; Log = $log; GhLog = $ghLog }
 }
 
-function Expect-Failure([string]$Fixture, [string[]]$Arguments = @(), [string]$Home = $null) {
-    $result = Run-Installer $Fixture $Arguments $Home
+function Expect-Failure([string]$Fixture, [string[]]$Arguments = @(), [string]$TestHome = $null) {
+    $result = Run-Installer $Fixture $Arguments $TestHome
     if ($result.Success) { Fail "expected installer failure for $Fixture" }
     return $result
 }

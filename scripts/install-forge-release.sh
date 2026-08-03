@@ -212,7 +212,7 @@ check_destination() {
 
   if command -v id >/dev/null 2>&1 && command -v stat >/dev/null 2>&1; then
     uid="$(id -u 2>/dev/null || true)"
-    owner="$(stat -f '%u' "$destination" 2>/dev/null || stat -c '%u' "$destination" 2>/dev/null || true)"
+    owner="$(stat -c '%u' "$destination" 2>/dev/null || stat -f '%u' "$destination" 2>/dev/null || true)"
     if [ -n "$uid" ] && [ -n "$owner" ] && [ "$uid" != "$owner" ]; then
       die "destination is not owned by the current user: $destination"
     fi
