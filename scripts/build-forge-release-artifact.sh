@@ -113,6 +113,9 @@ esac
 
 mkdir -p "$output_dir"
 
+# ZIP tools run from the staging directory, so keep the output path stable.
+output_dir="$(cd "$output_dir" && pwd)"
+
 current_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/crates/forge/Cargo.toml" | head -n 1)"
 [[ "$current_version" == "$version" ]] || die "crate version $current_version does not match --version $version"
 
