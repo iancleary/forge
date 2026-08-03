@@ -131,6 +131,14 @@ function Get-ForgeChecksum([string]$ManifestPath, [string]$AssetName) {
 }
 
 function Test-ReparsePoint([string]$Path) {
+    try {
+        $attributes = [IO.File]::GetAttributes($Path)
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $true
+        }
+    } catch {
+        # Broken links may not be readable through the .NET attribute API.
+    }
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) { return $false }
     if ($item.PSObject.Properties.Name -contains "LinkType" -and
