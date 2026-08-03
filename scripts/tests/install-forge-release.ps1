@@ -77,7 +77,15 @@ function Run-Installer([string]$Fixture, [string[]]$Arguments = @(), [string]$Te
         $forgeDirectory = Join-Path $localAppData "Forge"
         $redirect = Join-Path $TestHome "redirect"
         New-Item -ItemType Directory -Path $forgeDirectory, $redirect -Force | Out-Null
-        New-Item -ItemType SymbolicLink -Path (Join-Path $forgeDirectory "bin") -Target $redirect | Out-Null
+        $destinationLink = Join-Path $forgeDirectory "bin"
+        New-Item -ItemType SymbolicLink -Path $destinationLink -Target $redirect | Out-Null
+        $destinationInfo = Get-Item -LiteralPath $destinationLink -Force
+        Write-Host ("destination fixture: attributes={0}; mode={1}; linkType={2}; target={3}; linkTarget={4}" -f
+            (Get-OptionalProperty $destinationInfo "Attributes"),
+            (Get-OptionalProperty $destinationInfo "Mode"),
+            (Get-OptionalProperty $destinationInfo "LinkType"),
+            (Get-OptionalProperty $destinationInfo "Target"),
+            (Get-OptionalProperty $destinationInfo "LinkTarget"))
     }
     $log = Join-Path $TestHome "tool.log"
     $ghLog = Join-Path $TestHome "gh.log"
