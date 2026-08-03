@@ -179,7 +179,10 @@ exit /b 1
 
     $env:FORGE_TEST_GH_MODE = "success"
     $attest = Run-Installer (New-Fixture "attestation-success") @("-VerifyAttestation")
-    if (-not $attest.Success -or -not ((Get-Content -LiteralPath $attest.GhLog -Raw) -match "attestation verify")) { Fail "explicit Windows attestation was not requested" }
+    $attestLog = Get-Content -LiteralPath $attest.GhLog -Raw
+    if (-not $attest.Success -or $attestLog -notmatch "attestation verify") {
+        Fail "explicit Windows attestation was not requested (success=$($attest.Success); error=$($attest.Error); log=<$attestLog>)"
+    }
     $env:FORGE_TEST_GH_MODE = "fail"
     [void](Expect-Failure (New-Fixture "attestation-failure") @("-VerifyAttestation"))
 
