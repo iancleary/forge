@@ -131,14 +131,26 @@ function Get-ForgeChecksum([string]$ManifestPath, [string]$AssetName) {
 }
 
 function Test-ReparsePoint([string]$Path) {
+    $item = $null
     try {
         $parentPath = Split-Path -LiteralPath $Path -Parent
         $leafName = Split-Path -LiteralPath $Path -Leaf
-        $reparseItem = Get-ChildItem -LiteralPath $parentPath -Force -Attributes ReparsePoint -ErrorAction Stop |
+        $item = Get-ChildItem -LiteralPath $parentPath -Force -ErrorAction Stop |
             Where-Object { $_.Name -eq $leafName } |
             Select-Object -First 1
-        if ($null -ne $reparseItem) {
-            return $true
+        if ($null -ne $item) {
+            foreach ($propertyName in @("LinkType", "Target", "LinkTarget")) {
+                $property = $item.PSObject.Properties[$propertyName]
+                if ($null -ne $property -and
+                    -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+                    return $true
+                }
+            }
+            $attributesProperty = $item.PSObject.Properties["Attributes"]
+            if ($null -ne $attributesProperty -and
+                (($attributesProperty.Value -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                return $true
+            }
         }
     } catch {
         # Fall through to the .NET and provider metadata checks.
@@ -153,11 +165,16 @@ function Test-ReparsePoint([string]$Path) {
     }
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) { return $false }
-    if ($item.PSObject.Properties.Name -contains "LinkType" -and
-        -not [string]::IsNullOrWhiteSpace([string]$item.LinkType)) {
-        return $true
+    foreach ($propertyName in @("LinkType", "Target", "LinkTarget")) {
+        $property = $item.PSObject.Properties[$propertyName]
+        if ($null -ne $property -and
+            -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+            return $true
+        }
     }
-    return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    $attributesProperty = $item.PSObject.Properties["Attributes"]
+    return ($null -ne $attributesProperty -and
+        (($attributesProperty.Value -band [IO.FileAttributes]::ReparsePoint) -ne 0))
 }
 
 function Get-ForgeDestination {
