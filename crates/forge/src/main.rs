@@ -124,6 +124,7 @@ macro_rules! embedded_codex_asset {
 #[derive(Parser, Debug)]
 #[command(name = "forge")]
 #[command(about = "Forge manager CLI")]
+#[command(version)]
 #[command(
     after_help = "Output:\n  - Default output is human-readable.\n  - Use --json for compact (token-efficient) machine-readable JSON.\n  - Errors follow the same rule: human-readable by default, compact JSON with --json."
 )]
