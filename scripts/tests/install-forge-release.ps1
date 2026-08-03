@@ -197,6 +197,7 @@ exit /b 1
     $source = Expect-Failure (New-Fixture "explicit-source") @("-BuildFromSource")
     if (-not ((Get-Content -LiteralPath $source.Log -Raw) -match "git clone")) { Fail "explicit Windows source mode did not invoke git" }
 
+    $global:LASTEXITCODE = 0
     Write-Host "ok: PowerShell release installer adversarial fixtures passed"
 } finally {
     $env:Path = $OriginalPath
