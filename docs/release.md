@@ -165,6 +165,11 @@ cargo check
 
 The user-facing bootstrap path is a binary deployment path. It resolves one published GitHub release tag, downloads that tag's platform archive and `forge-release-sha256sums.txt`, and verifies the archive before extraction. It does not require GitHub CLI or a Rust toolchain.
 
+The release matrix is fixed to `aarch64-apple-darwin`,
+`x86_64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`. WSL uses Linux.
+Windows ARM and 32-bit Windows are not supported. macOS and Linux use
+`.tar.gz`; native Windows uses `.zip` with `.exe` entries.
+
 New machine install:
 
 ```sh
@@ -178,6 +183,8 @@ That script:
 - downloads the platform archive and checksum manifest from the same release tag
 - requires an exact checksum entry for the selected archive
 - verifies artifact SHA-256 before extraction
+- validates the exact regular-file archive entry set
+- stages and atomically replaces the complete binary set
 - stops without installing when the artifact, checksum manifest, checksum entry, or supported platform is unavailable
 - performs a tagged source build only when `--build-from-source` is explicit
 - installs Forge-managed skills into `~/.agents/skills`
@@ -190,20 +197,25 @@ Deterministic install:
 curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260413.0.0/scripts/install-forge-release.sh | sh -s -- --tag 20260413.0.0
 ```
 
+Native Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.ps1 | iex
+```
+
+Windows installs default to `%LOCALAPPDATA%\Forge\bin` and do not modify
+`PATH`. The installer prints user PATH guidance.
+
 Update story:
 
 - use the installer script for first install and recovery
 - use `forge self update-check` and `forge self update` as the steady-state release update path
-- in release mode, that path checks the latest repo tag and uses an attested platform artifact only when local attestation verification is available
+- in release mode, that path checks the latest repo tag and uses the checksum-verified platform artifact by default
 - in release mode, `forge self update --build-from-source` forces the tagged source-build path
-- in release mode, missing or unsupported platform artifacts fall back to a tagged source build with `--locked`
-- in release mode, missing local attestation verification (including missing/unsupported `gh attestation verify`) also falls back to a tagged source build with `--locked`
-- `forge self update --attestation-failure <prompt|source|fail>` controls attestation failure behavior:
-  - `prompt` (default): prompt in interactive mode, fallback in non-interactive
-  - `source`: always fallback to tagged source
-  - `fail`: abort when attestation fails
-- checksum mismatch is a hard failure; do not silently fall back after verification failure
-- attestation verification failure prompts to continue with a tagged source fallback (or falls back automatically when non-interactive)
+- in release mode, `forge self update --verify-attestation` requests optional GitHub provenance verification and fails closed if `gh` or verification is unavailable
+- missing or unsupported platform artifacts are hard failures; they never select a source build implicitly
+- checksum mismatch and archive validation failures are hard failures
+- binary replacement is atomic, and skill/Codex reconciliation starts only after replacement succeeds
 - in release mode, `config/release-tools.toml` is the source of truth for current and legacy tool binary/config-dir names used during local migration and cleanup
 - in release mode, `config/release-skills.toml` is the source of truth for current and legacy managed skill names used during local skill migration
 - after upgrade, it reconciles Forge-managed skills and reapplies the managed Codex baseline
@@ -237,13 +249,13 @@ Recommended online verification for a downloaded archive (strict path):
 ```sh
 gh attestation verify ./forge-20260415.0.2-aarch64-apple-darwin.tar.gz \
   --repo iancleary/forge \
-  --source-ref refs/heads/main \
+  --source-ref refs/tags/20260415.0.2 \
   --source-digest <release-commit-sha> \
   --signer-workflow iancleary/forge/.github/workflows/release-artifacts.yml \
   --predicate-type https://slsa.dev/provenance/v1
 ```
 
-That verification path uses the published GitHub attestation associated with the release asset and pins provenance to the immutable commit targeted by the release tag. The installer and `forge self update` resolve that commit automatically.
+That verification path uses the published GitHub attestation associated with the release asset and pins provenance to the immutable commit targeted by the release tag. The release installers use the validated tag as their source reference; `forge self update` also resolves the tag commit for its explicit verification request.
 
 For offline workflows, the release also publishes `*.attestation.json` bundle files that correspond to the built artifacts and release metadata.
 

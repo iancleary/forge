@@ -22,7 +22,7 @@ Commands use human-readable output by default. `--json` emits a compact stable e
 forge doctor [--json]
 ```
 
-Checks whether Forge and its supported agent workflows can run. Checks include required commands, configured Forge integration credentials, the Forge config directory, and release-attestation capability.
+Checks whether Forge and its supported agent workflows can run. Checks include required commands, configured Forge integration credentials, the Forge config directory, and optional GitHub attestation capability.
 
 Doctor reports missing dependencies and remediation. It does not install or update global packages.
 
@@ -45,10 +45,12 @@ Checks release drift, managed skill drift, and managed Codex asset drift. It doe
 ### `forge self update`
 
 ```sh
-forge self update [--build-from-source] [--attestation-failure <prompt|source|fail>] [--json]
+forge self update [--build-from-source] [--verify-attestation] [--json]
 ```
 
-Updates a non-Nix Forge installation from an attested release artifact or a tagged source build. It reconciles installed Forge-managed skills and Codex assets after updating the binary.
+Updates a non-Nix Forge installation from the checksum-verified release artifact for the current supported target, or from a tagged source build only when `--build-from-source` is explicit. `--verify-attestation` requests optional GitHub provenance verification and fails closed if `gh` or verification is unavailable. It reconciles installed Forge-managed skills and Codex assets only after binary replacement succeeds.
+
+The release artifact path does not compile or use a POSIX archive tool on native Windows. Native Windows installs use the ZIP artifact and `%LOCALAPPDATA%\Forge\bin`. Windows ARM and 32-bit Windows are not supported.
 
 Nix-managed installations must use Nix to update binaries and packages. Forge asset rendering, validation, status, and diff operations remain valid in that environment. Nix ownership detection and Home Manager activation are not implemented yet.
 

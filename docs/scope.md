@@ -75,7 +75,7 @@ Forge
   supplies portable non-Nix installation paths
 ```
 
-The initial Nix flake, package definitions, and Home Manager module are follow-up work. Until they exist, the checksum-verified release installer, `forge skills install`, and `forge codex install` remain supported portability paths. Source builds are explicit development or recovery operations.
+The initial Nix flake, package definitions, and Home Manager module are follow-up work. Until they exist, the checksum-verified release installers, `forge skills install`, and `forge codex install` remain supported portability paths. Native Windows uses the PowerShell installer and `%LOCALAPPDATA%\Forge\bin`. WSL uses the Linux artifact. Windows ARM and 32-bit Windows are excluded. Source builds are explicit development or recovery operations.
 
 ## Consequences
 

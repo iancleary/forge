@@ -13,7 +13,7 @@ Usage:
 Example:
   scripts/build-forge-release-artifact.sh \
     --version 20260415.0.1 \
-    --target x86_64-apple-darwin \
+    --target aarch64-apple-darwin \
     --output-dir dist
 EOF
 }
@@ -85,12 +85,31 @@ done
 [[ -n "$output_dir" ]] || die "--output-dir is required"
 
 need_cmd cargo
-need_cmd tar
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 installer="$root/scripts/install-forge-release.sh"
 [[ -f "$installer" ]] || die "missing release installer: $installer"
+
+case "$target" in
+  aarch64-apple-darwin|x86_64-unknown-linux-gnu)
+    archive_extension="tar.gz"
+    need_cmd tar
+    ;;
+  x86_64-pc-windows-msvc)
+    archive_extension="zip"
+    if command -v 7z >/dev/null 2>&1; then
+      archive_tool="7z"
+    elif command -v zip >/dev/null 2>&1; then
+      archive_tool="zip"
+    else
+      die "missing ZIP tool (7z or zip)"
+    fi
+    ;;
+  *)
+    die "unsupported Forge release target: $target"
+    ;;
+esac
 
 mkdir -p "$output_dir"
 
@@ -119,15 +138,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
+case "$target" in
+  x86_64-pc-windows-msvc) executable_suffix=".exe" ;;
+  *) executable_suffix="" ;;
+esac
+
+archive_bins=()
 for bin in "${bins[@]}"; do
-  src="$target_dir/$bin"
+  filename="$bin$executable_suffix"
+  src="$target_dir/$filename"
   [[ -f "$src" ]] || die "missing built binary: $src"
-  cp "$src" "$stage_dir/$bin"
+  cp "$src" "$stage_dir/$filename"
+  archive_bins+=("$filename")
 done
 
-asset_name="forge-${version}-${target}.tar.gz"
+asset_name="forge-${version}-${target}.${archive_extension}"
 asset_path="$output_dir/$asset_name"
-tar -C "$stage_dir" -czf "$asset_path" "${bins[@]}"
+case "$archive_extension" in
+  tar.gz)
+    tar -C "$stage_dir" -czf "$asset_path" "${archive_bins[@]}"
+    ;;
+  zip)
+    if [[ "$archive_tool" == "7z" ]]; then
+      (cd "$stage_dir" && 7z a -tzip -mx=9 "$asset_path" "${archive_bins[@]}" >/dev/null)
+    else
+      (cd "$stage_dir" && zip -q -9 "$asset_path" "${archive_bins[@]}")
+    fi
+    ;;
+esac
 
 sha256="$(sha256_file "$asset_path")"
 size_bytes="$(wc -c < "$asset_path" | tr -d '[:space:]')"
@@ -137,6 +175,7 @@ cat > "$output_dir/$asset_name.metadata.json" <<EOF
 {
   "target": "$target",
   "name": "$asset_name",
+  "archive": "$archive_extension",
   "sha256": "$sha256",
   "size_bytes": $size_bytes
 }

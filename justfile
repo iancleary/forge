@@ -30,10 +30,19 @@ test:
 install-list-check:
   sh "{{root}}/scripts/check-forge-binaries.sh"
 
+release-installer-posix-test:
+  sh "{{root}}/scripts/tests/install-forge-release.sh"
+
+release-installer-windows-test:
+  pwsh -NoProfile -File "{{root}}/scripts/tests/install-forge-release.ps1"
+
+release-artifact-format-test:
+  sh "{{root}}/scripts/tests/build-forge-release-artifact.sh"
+
 release-process-check:
   sh "{{root}}/scripts/check-release-process.sh"
 
-ci: fmt-check clippy test install-list-check release-process-check
+ci: fmt-check clippy test install-list-check release-process-check release-installer-posix-test
 
 doc:
   cargo doc --no-deps

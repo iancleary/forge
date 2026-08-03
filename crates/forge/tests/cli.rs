@@ -346,6 +346,28 @@ fn cli_self_update_rejects_repo_mode_flags() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn cli_self_update_help_exposes_explicit_trust_modes() {
+    let root = temp_path("self-update-help");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+
+    let output = run_forge(&["self", "update", "--help"], &config_dir, &home_dir);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let help = String::from_utf8(output.stdout).expect("help utf8");
+    assert!(help.contains("--build-from-source"));
+    assert!(help.contains("--verify-attestation"));
+    assert!(!help.contains("--attestation-failure"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_bytefield_install_prefetches_pinned_runner() {

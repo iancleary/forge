@@ -17,6 +17,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tar::Archive;
+use zip::ZipArchive;
 
 const FORGE_REPO_SLUG: &str = "iancleary/forge";
 const FORGE_REPO_URL: &str = "https://github.com/iancleary/forge";
@@ -35,9 +36,9 @@ const RELEASE_SKILLS_REL_PATH: &str = "config/release-skills.toml";
 const RELEASE_BINARIES_BEGIN_MARKER: &str = "  # BEGIN FORGE_BINARIES";
 const RELEASE_BINARIES_END_MARKER: &str = "  # END FORGE_BINARIES";
 const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
+const RELEASE_CHECKSUMS_NAME: &str = "forge-release-sha256sums.txt";
 const RELEASE_ARTIFACT_VERIFICATION_WORKFLOW: &str = ".github/workflows/release-artifacts.yml";
 const RELEASE_ATTESTATION_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
-const RELEASE_ATTESTATION_SOURCE_REF: &str = "refs/heads/main";
 const BYTEFIELD_DEFAULT_PACKAGE_SPEC: &str = "bytefield-svg@1.11.0";
 const BYTEFIELD_EXECUTABLE: &str = "bytefield-svg";
 
@@ -295,23 +296,14 @@ struct UpdateCheckArgs {}
 struct UpdateArgs {
     #[arg(
         long,
-        help = "Build from tagged source instead of using attested release artifacts"
+        help = "Build from the validated release tag instead of installing its binary artifact"
     )]
     build_from_source: bool,
     #[arg(
         long,
-        value_enum,
-        default_value_t = AttestationFailurePolicy::Prompt,
-        help = "How to handle attestation verification failures: prompt, source, or fail"
+        help = "Explicitly verify GitHub provenance; fail if gh or verification is unavailable"
     )]
-    attestation_failure: AttestationFailurePolicy,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum AttestationFailurePolicy {
-    Prompt,
-    Source,
-    Fail,
+    verify_attestation: bool,
 }
 
 #[derive(Debug, Default)]
@@ -1198,7 +1190,7 @@ fn run(cli: Cli) -> Result<()> {
                 let update_result = update(
                     UpdateArgs {
                         build_from_source: false,
-                        attestation_failure: AttestationFailurePolicy::Prompt,
+                        verify_attestation: false,
                     },
                     output,
                 )?;
@@ -1213,7 +1205,7 @@ fn run(cli: Cli) -> Result<()> {
                 let update_result = update(
                     UpdateArgs {
                         build_from_source: false,
-                        attestation_failure: AttestationFailurePolicy::Prompt,
+                        verify_attestation: false,
                     },
                     output,
                 )?;
@@ -1592,8 +1584,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             let install = install_release_packages(
                 &target_version,
                 &release_contract,
-                args.attestation_failure,
-                output,
+                args.verify_attestation,
                 args.build_from_source,
             )?;
             install_method = Some(install.install_method);
@@ -2691,42 +2682,40 @@ fn doctor_release_artifact_verification_check() -> DoctorCheck {
             id: "release_artifact_verification".to_string(),
             category: "release".to_string(),
             status: "pass".to_string(),
-            summary: "Fast Forge release installs and updates are ready".to_string(),
-            detail: Some(
-                "GitHub CLI attestation verification is available locally.".to_string(),
-            ),
+            summary: "Checksum-verified Forge release installs and updates are ready".to_string(),
+            detail: Some("GitHub CLI attestation verification is available locally.".to_string()),
             remediation: Vec::new(),
             upgrades,
         },
         Ok(output) => DoctorCheck {
             id: "release_artifact_verification".to_string(),
             category: "release".to_string(),
-            status: "warn".to_string(),
-            summary: "Fast Forge release installs and updates are unavailable".to_string(),
+            status: "pass".to_string(),
+            summary: "Checksum-verified Forge release installs are ready; attestation is optional"
+                .to_string(),
             detail: output_failure_detail(&output).or_else(|| {
                 Some(
-                    "Forge requires `gh attestation verify` for the fast verified artifact path."
+                    "Install `gh` only when explicit provenance verification is required."
                         .to_string(),
                 )
             }),
             remediation: vec![
-                "install or upgrade GitHub CLI so `gh attestation verify` is available"
+                "install or upgrade GitHub CLI to enable explicit `--verify-attestation` checks"
                     .to_string(),
-                "without it, forge skips verified artifact install (artifact path unavailable) and uses tagged source builds only".to_string(),
             ],
             upgrades,
         },
         Err(err) => DoctorCheck {
             id: "release_artifact_verification".to_string(),
             category: "release".to_string(),
-            status: "warn".to_string(),
-            summary: "Fast Forge release installs and updates are unavailable".to_string(),
+            status: "pass".to_string(),
+            summary: "Checksum-verified Forge release installs are ready; attestation is optional"
+                .to_string(),
             detail: Some(format!(
-                "Forge requires GitHub CLI attestation support for the fast verified artifact path: {err}"
+                "Explicit provenance checks are unavailable until GitHub CLI supports attestation: {err}"
             )),
             remediation: vec![
-                "install GitHub CLI so `gh attestation verify` is available".to_string(),
-                "without it, forge skips verified artifact install (artifact path unavailable) and uses tagged source builds only".to_string(),
+                "install GitHub CLI to enable explicit `--verify-attestation` checks".to_string(),
             ],
             upgrades: Vec::new(),
         },
@@ -3090,69 +3079,6 @@ fn parse_collision_prompt_choice(input: &str) -> Option<CollisionPromptChoice> {
         "" | "n" | "no" => Some(CollisionPromptChoice::SkipOne),
         "s" | "skip-all" => Some(CollisionPromptChoice::SkipAll),
         _ => None,
-    }
-}
-
-#[derive(Debug)]
-struct AttestationVerificationFailure {
-    detail: String,
-}
-
-impl std::fmt::Display for AttestationVerificationFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.detail)
-    }
-}
-
-impl std::error::Error for AttestationVerificationFailure {}
-
-fn prompt_fallback_to_source_build(output: OutputMode, detail: &str) -> Result<bool> {
-    if output == OutputMode::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-        eprintln!("[WARN] attestation verification failed: {detail}");
-        eprintln!("[WARN] falling back to tagged source build");
-        return Ok(true);
-    }
-
-    let mut stderr = io::stderr().lock();
-    writeln!(stderr, "attestation verification failed: {detail}")
-        .context("failed to write attestation prompt")?;
-    write!(
-        stderr,
-        "Build from tagged source instead? [y]es / [n]o [n] "
-    )
-    .context("failed to write attestation prompt")?;
-    stderr
-        .flush()
-        .context("failed to flush attestation prompt")?;
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("failed to read attestation prompt response")?;
-    Ok(parse_update_prompt_choice(&input).unwrap_or(false))
-}
-
-fn should_fallback_to_source_build(
-    output: OutputMode,
-    policy: AttestationFailurePolicy,
-    detail: &str,
-) -> Result<bool> {
-    match policy {
-        AttestationFailurePolicy::Prompt => prompt_fallback_to_source_build(output, detail),
-        AttestationFailurePolicy::Source => {
-            if output == OutputMode::Human
-                && io::stdin().is_terminal()
-                && io::stderr().is_terminal()
-            {
-                eprintln!("attestation verification failed: {detail}");
-                eprintln!("continuing with tagged source build by policy");
-            } else {
-                eprintln!("[WARN] attestation verification failed: {detail}");
-                eprintln!("[WARN] continuing with tagged source build by policy");
-            }
-            Ok(true)
-        }
-        AttestationFailurePolicy::Fail => Ok(false),
     }
 }
 
@@ -4530,9 +4456,11 @@ fn parse_release_artifact_manifest(body: &str) -> Result<ReleaseArtifactManifest
                 artifact.target
             );
         }
-        if artifact.name.trim().is_empty() || !artifact.name.ends_with(".tar.gz") {
+        if artifact.name.trim().is_empty()
+            || (!artifact.name.ends_with(".tar.gz") && !artifact.name.ends_with(".zip"))
+        {
             bail!(
-                "release artifact name must end with .tar.gz: {}",
+                "release artifact name must end with .tar.gz or .zip: {}",
                 artifact.name
             );
         }
@@ -4551,7 +4479,50 @@ fn parse_release_artifact_manifest(body: &str) -> Result<ReleaseArtifactManifest
         }
     }
 
+    let expected_targets = BTreeSet::from([
+        "aarch64-apple-darwin".to_string(),
+        "x86_64-unknown-linux-gnu".to_string(),
+        "x86_64-pc-windows-msvc".to_string(),
+    ]);
+    if targets != expected_targets {
+        bail!(
+            "release artifact manifest target set mismatch; expected {:?}, got {:?}",
+            expected_targets,
+            targets
+        );
+    }
+
     Ok(manifest)
+}
+
+fn parse_release_checksum_manifest(body: &str, asset_name: &str) -> Result<String> {
+    let mut entries = BTreeMap::new();
+    for line in body.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let Some((sha256, name)) = line.split_once("  ") else {
+            bail!("malformed checksum manifest entry");
+        };
+        if name.is_empty()
+            || name.chars().any(char::is_whitespace)
+            || sha256.len() != 64
+            || !sha256.chars().all(|ch| ch.is_ascii_hexdigit())
+        {
+            bail!("malformed checksum manifest entry");
+        }
+        if entries
+            .insert(name.to_string(), sha256.to_ascii_lowercase())
+            .is_some()
+        {
+            bail!("duplicate checksum manifest entry: {name}");
+        }
+    }
+
+    entries
+        .get(asset_name)
+        .cloned()
+        .ok_or_else(|| anyhow!("missing checksum entry for {asset_name}"))
 }
 
 fn is_missing_release_tools_contract_error(error: &anyhow::Error) -> bool {
@@ -4665,15 +4636,20 @@ fn release_packages_from_contract(contract: &ReleaseToolsContract) -> Vec<String
 
 fn release_artifact_target_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
-        ("macos", "x86_64") => Some("x86_64-apple-darwin"),
         ("macos", "aarch64") => Some("aarch64-apple-darwin"),
         ("linux", "x86_64") => Some("x86_64-unknown-linux-gnu"),
+        ("windows", "x86_64") => Some("x86_64-pc-windows-msvc"),
         _ => None,
     }
 }
 
 fn release_artifact_name(version: &str, target: &str) -> String {
-    format!("forge-{version}-{target}.tar.gz")
+    let extension = if target == "x86_64-pc-windows-msvc" {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+    format!("forge-{version}-{target}.{extension}")
 }
 
 fn release_asset_url(version: &str, asset_name: &str) -> String {
@@ -4684,17 +4660,7 @@ fn release_manifest_url(version: &str) -> String {
     release_asset_url(version, RELEASE_MANIFEST_NAME)
 }
 
-fn can_verify_release_asset_attestation() -> bool {
-    run_command_capture("gh", &["attestation", "verify", "--help"])
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 fn verify_release_asset_attestation(version: &str, archive_path: &Path) -> Result<()> {
-    verify_release_asset_with_attestation_verify(version, archive_path)
-}
-
-fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Path) -> Result<()> {
     let archive_path_string = archive_path.display().to_string();
     let release_ref = format!("repos/{FORGE_REPO_SLUG}/git/ref/tags/{version}");
     let release_commit_output =
@@ -4702,20 +4668,14 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
     if !release_commit_output.status.success() {
         let detail = output_failure_detail(&release_commit_output)
             .unwrap_or_else(|| "unknown error".to_string());
-        return Err(AttestationVerificationFailure {
-            detail: format!("failed to resolve release tag commit for {version}: {detail}"),
-        }
-        .into());
+        bail!("failed to resolve release tag commit for {version}: {detail}");
     }
     let release_commit = String::from_utf8(release_commit_output.stdout)
         .context("release tag commit was not UTF-8")?
         .trim()
         .to_string();
     if let Err(err) = validate_git_tree_hash(&release_commit) {
-        return Err(AttestationVerificationFailure {
-            detail: format!("release tag did not resolve to a full commit hash: {err}"),
-        }
-        .into());
+        bail!("release tag did not resolve to a full commit hash: {err}");
     }
     let signer_workflow = format!("{FORGE_REPO_SLUG}/{RELEASE_ARTIFACT_VERIFICATION_WORKFLOW}");
     let args = vec![
@@ -4725,7 +4685,7 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
         "--repo".to_string(),
         FORGE_REPO_SLUG.to_string(),
         "--source-ref".to_string(),
-        RELEASE_ATTESTATION_SOURCE_REF.to_string(),
+        format!("refs/tags/{version}"),
         "--source-digest".to_string(),
         release_commit,
         "--signer-workflow".to_string(),
@@ -4737,40 +4697,24 @@ fn verify_release_asset_with_attestation_verify(version: &str, archive_path: &Pa
     let output = run_command_capture("gh", &arg_refs)?;
     if !output.status.success() {
         let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
-        return Err(AttestationVerificationFailure {
-            detail: format!(
-                "explicit provenance verification failed for {archive_path_string}: {detail}"
-            ),
-        }
-        .into());
+        bail!("explicit provenance verification failed for {archive_path_string}: {detail}");
     }
 
     Ok(())
 }
 
-fn try_download_url_to_path(url: &str, path: &Path) -> Result<Option<()>> {
-    let args = [
-        "-fsSL".to_string(),
-        "-o".to_string(),
-        path.display().to_string(),
-        url.to_string(),
-    ];
-    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let output = match run_command_capture("curl", &arg_refs) {
-        Ok(output) => output,
-        Err(_) => return Ok(None),
-    };
-    if output.status.success() {
-        Ok(Some(()))
-    } else {
-        Ok(None)
-    }
-}
-
 fn download_url_to_path(url: &str, path: &Path) -> Result<()> {
     let args = [
-        "-fsSL".to_string(),
-        "-o".to_string(),
+        "--fail".to_string(),
+        "--show-error".to_string(),
+        "--location".to_string(),
+        "--proto".to_string(),
+        "=https".to_string(),
+        "--tlsv1.2".to_string(),
+        "--retry".to_string(),
+        "3".to_string(),
+        "--retry-all-errors".to_string(),
+        "--output".to_string(),
         path.display().to_string(),
         url.to_string(),
     ];
@@ -4835,58 +4779,153 @@ fn build_workspace_binaries(repo_path: &Path, packages: &[String]) -> Result<Pat
 
 fn install_binaries_from_dir(source_dir: &Path, packages: &[String], force: bool) -> Result<()> {
     let cargo_bin_root = cargo_bin_dir()?;
-    fs::create_dir_all(&cargo_bin_root)
-        .with_context(|| format!("failed to create {}", cargo_bin_root.display()))?;
-
-    for package in packages {
-        let filename = format!("{package}{}", env::consts::EXE_SUFFIX);
-        let source_path = source_dir.join(&filename);
-        if !source_path.exists() {
+    match fs::symlink_metadata(&cargo_bin_root) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
             bail!(
-                "expected built binary before install: {}",
+                "refusing to install through symlink destination: {}",
+                cargo_bin_root.display()
+            )
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!(
+                "binary destination is not a directory: {}",
+                cargo_bin_root.display()
+            )
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(&cargo_bin_root)
+                .with_context(|| format!("failed to create {}", cargo_bin_root.display()))?;
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to inspect {}", cargo_bin_root.display()));
+        }
+    }
+
+    let filenames = packages
+        .iter()
+        .map(|package| format!("{package}{}", env::consts::EXE_SUFFIX))
+        .collect::<Vec<_>>();
+    let mut sources = Vec::new();
+    for filename in &filenames {
+        let source_path = source_dir.join(filename);
+        let metadata = fs::symlink_metadata(&source_path)
+            .with_context(|| format!("failed to inspect {}", source_path.display()))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!(
+                "expected regular binary before install: {}",
                 source_path.display()
             );
         }
-
-        let target_path = cargo_bin_root.join(&filename);
-        if target_path.exists() && !force {
-            bail!(
-                "refusing to overwrite existing binary without force: {}",
-                target_path.display()
-            );
-        }
-
-        let temp_target = cargo_bin_root.join(format!(".{filename}.forge-install"));
-        if temp_target.exists() {
-            fs::remove_file(&temp_target)
-                .with_context(|| format!("failed to remove {}", temp_target.display()))?;
-        }
-        fs::copy(&source_path, &temp_target).with_context(|| {
-            format!(
-                "failed to copy {} to {}",
-                source_path.display(),
-                temp_target.display()
-            )
-        })?;
-        let permissions = fs::metadata(&source_path)
-            .with_context(|| format!("failed to read metadata for {}", source_path.display()))?
-            .permissions();
-        fs::set_permissions(&temp_target, permissions)
-            .with_context(|| format!("failed to set permissions on {}", temp_target.display()))?;
-
-        if target_path.exists() {
-            fs::remove_file(&target_path)
-                .with_context(|| format!("failed to remove {}", target_path.display()))?;
-        }
-        fs::rename(&temp_target, &target_path).with_context(|| {
-            format!(
-                "failed to move {} to {}",
-                temp_target.display(),
-                target_path.display()
-            )
-        })?;
+        sources.push((source_path, metadata.permissions()));
     }
 
+    let mut existing = Vec::new();
+    for filename in &filenames {
+        let target_path = cargo_bin_root.join(filename);
+        match fs::symlink_metadata(&target_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "refusing symlink binary destination: {}",
+                    target_path.display()
+                );
+            }
+            Ok(metadata) if !metadata.is_file() => {
+                bail!(
+                    "existing binary destination is not a regular file: {}",
+                    target_path.display()
+                );
+            }
+            Ok(_) if !force => {
+                bail!(
+                    "refusing to overwrite existing binary without force: {}",
+                    target_path.display()
+                );
+            }
+            Ok(_) => existing.push(filename.clone()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to inspect {}", target_path.display()));
+            }
+        }
+    }
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let stage_dir = cargo_bin_root.join(format!(".forge-stage-{}-{nonce}", std::process::id()));
+    let backup_dir = cargo_bin_root.join(format!(".forge-backup-{}-{nonce}", std::process::id()));
+    fs::create_dir(&stage_dir)
+        .with_context(|| format!("failed to create {}", stage_dir.display()))?;
+    fs::create_dir(&backup_dir)
+        .with_context(|| format!("failed to create {}", backup_dir.display()))?;
+
+    let mut moved = Vec::new();
+    let mut installed = Vec::new();
+    let result = (|| -> Result<()> {
+        for ((source_path, permissions), filename) in sources.iter().zip(&filenames) {
+            let staged_path = stage_dir.join(filename);
+            fs::copy(source_path, &staged_path).with_context(|| {
+                format!(
+                    "failed to stage {} at {}",
+                    source_path.display(),
+                    staged_path.display()
+                )
+            })?;
+            fs::set_permissions(&staged_path, permissions.clone()).with_context(|| {
+                format!("failed to set permissions on {}", staged_path.display())
+            })?;
+        }
+
+        for filename in &existing {
+            fs::rename(cargo_bin_root.join(filename), backup_dir.join(filename))
+                .with_context(|| format!("failed to stage old binary {filename} for rollback"))?;
+            moved.push(filename.clone());
+        }
+        for filename in &filenames {
+            fs::rename(stage_dir.join(filename), cargo_bin_root.join(filename))
+                .with_context(|| format!("failed to install staged binary {filename}"))?;
+            installed.push(filename.clone());
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = result {
+        let mut rollback_error = None;
+        for filename in &installed {
+            let target_path = cargo_bin_root.join(filename);
+            if target_path.exists()
+                && let Err(rollback) = fs::remove_file(&target_path)
+            {
+                rollback_error = Some(format!("failed to remove {target_path:?}: {rollback}"));
+            }
+        }
+        for filename in &moved {
+            let backup_path = backup_dir.join(filename);
+            if backup_path.exists()
+                && let Err(rollback) = fs::rename(&backup_path, cargo_bin_root.join(filename))
+            {
+                rollback_error = Some(format!("failed to restore {filename}: {rollback}"));
+            }
+        }
+        if let Some(rollback_error) = rollback_error {
+            bail!(
+                "binary replacement failed: {error}; rollback failed: {rollback_error}; recovery files remain in {}",
+                backup_dir.display()
+            );
+        }
+        let _ = fs::remove_dir_all(&stage_dir);
+        let _ = fs::remove_dir_all(&backup_dir);
+        return Err(error);
+    }
+
+    fs::remove_dir_all(&stage_dir)
+        .with_context(|| format!("failed to remove {}", stage_dir.display()))?;
+    fs::remove_dir_all(&backup_dir)
+        .with_context(|| format!("failed to remove {}", backup_dir.display()))?;
     Ok(())
 }
 
@@ -4930,36 +4969,108 @@ fn extract_release_artifact(
     destination_dir: &Path,
     expected_files: &[String],
 ) -> Result<()> {
+    if archive_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        == Some("zip")
+    {
+        return extract_zip_release_artifact(archive_path, destination_dir, expected_files);
+    }
+    extract_tar_release_artifact(archive_path, destination_dir, expected_files)
+}
+
+fn validate_release_archive_entry(
+    entry_path: &Path,
+    entry_type_is_file: bool,
+    expected: &BTreeSet<String>,
+    seen: &mut BTreeSet<String>,
+) -> Result<String> {
+    let components = entry_path.components().collect::<Vec<_>>();
+    if components.len() != 1
+        || components.iter().any(|component| {
+            matches!(
+                component,
+                std::path::Component::RootDir | std::path::Component::ParentDir
+            )
+        })
+    {
+        bail!(
+            "release artifact contains unsafe path: {}",
+            entry_path.display()
+        );
+    }
+    let filename = entry_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("release artifact entry was not valid UTF-8"))?
+        .to_string();
+    if !expected.contains(&filename) {
+        bail!("release artifact contains unexpected file: {filename}");
+    }
+    if !entry_type_is_file {
+        bail!("release artifact entry is not a regular file: {filename}");
+    }
+    if !seen.insert(filename.clone()) {
+        bail!("release artifact contains duplicate entry: {filename}");
+    }
+    Ok(filename)
+}
+
+fn validate_complete_release_archive(
+    expected: &BTreeSet<String>,
+    seen: &BTreeSet<String>,
+) -> Result<()> {
+    if seen != expected {
+        let missing = expected.difference(seen).cloned().collect::<Vec<_>>();
+        let additional = seen.difference(expected).cloned().collect::<Vec<_>>();
+        bail!(
+            "release artifact entry set mismatch; missing: {:?}; additional: {:?}",
+            missing,
+            additional
+        );
+    }
+    Ok(())
+}
+
+fn extract_tar_release_artifact(
+    archive_path: &Path,
+    destination_dir: &Path,
+    expected_files: &[String],
+) -> Result<()> {
+    let expected = expected_files.iter().cloned().collect::<BTreeSet<_>>();
+    let file = File::open(archive_path)
+        .with_context(|| format!("failed to open {}", archive_path.display()))?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+    let mut seen = BTreeSet::new();
+    for entry in archive
+        .entries()
+        .with_context(|| format!("failed to read {}", archive_path.display()))?
+    {
+        let entry = entry?;
+        let entry_path = entry.path()?.into_owned();
+        let entry_type = entry.header().entry_type();
+        validate_release_archive_entry(&entry_path, entry_type.is_file(), &expected, &mut seen)?;
+    }
+    validate_complete_release_archive(&expected, &seen)?;
+
     fs::create_dir_all(destination_dir)
         .with_context(|| format!("failed to create {}", destination_dir.display()))?;
     let file = File::open(archive_path)
         .with_context(|| format!("failed to open {}", archive_path.display()))?;
     let decoder = GzDecoder::new(file);
     let mut archive = Archive::new(decoder);
-    let expected = expected_files.iter().cloned().collect::<BTreeSet<_>>();
-    let mut seen = BTreeSet::new();
-
     for entry in archive
         .entries()
         .with_context(|| format!("failed to read {}", archive_path.display()))?
     {
         let mut entry = entry?;
-        let entry_path = entry.path()?.into_owned();
-        let components = entry_path.components().collect::<Vec<_>>();
-        if components.len() != 1 {
-            bail!(
-                "release artifact contains nested path: {}",
-                entry_path.display()
-            );
-        }
-        let filename = entry_path
+        let filename = entry
+            .path()?
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("release artifact entry was not valid UTF-8"))?
             .to_string();
-        if !expected.contains(&filename) {
-            bail!("release artifact contains unexpected file: {filename}");
-        }
         let output_path = destination_dir.join(&filename);
         entry.unpack(&output_path).with_context(|| {
             format!(
@@ -4968,89 +5079,124 @@ fn extract_release_artifact(
                 archive_path.display()
             )
         })?;
-        seen.insert(filename);
-    }
-
-    for expected_file in &expected {
-        if !seen.contains(expected_file) {
-            bail!("release artifact is missing expected binary: {expected_file}");
+        let metadata = fs::symlink_metadata(&output_path)
+            .with_context(|| format!("failed to inspect {}", output_path.display()))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("extracted artifact is not a regular file: {filename}");
         }
     }
-
     Ok(())
 }
 
-fn try_load_release_artifact_manifest(version: &str) -> Result<Option<ReleaseArtifactManifest>> {
-    let temp_dir = temp_path("release-manifest");
+fn extract_zip_release_artifact(
+    archive_path: &Path,
+    destination_dir: &Path,
+    expected_files: &[String],
+) -> Result<()> {
+    let expected = expected_files.iter().cloned().collect::<BTreeSet<_>>();
+    let file = File::open(archive_path)
+        .with_context(|| format!("failed to open {}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(file).context("failed to read ZIP release artifact")?;
+    let mut seen = BTreeSet::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        let filename = validate_release_archive_entry(
+            Path::new(entry.name()),
+            entry.is_file() && !entry.is_symlink(),
+            &expected,
+            &mut seen,
+        )?;
+        let _ = filename;
+    }
+    validate_complete_release_archive(&expected, &seen)?;
+
+    fs::create_dir_all(destination_dir)
+        .with_context(|| format!("failed to create {}", destination_dir.display()))?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        let filename = Path::new(entry.name())
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("release artifact entry was not valid UTF-8"))?
+            .to_string();
+        let output_path = destination_dir.join(&filename);
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output_path)
+            .with_context(|| format!("failed to create {}", output_path.display()))?;
+        io::copy(&mut entry, &mut output)
+            .with_context(|| format!("failed to extract {}", output_path.display()))?;
+        let metadata = fs::symlink_metadata(&output_path)
+            .with_context(|| format!("failed to inspect {}", output_path.display()))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            bail!("extracted artifact is not a regular file: {filename}");
+        }
+    }
+    Ok(())
+}
+
+fn try_install_release_artifact(
+    version: &str,
+    packages: &[String],
+    verify_attestation: bool,
+) -> Result<Option<ReleaseBinaryInstallResult>> {
+    let Some(target) = release_artifact_target_for(env::consts::OS, env::consts::ARCH) else {
+        return Ok(None);
+    };
+
+    let temp_dir = temp_path("release-artifact");
     fs::create_dir_all(&temp_dir)
         .with_context(|| format!("failed to create {}", temp_dir.display()))?;
-    let manifest_path = temp_dir.join(RELEASE_MANIFEST_NAME);
-    let result = (|| -> Result<Option<ReleaseArtifactManifest>> {
-        let url = release_manifest_url(version);
-        if try_download_url_to_path(&url, &manifest_path)?.is_none() {
-            return Ok(None);
-        }
-        let body = fs::read_to_string(&manifest_path)
+    let result = (|| -> Result<Option<ReleaseBinaryInstallResult>> {
+        let artifact_name = release_artifact_name(version, target);
+        let manifest_path = temp_dir.join(RELEASE_MANIFEST_NAME);
+        download_url_to_path(&release_manifest_url(version), &manifest_path)?;
+        let manifest_body = fs::read_to_string(&manifest_path)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?;
-        let manifest = parse_release_artifact_manifest(&body)?;
+        let manifest = parse_release_artifact_manifest(&manifest_body)?;
         if manifest.version != version {
             bail!(
                 "release artifact manifest version mismatch: expected {version}, got {}",
                 manifest.version
             );
         }
-        Ok(Some(manifest))
-    })();
-    let _ = fs::remove_dir_all(&temp_dir);
-    result
-}
-
-fn try_install_release_artifact(
-    version: &str,
-    packages: &[String],
-) -> Result<Option<ReleaseBinaryInstallResult>> {
-    let Some(target) = release_artifact_target_for(env::consts::OS, env::consts::ARCH) else {
-        return Ok(None);
-    };
-    let Some(manifest) = try_load_release_artifact_manifest(version)? else {
-        return Ok(None);
-    };
-    let Some(artifact) = manifest
-        .artifacts
-        .iter()
-        .find(|artifact| artifact.target == target)
-    else {
-        return Ok(None);
-    };
-    let expected_asset_name = release_artifact_name(version, target);
-    if artifact.name != expected_asset_name {
-        bail!(
-            "release artifact manifest declared unexpected asset name for {}: expected {}, got {}",
-            target,
-            expected_asset_name,
-            artifact.name
-        );
-    }
-    if !can_verify_release_asset_attestation() {
-        return Ok(None);
-    }
-
-    let temp_dir = temp_path("release-artifact");
-    fs::create_dir_all(&temp_dir)
-        .with_context(|| format!("failed to create {}", temp_dir.display()))?;
-    let result = (|| -> Result<Option<ReleaseBinaryInstallResult>> {
-        let archive_path = temp_dir.join(&artifact.name);
-        download_url_to_path(&release_asset_url(version, &artifact.name), &archive_path)?;
+        let artifact = manifest
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.target == target)
+            .ok_or_else(|| anyhow!("release artifact manifest has no target {target}"))?;
+        if artifact.name != artifact_name {
+            bail!(
+                "release artifact manifest declared unexpected asset name for {target}: expected {artifact_name}, got {}",
+                artifact.name
+            );
+        }
+        let checksum_path = temp_dir.join(RELEASE_CHECKSUMS_NAME);
+        download_url_to_path(
+            &release_asset_url(version, RELEASE_CHECKSUMS_NAME),
+            &checksum_path,
+        )?;
+        let checksum_manifest = fs::read_to_string(&checksum_path)
+            .with_context(|| format!("failed to read {}", checksum_path.display()))?;
+        let expected_sha256 = parse_release_checksum_manifest(&checksum_manifest, &artifact_name)?;
+        if artifact.sha256.to_ascii_lowercase() != expected_sha256 {
+            bail!("release manifest and checksum manifest disagree for {artifact_name}");
+        }
+        let archive_path = temp_dir.join(&artifact_name);
+        download_url_to_path(&release_asset_url(version, &artifact_name), &archive_path)?;
         let actual_sha256 = sha256_path(&archive_path)?;
-        if actual_sha256 != artifact.sha256 {
+        if actual_sha256 != expected_sha256 {
             bail!(
                 "release artifact checksum mismatch for {}: expected {}, got {}",
-                artifact.name,
-                artifact.sha256,
+                artifact_name,
+                expected_sha256,
                 actual_sha256
             );
         }
-        verify_release_asset_attestation(version, &archive_path)?;
+        if verify_attestation {
+            verify_release_asset_attestation(version, &archive_path)?;
+        }
 
         let extract_dir = temp_dir.join("extract");
         let expected_files = expected_binary_filenames(packages);
@@ -5058,13 +5204,13 @@ fn try_install_release_artifact(
         install_binaries_from_dir(&extract_dir, packages, true)?;
 
         Ok(Some(ReleaseBinaryInstallResult {
-            install_method: "attested_artifact".to_string(),
+            install_method: "release_artifact".to_string(),
             artifact_target: Some(target.to_string()),
             installed_binaries: packages.to_vec(),
-            artifact_name: Some(artifact.name.clone()),
-            artifact_sha256_expected: Some(artifact.sha256.clone()),
+            artifact_name: Some(artifact_name),
+            artifact_sha256_expected: Some(expected_sha256),
             artifact_sha256_downloaded: Some(actual_sha256),
-            attestation_verified: Some(true),
+            attestation_verified: Some(verify_attestation),
         }))
     })();
     let _ = fs::remove_dir_all(&temp_dir);
@@ -5074,35 +5220,13 @@ fn try_install_release_artifact(
 fn install_release_packages(
     version: &str,
     release_contract: &ReleaseToolsContract,
-    attestation_failure_policy: AttestationFailurePolicy,
-    output: OutputMode,
+    verify_attestation: bool,
     build_from_source: bool,
 ) -> Result<ReleaseBinaryInstallResult> {
     let packages = release_packages_from_contract(release_contract);
     if !build_from_source {
-        match try_install_release_artifact(version, &packages) {
-            Ok(Some(result)) => return Ok(result),
-            Ok(None) => {}
-            Err(err) => {
-                if let Some(attestation_error) =
-                    err.downcast_ref::<AttestationVerificationFailure>()
-                {
-                    if should_fallback_to_source_build(
-                        output,
-                        attestation_failure_policy,
-                        &attestation_error.detail,
-                    )? {
-                        eprintln!(
-                            "falling back to tagged source build after failed attestation verification"
-                        );
-                    } else {
-                        return Err(err);
-                    }
-                } else {
-                    return Err(err);
-                }
-            }
-        }
+        return try_install_release_artifact(version, &packages, verify_attestation)?
+            .ok_or_else(|| anyhow!("no Forge release artifact is published for this platform"));
     }
 
     let (temp_dir, repo_path) = checkout_release_repo(version)?;
@@ -5390,6 +5514,11 @@ fn is_symlink_path(path: &Path) -> Result<bool> {
 }
 
 fn cargo_bin_dir() -> Result<PathBuf> {
+    if cfg!(windows) {
+        let local_app_data = env::var("LOCALAPPDATA")
+            .context("LOCALAPPDATA is required for native Windows Forge installs")?;
+        return Ok(PathBuf::from(local_app_data).join("Forge").join("bin"));
+    }
     if let Ok(path) = env::var("CARGO_HOME") {
         return Ok(expand_path(&path).join("bin"));
     }
@@ -7681,7 +7810,8 @@ EOF
         assert!(!installer.contains("--bootstrap-tools"));
         assert!(installer.contains("forge-release-sha256sums.txt"));
         assert!(installer.contains("checksum mismatch"));
-        assert!(!installer.contains("gh attestation verify"));
+        assert!(installer.contains("gh attestation verify"));
+        assert!(installer.contains("--verify-attestation"));
         assert!(!installer.contains("falling back to tagged source"));
     }
 
@@ -8037,10 +8167,7 @@ EOF
 
     #[test]
     fn release_artifact_target_for_maps_supported_platforms() {
-        assert_eq!(
-            release_artifact_target_for("macos", "x86_64"),
-            Some("x86_64-apple-darwin")
-        );
+        assert_eq!(release_artifact_target_for("macos", "x86_64"), None);
         assert_eq!(
             release_artifact_target_for("macos", "aarch64"),
             Some("aarch64-apple-darwin")
@@ -8048,6 +8175,10 @@ EOF
         assert_eq!(
             release_artifact_target_for("linux", "x86_64"),
             Some("x86_64-unknown-linux-gnu")
+        );
+        assert_eq!(
+            release_artifact_target_for("windows", "x86_64"),
+            Some("x86_64-pc-windows-msvc")
         );
         assert_eq!(release_artifact_target_for("linux", "aarch64"), None);
     }
@@ -8081,6 +8212,26 @@ EOF
                 .to_string()
                 .contains("duplicate release artifact target")
         );
+    }
+
+    #[test]
+    fn parse_release_checksum_manifest_requires_one_unique_valid_entry() {
+        let hash = "A".repeat(64);
+        let asset = "forge-20260802.0.0-x86_64-pc-windows-msvc.zip";
+        assert_eq!(
+            parse_release_checksum_manifest(&format!("{hash}  {asset}\n"), asset)
+                .expect("valid checksum manifest"),
+            "a".repeat(64)
+        );
+
+        for body in [
+            format!("{hash} {asset}\n"),
+            format!("{hash}  {asset}\n{hash}  {asset}\n"),
+            format!("{}  {asset}\n", "0".repeat(63)),
+        ] {
+            assert!(parse_release_checksum_manifest(&body, asset).is_err());
+        }
+        assert!(parse_release_checksum_manifest(&format!("{hash}  other.zip\n"), asset).is_err());
     }
 
     #[test]

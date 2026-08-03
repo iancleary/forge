@@ -20,6 +20,7 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 tar = "0.4"
 toml = "0.8"
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }

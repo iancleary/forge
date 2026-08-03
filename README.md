@@ -14,11 +14,23 @@ Nix and Home Manager are the preferred ownership layer for macOS, WSL Arch Linux
 curl -fsSL https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.sh | sh
 ```
 
+Native Windows x64 uses PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/iancleary/forge/main/scripts/install-forge-release.ps1 | iex
+```
+
+Forge publishes only `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
+`x86_64-pc-windows-msvc`. WSL uses the Linux installer. Windows ARM and
+32-bit Windows are not supported.
+
 The installer:
 
 - resolves the latest published release by default
 - downloads the platform archive and checksum manifest from one release tag
 - verifies the archive SHA-256 before extraction
+- validates the complete archive before replacement
+- replaces the complete binary set atomically
 - fails without installing if no matching binary artifact is available
 - installs Forge-managed skills under `~/.agents/skills`
 - installs the Forge-managed Codex baseline under `~/.codex`
@@ -30,6 +42,11 @@ curl -fsSL https://raw.githubusercontent.com/iancleary/forge/20260802.0.0/script
 ```
 
 Use `--skip-codex` to install binaries and skills without changing the Codex baseline. Use `--build-from-source` only for an explicit development or recovery build. The default deployment path never installs or requires a Rust toolchain.
+
+Use `--verify-attestation` for explicit GitHub provenance verification. It
+requires `gh` and fails closed if verification is unavailable or fails. The
+POSIX destination is `~/.cargo/bin`. The Windows destination is
+`%LOCALAPPDATA%\Forge\bin`; neither installer changes `PATH` automatically.
 
 ## Managed AI surfaces
 
