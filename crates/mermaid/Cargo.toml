@@ -1,6 +1,6 @@
 [package]
 name = "mermaid"
-version = "20260802.0.2"
+version = "20260808.0.0"
 edition = "2024"
 description = "Mermaid diagram rendering helpers for Forge workflows"
 license = "MIT"
