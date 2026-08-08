@@ -413,6 +413,12 @@ Multi-agent role configuration should stay template-driven:
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
 
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 100
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+
 [agents.researcher]
 description = "Deep research agent"
 config_file = "agents/researcher.toml"
@@ -521,7 +527,7 @@ It does not manage:
 - session history, caches, or plugin state
 - profile or character switching
 
-It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features]`, `[features.multi_agent_v2]`, and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
+It handles live `~/.codex/config.toml` only through the targeted `forge codex config` merge path. That path owns the narrow Forge-managed section set (`[features]`, `[features.multi_agent_v2]`, `[agents]`, and `[agents.*]`) and preserves machine-local sections such as `[projects.*]`, plugin runtime state, MCP server env, and desktop settings.
 
 Target model:
 
