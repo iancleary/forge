@@ -5929,7 +5929,10 @@ fn managed_codex_section_names(fragment: &str) -> BTreeSet<String> {
 }
 
 fn is_managed_codex_config_section(name: &str) -> bool {
-    name == "features" || name == "features.multi_agent_v2" || name.starts_with("agents.")
+    name == "features"
+        || name == "features.multi_agent_v2"
+        || name == "agents"
+        || name.starts_with("agents.")
 }
 
 fn select_toml_sections(body: &str, wanted: &BTreeSet<String>) -> String {
@@ -7335,6 +7338,12 @@ tool_namespace = "old"
 [features]
 default_mode_request_user_input = false
 
+[agents]
+enabled = false
+max_concurrent_threads_per_session = 4
+default_subagent_model = "old"
+default_subagent_reasoning_effort = "low"
+
 [agents.researcher]
 description = "Old researcher"
 config_file = "agents/old.toml"
@@ -7350,6 +7359,12 @@ default_mode_request_user_input = true
 [features.multi_agent_v2]
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 100
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
 
 [agents.researcher]
 description = "Deep research agent"
@@ -7369,10 +7384,12 @@ enabled = true
         assert!(merged.contains("[plugins.\"github@openai-curated\"]\nenabled = true"));
         assert!(merged.contains("[features]\ndefault_mode_request_user_input = true"));
         assert!(merged.contains("[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\""));
+        assert!(merged.contains("[agents]\nenabled = true\nmax_concurrent_threads_per_session = 100\ndefault_subagent_model = \"gpt-5.6-luna\"\ndefault_subagent_reasoning_effort = \"max\""));
         assert!(merged.contains("[agents.researcher]\ndescription = \"Deep research agent\"\nconfig_file = \"agents/researcher.toml\""));
         assert!(merged.contains("[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\""));
         assert!(!merged.contains("tool_namespace = \"old\""));
         assert!(!merged.contains("default_mode_request_user_input = false"));
+        assert!(!merged.contains("default_subagent_model = \"old\""));
         assert!(!merged.contains("Old researcher"));
         assert!(!merged.contains("model = \"gpt-5.4\""));
     }
@@ -7384,7 +7401,7 @@ enabled = true
         fs::create_dir_all(source_root.join("config/agents")).expect("create source dirs");
         fs::write(
             source_root.join("config/config.portable.toml"),
-            "model = \"gpt-5.4\"\n\n[features]\ndefault_mode_request_user_input = true\n\n[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\"\n\n[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\"\n",
+            "model = \"gpt-5.4\"\n\n[features]\ndefault_mode_request_user_input = true\n\n[features.multi_agent_v2]\nhide_spawn_agent_metadata = false\ntool_namespace = \"agents\"\n\n[agents]\nenabled = true\nmax_concurrent_threads_per_session = 100\ndefault_subagent_model = \"gpt-5.6-luna\"\ndefault_subagent_reasoning_effort = \"max\"\n\n[agents.planner]\ndescription = \"Planning agent\"\nconfig_file = \"agents/planner.toml\"\n",
         )
         .expect("write portable config");
         fs::write(
@@ -7413,6 +7430,7 @@ enabled = true
         assert!(config.contains("[projects.\"/tmp/local\"]\ntrust_level = \"trusted\""));
         assert!(config.contains("[features]\ndefault_mode_request_user_input = true"));
         assert!(config.contains("[features.multi_agent_v2]"));
+        assert!(config.contains("[agents]\nenabled = true\nmax_concurrent_threads_per_session = 100\ndefault_subagent_model = \"gpt-5.6-luna\"\ndefault_subagent_reasoning_effort = \"max\""));
         assert!(config.contains("[agents.planner]"));
         assert!(!config.contains("model = \"gpt-5.4\""));
         assert_eq!(
