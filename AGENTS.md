@@ -17,12 +17,9 @@ Nix and Home Manager own packages, toolchains, general dotfiles, application pre
 
 ## Writing Guidance
 
-Follow Zinsser's four principles of quality writing:
+Follow Zinsser's four principles of quality writing: simplicity, brevity, clarity, and humanity.
 
-- simplicity
-- brevity
-- clarity
-- humanity
+The rule is simple. Use short sentences. Use the active voice. Give each word one meaning. Cut the clutter. Keep the writing warm and human: a person wrote it, not a manual.
 
 ## Before Changing Code
 
