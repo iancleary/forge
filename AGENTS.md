@@ -15,6 +15,12 @@ Do not treat `docs/` as the implementation area.
 
 Nix and Home Manager own packages, toolchains, general dotfiles, application preferences, and host state. Forge owns portable AI workflow behavior. Read [docs/scope.md](docs/scope.md) before adding a new top-level management surface.
 
+## Writing Guidance
+
+Follow Zinsser's four principles of quality writing: simplicity, brevity, clarity, and humanity.
+
+The rule is simple. Use short sentences. Use the active voice. Give each word one meaning. Cut the clutter. Keep the writing warm and human: a person wrote it, not a manual.
+
 ## Before Changing Code
 
 - read the relevant CLI spec in `docs/`
