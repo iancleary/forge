@@ -1,6 +1,6 @@
 [package]
 name = "slack-agent"
-version = "20260808.0.0"
+version = "20260809.0.0"
 edition = "2024"
 description = "Assistant-oriented Slack CLI helpers for Forge workflows"
 license = "MIT"
