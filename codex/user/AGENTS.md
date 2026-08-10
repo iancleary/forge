@@ -11,6 +11,12 @@ This file is intended as the baseline user-scoped `~/.codex/AGENTS.md` source, n
 - Identify the toolchain from files such as `justfile`, `Cargo.toml`, and `package.json`.
 - Do not assume conventions from one repo apply to another.
 
+## Writing Guidance
+
+Follow Zinsser's four principles of quality writing: simplicity, brevity, clarity, and humanity.
+
+The rule is simple. Use short sentences. Use the active voice. Give each word one meaning. Cut the clutter. Keep the writing warm and human: a person wrote it, not a manual.
+
 ## Autonomy
 
 Do freely:
