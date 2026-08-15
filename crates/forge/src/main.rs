@@ -6042,6 +6042,13 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         embedded_skill!("effective-loop-writer"),
         embedded_skill!("bytefield-diagrams"),
         embedded_skill!("codegraph"),
+        embedded_skill!(
+            "librarian",
+            files = [
+                ("checkout.sh", executable = true),
+                ("THIRD_PARTY_NOTICES.md", executable = false),
+            ]
+        ),
         embedded_skill!("git-forge-body-file"),
         embedded_skill!("linear-cli"),
         embedded_skill!(

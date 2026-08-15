@@ -81,6 +81,7 @@ Before committing:
 - use `test-strategy` to choose focused proof for features, bug fixes, refactors, and regressions without forcing ceremony
 - use `code-simplification` when behavior is known and the goal is to reduce complexity while preserving proof
 - use `documentation-and-adrs` when a change affects durable docs, workflow policy, command contracts, or architecture decisions
+- use `librarian` when the user points you at a remote git repository as reference, unless you are developing Forge itself and need the active Forge checkout
 - use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
 - use the Forge-managed `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
 - use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
