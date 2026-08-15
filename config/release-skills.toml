@@ -37,6 +37,11 @@ name = "bytefield-diagrams"
 name = "codegraph"
 
 [[skills]]
+name = "librarian"
+upstream_url = "https://github.com/mitsuhiko/agent-stuff/tree/13bc8f87970bec8830aab0f1c0487d35aa7c0917/skills/librarian"
+upstream_hash = "d9c9e4f484d7aed8b71f0e9dda7b0abddbdf6b13"
+
+[[skills]]
 name = "git-forge-body-file"
 legacy_names = ["gh-body-file"]
 

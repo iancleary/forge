@@ -11,6 +11,7 @@ Pick the narrowest CLI skill that matches the job:
 
 - `bytefield-diagrams`: author and render bytefield, packet-layout, and memory-layout SVG diagrams through `forge bytefield`.
 - `codegraph`: semantic code exploration, symbol lookup, call paths, impact analysis, and affected-test discovery through CodeGraph.
+- `librarian`: cache and refresh remote git repositories under `~/.cache/checkouts/<host>/<org>/<repo>` for reusable local references.
 - `linear-cli`: Linear issue, project, milestone, and viewer workflows.
 - `mermaid-diagrams`: text-first Mermaid authoring, diagram-type selection, and rendering through the Forge `mermaid` CLI.
 - `typst-documents`: source-first Typst PDF authoring, reusable document templates, and compile/build verification.

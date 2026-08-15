@@ -124,6 +124,7 @@ Ask first:
 - Use `test-strategy` to choose focused proof for features, bug fixes, refactors, and regressions without forcing ceremony.
 - Use `code-simplification` when behavior is known and the goal is to reduce complexity while preserving proof.
 - Use `documentation-and-adrs` when a change affects durable docs, workflow policy, command contracts, or architecture decisions.
+- Use `librarian` when the user points you at a remote git repository as reference, except when you are developing Forge itself and need the active Forge checkout.
 - Use `effective-loop-writer` when a user asks to design, scaffold, or improve an unattended restartable agent loop; it should produce file-backed `loops/<name>/` artifacts with role boundaries, contract, state, restart policy, rubric, traces, deletion criteria, and the current bottleneck.
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
 - Distinguish workflow-maintenance skills from executable repo commands: if a repo already has a documented task runner or checked-in script for the actual job, use that command for ordinary execution and use the skill only when creating, auditing, or changing the workflow.
