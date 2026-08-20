@@ -1,6 +1,6 @@
 [package]
 name = "cli-core"
-version = "20260815.0.0"
+version = "20260820.0.0"
 edition = "2024"
 description = "Shared CLI helpers for Forge command-line tools"
 license = "MIT"
