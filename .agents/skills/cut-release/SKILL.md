@@ -34,6 +34,8 @@ Before running anything mutating:
 - identify the versioning scheme, such as SemVer, CalVer, or repo-specific date tags
 - identify whether the repo can infer the next version or requires `--version`
 - identify how release notes are supplied, such as `--notes-file`, generated notes, or a template
+- identify whether checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflow files define the release gate
+- identify the local checkout checks the runner expects when no checked-in workflow owns validation
 - inspect git status and confirm the intended branch
 
 The local repo contract overrides generic expectations in this skill.
@@ -51,6 +53,8 @@ Prefer the repo's documented entrypoint:
 Use dry-run first when the repo supports it and either the user asked for verification or version inference, notes generation, file mutation, or publishing behavior has meaningful risk.
 
 Use read-only version query commands when available instead of parsing manifests by hand.
+
+Prefer the repo's local checkout checks when the release contract does not point to checked-in GitHub Actions, Gitea Actions, GitLab CI, or another committed release workflow. When committed workflows exist and are part of the release contract, use the runner's workflow-dispatch/watch path or follow the repo's documented handoff instead of substituting an ad hoc local-only check.
 
 Do not reconstruct the flow with separate version bump, check, push, tag, and publish commands unless the user is explicitly repairing a release outside the normal path.
 

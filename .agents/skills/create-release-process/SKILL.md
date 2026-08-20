@@ -35,7 +35,8 @@ Inspect:
 - versioning scheme: SemVer, CalVer, date-based tags, or another documented repo-specific policy
 - lockfiles: `Cargo.lock`, `uv.lock`, `pnpm-lock.yaml`, `package-lock.json`
 - task runner: `justfile`, `Makefile`, package scripts, repo scripts
-- validation path: tests, checks, lint, build, release artifact generation
+- checked-in automation: `.github/workflows/`, `.gitea/workflows/`, `.gitlab-ci.yml`, `.gitlab/`, or other committed CI/release workflow files
+- validation path: local checkout checks first, such as tests, lint, type checks, builds, and release artifact generation, unless checked-in CI/release workflows define the release gate
 - release notes source: generated changelog, curated markdown file, GitHub release notes, conventional commits, or repo-specific template
 - publish mode: GitHub release, package registry publish, artifact upload, deploy, or manual handoff
 
@@ -52,6 +53,7 @@ Make the repo-local release process explicit about:
 - release notes format and source, such as `--notes-file`, generated notes, or a checked-in template
 - files the runner may mutate, including manifests and lockfiles
 - validation commands that must pass before publishing
+- whether validation is owned by local checkout checks, checked-in CI/release workflows, or both; prefer local checkout checks when no checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflow exists
 - lifecycle ordering, with tests and all required builds before irreversible publication and tag/release creation last when the platform permits it
 - branch, clean-tree, tag, and remote requirements
 - final public-facing action, such as `gh release create`, registry publish, deploy, or manual stop point
@@ -67,6 +69,8 @@ When creating or updating the workflow:
 
 - create or update a checked-in release runner
 - make `--dry-run` available for previewing the mutating sequence
+- have the runner execute the repo's explicit local checkout checks before publication when no checked-in CI/release workflow owns that validation
+- if checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflows exist, make the runner invoke, monitor, or clearly defer to those workflows according to the repo's documented release gate
 - add read-only version query flags when useful, such as `--print-current-version` and `--print-next-version`
 - route ordinary release requests through a `cut-release` execution skill when the repo wants agent routing
 - update local agent instructions so future sessions know which skill and runner to use
