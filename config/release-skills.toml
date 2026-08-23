@@ -76,6 +76,9 @@ name = "create-release-process"
 name = "cut-release"
 
 [[skills]]
+name = "release-runner"
+
+[[skills]]
 name = "thinking-in-the-limit"
 
 [[skills]]
