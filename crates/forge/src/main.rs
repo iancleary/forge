@@ -207,6 +207,11 @@ enum Command {
         subcommand
     )]
     Bytefield(BytefieldCommand),
+    #[command(
+        about = "Check, plan, and run repo-local release workflows",
+        subcommand
+    )]
+    Release(ReleaseCommand),
 }
 
 #[derive(Args, Debug)]
@@ -287,6 +292,16 @@ enum BytefieldCommand {
     Install(BytefieldInstallArgs),
     #[command(about = "Render a bytefield-svg source file to SVG")]
     Render(BytefieldRenderArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum ReleaseCommand {
+    #[command(about = "Run the read-only release checks from release.toml")]
+    Check(ReleaseArgs),
+    #[command(about = "Show the release plan from release.toml without running the release")]
+    Plan(ReleaseArgs),
+    #[command(about = "Run the configured release runner; defaults to dry-run")]
+    Run(ReleaseRunArgs),
 }
 
 #[derive(Args, Debug)]
@@ -575,6 +590,38 @@ struct BytefieldRenderArgs {
         help = "Override the default bytefield-svg package spec (advanced use)"
     )]
     package: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct ReleaseArgs {
+    #[arg(long, default_value = "release.toml", help = "Path to release.toml")]
+    config: PathBuf,
+    #[arg(
+        long,
+        help = "Override the repository root; defaults to the current directory"
+    )]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct ReleaseRunArgs {
+    #[arg(long, default_value = "release.toml", help = "Path to release.toml")]
+    config: PathBuf,
+    #[arg(
+        long,
+        help = "Override the repository root; defaults to the current directory"
+    )]
+    repo_path: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Run the configured release runner with dry-run arguments"
+    )]
+    dry_run: bool,
+    #[arg(
+        long,
+        help = "Run the configured release runner without dry-run arguments"
+    )]
+    apply: bool,
 }
 
 #[allow(dead_code)]
@@ -1025,6 +1072,68 @@ struct BytefieldRenderResult {
 }
 
 #[derive(Debug, Serialize)]
+struct ReleaseResult {
+    command: String,
+    mode: String,
+    config_path: String,
+    repo_path: String,
+    name: String,
+    version_source: Option<String>,
+    current_version: Option<String>,
+    next_version: Option<String>,
+    publish: bool,
+    changelog: Option<String>,
+    notes_file: Option<String>,
+    runner: Vec<String>,
+    checks: Vec<ReleaseCheckResult>,
+    ready: bool,
+    executed: bool,
+    exit_status: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReleaseCheckResult {
+    command: Vec<String>,
+    ok: bool,
+    exit_status: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseConfig {
+    release: ReleaseSection,
+    #[serde(default)]
+    checks: ReleaseChecksSection,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseSection {
+    name: String,
+    runner: Vec<String>,
+    #[serde(default)]
+    dry_run_args: Vec<String>,
+    #[serde(default)]
+    current_version_command: Option<Vec<String>>,
+    #[serde(default)]
+    next_version_command: Option<Vec<String>>,
+    #[serde(default)]
+    version_source: Option<String>,
+    #[serde(default)]
+    changelog: Option<String>,
+    #[serde(default)]
+    notes_file: Option<String>,
+    #[serde(default = "default_publish")]
+    publish: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ReleaseChecksSection {
+    #[serde(default)]
+    commands: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
 struct SkillStatusEntry {
     name: String,
     target_kind: String,
@@ -1289,6 +1398,18 @@ fn run(cli: Cli) -> Result<()> {
         Command::Bytefield(BytefieldCommand::Render(args)) => {
             let data = bytefield_render(args)?;
             emit_output(output, data, format_bytefield_render_human)?;
+        }
+        Command::Release(ReleaseCommand::Check(args)) => {
+            let data = release_check(args)?;
+            emit_output(output, data, format_release_human)?;
+        }
+        Command::Release(ReleaseCommand::Plan(args)) => {
+            let data = release_plan(args)?;
+            emit_output(output, data, format_release_human)?;
+        }
+        Command::Release(ReleaseCommand::Run(args)) => {
+            let data = release_run(args)?;
+            emit_output(output, data, format_release_human)?;
         }
     }
 
@@ -3543,6 +3664,70 @@ fn format_bytefield_render_human(result: &BytefieldRenderResult) -> String {
     out.trim_end().to_string()
 }
 
+fn format_release_human(result: &ReleaseResult) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "forge release {}: {}",
+        result.command,
+        if result.ready { "ready" } else { "not ready" }
+    );
+    let _ = writeln!(out, "mode: {}", result.mode);
+    let _ = writeln!(out, "repo: {}", result.repo_path);
+    let _ = writeln!(out, "config: {}", result.config_path);
+    let _ = writeln!(out, "name: {}", result.name);
+    if let Some(source) = result.version_source.as_ref() {
+        let _ = writeln!(out, "version source: {source}");
+    }
+    if let Some(version) = result.current_version.as_ref() {
+        let _ = writeln!(out, "current version: {version}");
+    }
+    if let Some(version) = result.next_version.as_ref() {
+        let _ = writeln!(out, "next version: {version}");
+    }
+    let _ = writeln!(out, "publish: {}", result.publish);
+    if let Some(path) = result.changelog.as_ref() {
+        let _ = writeln!(out, "changelog: {path}");
+    }
+    if let Some(path) = result.notes_file.as_ref() {
+        let _ = writeln!(out, "notes file: {path}");
+    }
+    let _ = writeln!(out, "runner: {}", result.runner.join(" "));
+    if !result.checks.is_empty() {
+        let _ = writeln!(
+            out,
+            "checks: {}",
+            summarize_counts(
+                result
+                    .checks
+                    .iter()
+                    .map(|entry| { if entry.ok { "pass" } else { "fail" } })
+            )
+        );
+        for check in &result.checks {
+            let _ = writeln!(
+                out,
+                "[{}] {}",
+                if check.ok { "PASS" } else { "FAIL" },
+                check.command.join(" ")
+            );
+        }
+    }
+    if result.executed {
+        let _ = writeln!(
+            out,
+            "executed: true (status {})",
+            result
+                .exit_status
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        );
+    } else {
+        let _ = writeln!(out, "executed: false");
+    }
+    out.trim_end().to_string()
+}
+
 fn summarize_counts<'a, I>(values: I) -> String
 where
     I: IntoIterator<Item = &'a str>,
@@ -5713,6 +5898,19 @@ fn classify_error(error: &anyhow::Error) -> ErrorBody {
         {
             "bytefield_execution_failed"
         }
+        msg if msg.contains("failed to read release config")
+            || msg.contains("failed to parse release config")
+            || msg.contains("release config requires")
+            || msg.contains("release config ")
+                && msg.contains(" must be a non-empty string array") =>
+        {
+            "release_config_error"
+        }
+        msg if msg.contains("forge release run failed:")
+            || msg.contains("release command failed:") =>
+        {
+            "release_execution_failed"
+        }
         _ => "internal_error",
     };
 
@@ -6095,6 +6293,7 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         ),
         embedded_skill!("create-release-process"),
         embedded_skill!("cut-release"),
+        embedded_skill!("release-runner"),
         embedded_skill!("thinking-in-the-limit"),
         embedded_skill!("chrome-devtools-mcp"),
         embedded_skill!(
@@ -6324,6 +6523,253 @@ fn run_bytefield_command(
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to run {} {}", runner, args.join(" ")))
+}
+
+fn release_check(args: ReleaseArgs) -> Result<ReleaseResult> {
+    let context = load_release_context(args.repo_path, args.config)?;
+    let checks = run_release_checks(&context.repo_path, &context.config.checks.commands)?;
+    let ready = checks.iter().all(|check| check.ok);
+    Ok(release_result(
+        "check", "check", &context, None, None, checks, ready, false, None,
+    ))
+}
+
+fn release_plan(args: ReleaseArgs) -> Result<ReleaseResult> {
+    let context = load_release_context(args.repo_path, args.config)?;
+    let current_version = run_optional_release_command(
+        &context.repo_path,
+        &context.config.release.current_version_command,
+    )?;
+    let next_version = run_optional_release_command(
+        &context.repo_path,
+        &context.config.release.next_version_command,
+    )?;
+    Ok(release_result(
+        "plan",
+        "plan",
+        &context,
+        current_version,
+        next_version,
+        Vec::new(),
+        true,
+        false,
+        None,
+    ))
+}
+
+fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
+    if args.apply && args.dry_run {
+        bail!("forge release run accepts either --dry-run or --apply, not both");
+    }
+
+    let context = load_release_context(args.repo_path, args.config)?;
+    let mode = if args.apply { "apply" } else { "dry_run" };
+    let runner = release_runner_for_mode(&context.config, args.apply)?;
+    let output = run_release_command_capture(&context.repo_path, &runner)?;
+    let ok = output.status.success();
+    let status = output.status.code();
+    if !ok {
+        let detail =
+            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+        bail!("forge release run failed: {detail}");
+    }
+
+    Ok(release_result(
+        "run",
+        mode,
+        &context,
+        None,
+        None,
+        Vec::new(),
+        true,
+        true,
+        status,
+    ))
+}
+
+struct ReleaseContext {
+    repo_path: PathBuf,
+    config_path: PathBuf,
+    config: ReleaseConfig,
+}
+
+fn default_publish() -> bool {
+    true
+}
+
+fn load_release_context(
+    repo_path: Option<PathBuf>,
+    config_path: PathBuf,
+) -> Result<ReleaseContext> {
+    let repo_path = resolve_release_repo_path(repo_path)?;
+    let config_path = if config_path.is_absolute() {
+        config_path
+    } else {
+        repo_path.join(config_path)
+    };
+    let body = fs::read_to_string(&config_path)
+        .with_context(|| format!("failed to read release config {}", config_path.display()))?;
+    let config: ReleaseConfig = toml::from_str(&body)
+        .with_context(|| format!("failed to parse release config {}", config_path.display()))?;
+    validate_release_config(&config)?;
+    Ok(ReleaseContext {
+        repo_path,
+        config_path,
+        config,
+    })
+}
+
+fn resolve_release_repo_path(repo_path: Option<PathBuf>) -> Result<PathBuf> {
+    let path = match repo_path {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => env::current_dir()
+            .context("failed to read current directory")?
+            .join(path),
+        None => env::current_dir().context("failed to read current directory")?,
+    };
+    Ok(path)
+}
+
+fn validate_release_config(config: &ReleaseConfig) -> Result<()> {
+    if config.release.name.trim().is_empty() {
+        bail!("release config requires release.name");
+    }
+    validate_release_command("release.runner", &config.release.runner)?;
+    validate_optional_release_command(
+        "release.current_version_command",
+        &config.release.current_version_command,
+    )?;
+    validate_optional_release_command(
+        "release.next_version_command",
+        &config.release.next_version_command,
+    )?;
+    for (index, command) in config.checks.commands.iter().enumerate() {
+        validate_release_command(&format!("checks.commands[{index}]"), command)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_release_command(label: &str, command: &Option<Vec<String>>) -> Result<()> {
+    if let Some(command) = command {
+        validate_release_command(label, command)?;
+    }
+    Ok(())
+}
+
+fn validate_release_command(label: &str, command: &[String]) -> Result<()> {
+    if command.is_empty() || command.iter().any(|part| part.trim().is_empty()) {
+        bail!("release config {label} must be a non-empty string array");
+    }
+    Ok(())
+}
+
+fn run_optional_release_command(
+    repo_path: &Path,
+    command: &Option<Vec<String>>,
+) -> Result<Option<String>> {
+    let Some(command) = command else {
+        return Ok(None);
+    };
+    let output = run_release_command_capture(repo_path, command)?;
+    if !output.status.success() {
+        let detail =
+            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+        bail!("release command failed: {}: {detail}", command.join(" "));
+    }
+    let stdout =
+        String::from_utf8(output.stdout).context("release command stdout was not UTF-8")?;
+    Ok(Some(stdout.trim().to_string()))
+}
+
+fn run_release_checks(
+    repo_path: &Path,
+    commands: &[Vec<String>],
+) -> Result<Vec<ReleaseCheckResult>> {
+    commands
+        .iter()
+        .map(|command| {
+            let output = run_release_command_capture(repo_path, command)?;
+            Ok(ReleaseCheckResult {
+                command: command.clone(),
+                ok: output.status.success(),
+                exit_status: output.status.code(),
+                stdout: release_output_snippet(&output.stdout),
+                stderr: release_output_snippet(&output.stderr),
+            })
+        })
+        .collect()
+}
+
+fn release_runner_for_mode(config: &ReleaseConfig, apply: bool) -> Result<Vec<String>> {
+    let mut command = config.release.runner.clone();
+    if !apply {
+        if config.release.dry_run_args.is_empty() {
+            bail!("release config requires release.dry_run_args for dry-run mode");
+        }
+        command.extend(config.release.dry_run_args.iter().cloned());
+    }
+    validate_release_command("release.runner", &command)?;
+    Ok(command)
+}
+
+fn run_release_command_capture(
+    repo_path: &Path,
+    command: &[String],
+) -> Result<std::process::Output> {
+    validate_release_command("command", command)?;
+    ProcessCommand::new(&command[0])
+        .args(&command[1..])
+        .current_dir(repo_path)
+        .output()
+        .with_context(|| format!("failed to run {}", command.join(" ")))
+}
+
+fn release_output_snippet(bytes: &[u8]) -> String {
+    let value = String::from_utf8_lossy(bytes).trim().to_string();
+    const LIMIT: usize = 4000;
+    if value.chars().count() <= LIMIT {
+        value
+    } else {
+        format!("{}...", value.chars().take(LIMIT).collect::<String>())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn release_result(
+    command: &str,
+    mode: &str,
+    context: &ReleaseContext,
+    current_version: Option<String>,
+    next_version: Option<String>,
+    checks: Vec<ReleaseCheckResult>,
+    ready: bool,
+    executed: bool,
+    exit_status: Option<i32>,
+) -> ReleaseResult {
+    let runner = if command == "run" && mode == "dry_run" {
+        release_runner_for_mode(&context.config, false)
+            .unwrap_or_else(|_| context.config.release.runner.clone())
+    } else {
+        context.config.release.runner.clone()
+    };
+    ReleaseResult {
+        command: command.to_string(),
+        mode: mode.to_string(),
+        config_path: context.config_path.display().to_string(),
+        repo_path: context.repo_path.display().to_string(),
+        name: context.config.release.name.clone(),
+        version_source: context.config.release.version_source.clone(),
+        current_version,
+        next_version,
+        publish: context.config.release.publish,
+        changelog: context.config.release.changelog.clone(),
+        notes_file: context.config.release.notes_file.clone(),
+        runner,
+        checks,
+        ready,
+        executed,
+        exit_status,
+    }
 }
 
 fn release_skill_definitions(

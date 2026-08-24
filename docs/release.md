@@ -121,45 +121,40 @@ Release tags should match the crate version policy:
 
 The release tag should match the versions in all workspace crate manifests under `crates/*/Cargo.toml`, including `crates/slack-core/Cargo.toml`.
 
-## Future `forge release cut`
+## Forge Release Contract
 
-Target command shape:
-
-```sh
-forge release cut
-forge release cut --version 20260410.0.1
-forge release cut --dry-run
-forge release cut --notes-file notes.md
-```
-
-Target behavior:
-
-1. Verify git state
-2. Verify versions match
-3. Run release checks
-4. Push `main`
-5. Dispatch and wait for the release workflow
-6. Create the tag and GitHub release as the workflow's final step
-
-### 1. Verify git state
-
-- ensure branch is `main` unless explicitly overridden
-- ensure working tree is clean
-- ensure local branch is not behind remote
-
-### 2. Verify versions match
-
-- read crate versions from relevant `Cargo.toml` files
-- ensure all release-participating crates match
-- ensure the requested release tag matches those versions
-
-### 3. Run release checks
-
-Initial default:
+Forge also exposes the repo-local release flow through `release.toml`:
 
 ```sh
-cargo check
+forge release check --json
+forge release plan --json
+forge release run --dry-run --json
+forge release run --apply --json
 ```
+
+`release.toml` keeps the release logic in checked-in repo policy while giving agents one stable command surface. The initial Forge contract points at the existing runner:
+
+```toml
+[release]
+name = "forge"
+version_source = "crates/forge/Cargo.toml"
+runner = ["just", "cut-release"]
+dry_run_args = ["--dry-run"]
+current_version_command = ["just", "cut-release", "--print-current-version"]
+next_version_command = ["just", "cut-release", "--print-next-version"]
+publish = true
+
+[checks]
+commands = [
+  ["cargo", "check"],
+  ["just", "install-list-check"],
+  ["just", "release-process-check"],
+]
+```
+
+Agents should run `check` and `plan` before `run`. `run` defaults to dry-run unless `--apply` is present. `--apply` may commit, push, dispatch workflows, tag, and publish through the configured runner, so it requires an explicit user release request.
+
+The Forge-managed `release-runner` skill contains the agent procedure for using this contract.
 
 ## User Install And Update Story
 

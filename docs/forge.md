@@ -107,6 +107,24 @@ forge bytefield render --source <path> --output <path>
 
 Provides the pinned bytefield renderer used by the managed bytefield skill. This is a skill-backed AI artifact primitive, not a general package manager.
 
+### `forge release`
+
+```sh
+forge release check
+forge release plan
+forge release run --dry-run
+forge release run --apply
+```
+
+Runs the repo-local release contract from `release.toml`. This is an orchestration surface over a checked-in release runner, not a replacement release system.
+
+- `check` runs the read-only commands listed in `[checks].commands`.
+- `plan` runs optional current and next version query commands.
+- `run --dry-run` invokes `[release].runner` plus `[release].dry_run_args`.
+- `run --apply` invokes `[release].runner` without dry-run arguments and may publish.
+
+Agents must use `--json`. They should run `check` and `plan` before `run`, and must not use `--apply` unless the user explicitly asked to publish or apply a release.
+
 ## Removed commands
 
 The following commands were removed because their owner is the machine configuration layer:

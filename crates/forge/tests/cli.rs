@@ -259,6 +259,95 @@ fn cli_version_flag_prints_package_version() {
 }
 
 #[test]
+fn cli_release_check_uses_repo_release_toml() {
+    let root = temp_path("release-check");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let repo_dir = root.join("repo");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+    fs::create_dir_all(&repo_dir).expect("create repo dir");
+    fs::write(
+        repo_dir.join("release.toml"),
+        r#"[release]
+name = "demo"
+runner = ["rustc"]
+dry_run_args = ["--version"]
+current_version_command = ["rustc", "--version"]
+publish = false
+
+[checks]
+commands = [
+  ["rustc", "--version"],
+]
+"#,
+    )
+    .expect("write release.toml");
+
+    let repo_arg = repo_dir.display().to_string();
+    let output = run_forge(
+        &["--json", "release", "check", "--repo-path", &repo_arg],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let json: Value = serde_json::from_str(&stdout).expect("release check json");
+    assert_eq!(json["data"]["command"], "check");
+    assert_eq!(json["data"]["name"], "demo");
+    assert_eq!(json["data"]["ready"], true);
+    assert_eq!(json["data"]["checks"][0]["ok"], true);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cli_release_run_defaults_to_dry_run_runner() {
+    let root = temp_path("release-run");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let repo_dir = root.join("repo");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+    fs::create_dir_all(&repo_dir).expect("create repo dir");
+    fs::write(
+        repo_dir.join("release.toml"),
+        r#"[release]
+name = "demo"
+runner = ["rustc"]
+dry_run_args = ["--version"]
+publish = false
+"#,
+    )
+    .expect("write release.toml");
+
+    let repo_arg = repo_dir.display().to_string();
+    let output = run_forge(
+        &["--json", "release", "run", "--repo-path", &repo_arg],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let json: Value = serde_json::from_str(&stdout).expect("release run json");
+    assert_eq!(json["data"]["command"], "run");
+    assert_eq!(json["data"]["mode"], "dry_run");
+    assert_eq!(json["data"]["executed"], true);
+    assert_eq!(json["data"]["runner"][0], "rustc");
+    assert_eq!(json["data"]["runner"][1], "--version");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cli_version_is_available_in_json() {
     let root = temp_path("version-json");
     let config_dir = root.join("config");
