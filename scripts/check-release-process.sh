@@ -7,10 +7,12 @@ WORKFLOW="$ROOT/.github/workflows/release-artifacts.yml"
 TARGETS="$ROOT/config/release-targets.toml"
 LOG="$(mktemp)"
 STUBS="$(mktemp -d)"
+TEST_ROOT="$(mktemp -d)"
 
 cleanup() {
   rm -f "$LOG"
   rm -rf "$STUBS"
+  rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -83,11 +85,6 @@ cat >"$STUBS/just" <<'EOF'
 echo "just $*" >> "$RELEASE_PROCESS_TEST_LOG"
 EOF
 
-cat >"$STUBS/cargo" <<'EOF'
-#!/bin/sh
-echo "cargo $*" >> "$RELEASE_PROCESS_TEST_LOG"
-EOF
-
 cat >"$STUBS/gh" <<'EOF'
 #!/bin/sh
 echo "gh $*" >> "$RELEASE_PROCESS_TEST_LOG"
@@ -97,17 +94,23 @@ case "$*" in
 esac
 EOF
 
-chmod +x "$STUBS/git" "$STUBS/just" "$STUBS/cargo" "$STUBS/gh"
+chmod +x "$STUBS/git" "$STUBS/just" "$STUBS/gh"
+
+mkdir -p "$TEST_ROOT/crates/forge" "$TEST_ROOT/.github/workflows"
+printf '[workspace]\nresolver = "3"\nmembers = ["crates/*"]\n' >"$TEST_ROOT/Cargo.toml"
+printf '[package]\nname = "forge"\nversion = "20260731.0.0"\nedition = "2024"\n' \
+  >"$TEST_ROOT/crates/forge/Cargo.toml"
+touch "$TEST_ROOT/Cargo.lock" "$TEST_ROOT/.github/workflows/release-artifacts.yml"
 
 PATH="$STUBS:$PATH" \
   RELEASE_PROCESS_TEST_LOG="$LOG" \
-  RELEASE_PROCESS_TEST_ROOT="$ROOT" \
-  "$ROOT/scripts/cut-release.sh" --version 20260801.0.0 >/dev/null
+  RELEASE_PROCESS_TEST_ROOT="$TEST_ROOT" \
+  cargo run -q -p forge -- release cut --repo-path "$TEST_ROOT" --version 20260801.0.0 >/dev/null
 
-ci_line="$(awk '/^just .* ci$/ { print NR; exit }' "$LOG")"
-push_line="$(awk '/^git .* push origin main$/ { print NR; exit }' "$LOG")"
-dispatch_line="$(awk '/^gh workflow run release-artifacts.yml / { print NR; exit }' "$LOG")"
-watch_line="$(awk '/^gh run watch 12345 --compact --exit-status$/ { print NR; exit }' "$LOG")"
+ci_line="$(awk '/^just ci$|^just .* ci$/ { print NR; exit }' "$LOG")"
+push_line="$(awk '/^git push origin main$|^git .* push origin main$/ { print NR; exit }' "$LOG")"
+dispatch_line="$(awk '/^gh workflow run release-artifacts.yml |^gh .* workflow run release-artifacts.yml / { print NR; exit }' "$LOG")"
+watch_line="$(awk '/^gh run watch 12345 --compact --exit-status$|^gh .* run watch 12345 --compact --exit-status$/ { print NR; exit }' "$LOG")"
 
 [ -n "$ci_line" ] || fail "runner did not execute the full contributor checks"
 [ -n "$push_line" ] || fail "runner did not push the release commit"
@@ -121,16 +124,16 @@ if grep -Eq '^gh release create ' "$LOG"; then
 fi
 
 : >"$LOG"
-current_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/crates/forge/Cargo.toml" | head -n 1)"
+current_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$TEST_ROOT/crates/forge/Cargo.toml" | head -n 1)"
 PATH="$STUBS:$PATH" \
   RELEASE_PROCESS_TEST_LOG="$LOG" \
-  RELEASE_PROCESS_TEST_ROOT="$ROOT" \
-  "$ROOT/scripts/cut-release.sh" --version "$current_version" >/dev/null
+  RELEASE_PROCESS_TEST_ROOT="$TEST_ROOT" \
+  cargo run -q -p forge -- release cut --repo-path "$TEST_ROOT" --version "$current_version" >/dev/null
 
-if grep -Eq '^just .* bump-version |^git .* commit ' "$LOG"; then
+if grep -Eq '^just .* bump-version |^git commit |^git .* commit ' "$LOG"; then
   fail "resuming an unpublished version must not create another version commit"
 fi
-grep -Eq '^gh workflow run release-artifacts.yml .*target_sha=0000000000000000000000000000000000000001' "$LOG" ||
+grep -Eq '^gh workflow run release-artifacts.yml .*target_sha=0000000000000000000000000000000000000001|^gh .* workflow run release-artifacts.yml .*target_sha=0000000000000000000000000000000000000001' "$LOG" ||
   fail "resuming an unpublished version must dispatch the current commit"
 
 echo "release process ordering is valid"

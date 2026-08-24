@@ -116,12 +116,13 @@ forge release run --dry-run
 forge release run --apply
 ```
 
-Runs the repo-local release contract from `release.toml`. This is an orchestration surface over a checked-in release runner, not a replacement release system.
+Runs the repo-local release contract from `release.toml`. The runner may be an ordinary checked-in command or a Forge built-in configured entirely by the TOML file.
 
 - `check` runs the read-only commands listed in `[checks].commands`.
 - `plan` runs optional current and next version query commands.
 - `run --dry-run` invokes `[release].runner` plus `[release].dry_run_args`.
 - `run --apply` invokes `[release].runner` without dry-run arguments and may publish.
+- `run --version`, `run --notes-file`, and `run --not-latest` pass release options through to compatible runners.
 
 Agents must use `--json`. They should run `check` and `plan` before `run`, and must not use `--apply` unless the user explicitly asked to publish or apply a release.
 

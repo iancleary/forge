@@ -4,50 +4,48 @@ This document defines the current Forge release process.
 
 ## Current Process
 
-Prefer the `just` entrypoint for normal release work:
+Prefer the `forge release` entrypoint for normal release work:
 
 ```sh
-just cut-release
+forge release run --apply --json
 ```
 
-The underlying checked-in script remains the source of truth:
+Use the dry-run path first when validating the next release:
 
 ```sh
-./scripts/cut-release.sh
+forge release check --json
+forge release plan --json
+forge release run --dry-run --json
 ```
 
 Optional flags:
 
 ```sh
-just cut-release --version 20260415.0.1
-just cut-release --dry-run
-just cut-release --print-current-version
-just cut-release --print-next-version
-./scripts/cut-release.sh --version 20260415.0.1
-./scripts/cut-release.sh --notes-file notes.md
-./scripts/cut-release.sh --dry-run
-./scripts/cut-release.sh --print-current-version
-./scripts/cut-release.sh --print-next-version
+forge release run --apply --version 20260415.0.1 --json
+forge release run --apply --notes-file notes.md --json
+forge release run --dry-run --json
+forge release current-version
+forge release next-version
 ```
 
 Read-only version query:
 
 ```sh
-just cut-release --print-current-version
-just cut-release --print-next-version
+forge release current-version
+forge release next-version
 ```
 
-- `--print-current-version` prints the current workspace release version from `crates/forge/Cargo.toml` and exits.
-- `--print-next-version` fetches `main` and tags from `origin`, prints the next Phoenix-date CalVer, and exits.
+- `forge release current-version` prints the current workspace release version from `crates/forge/Cargo.toml` and exits.
+- `forge release next-version` fetches `main` and tags from `origin`, prints the next Phoenix-date CalVer, and exits.
 
 Both read-only modes skip the clean-tree check and do not run the release steps.
 
 For agent work in this repo, distinguish between maintaining the workflow and executing it:
 
 - use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the release process itself
-- use the Forge-managed `cut-release` skill for an ordinary request to publish the next Forge release
-- the `cut-release` skill should execute `just cut-release` (often after `just cut-release --dry-run`) rather than reconstructing the release by hand
-- the deployed release-process skills are portable; this repo's `AGENTS.md`, this document, `just cut-release`, and `scripts/cut-release.sh` tailor Forge-specific Phoenix-date CalVer, release notes, validation, and GitHub release behavior
+- use the Forge-managed `release-runner` or `cut-release` skill for an ordinary request to publish the next Forge release
+- those skills should execute `forge release` through `release.toml` rather than reconstructing the release by hand
+- the deployed release-process skills are portable; this repo's `AGENTS.md`, this document, `release.toml`, and the built-in `forge release` runner tailor Forge-specific Phoenix-date CalVer, release notes, validation, and GitHub release behavior
 - only reconstruct the flow manually when you are explicitly correcting an already-published release
 
 Decision rule:
@@ -57,7 +55,7 @@ stateDiagram-v2
     [*] --> ReleaseRequest
     ReleaseRequest --> MaintainWorkflow: asked to create/fix/change
     ReleaseRequest --> PublishRelease: asked to cut/publish
-    MaintainWorkflow --> UseCreateReleaseProcessSkill: update skill/script/docs
+    MaintainWorkflow --> UseCreateReleaseProcessSkill: update skill/contract/docs
     PublishRelease --> UseCutReleaseSkill: ordinary release request
     UseCutReleaseSkill --> DryRun: verify version or sequence
     UseCutReleaseSkill --> RunTaskRunner: direct execution
@@ -69,25 +67,27 @@ stateDiagram-v2
 Recommended sequence:
 
 ```sh
-just cut-release --dry-run
-just cut-release
+forge release check --json
+forge release plan --json
+forge release run --dry-run --json
+forge release run --apply --json
 ```
 
-The script currently enforces:
+The built-in Forge release runner currently enforces:
 
 - branch must be `main`
 - working tree must be clean
 - local `main` must include `origin/main`
 - version format must match `YYYYMMDD.0.N`
-- `--print-current-version` prints the current workspace release version and exits without mutating the repo
+- `forge release current-version` prints the current workspace release version and exits without mutating the repo
 - omitted `--version` resolves the next Phoenix-date CalVer automatically after fetching `main` and tags from `origin`
-- `--print-next-version` prints that inferred next version and exits without mutating the repo
-- version bumping happens through `just bump-version`
+- `forge release next-version` prints that inferred next version and exits without mutating the repo
+- version bumping happens inside the Forge release runner
 - if the version is already present on a clean `main` but has no tag or GitHub release, rerunning the same command resumes the unpublished release instead of creating another bump commit
 - the full `just ci` contributor suite must pass locally and in the release workflow
 - the release commit must include `Cargo.lock`
 - release diff must be limited to `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
-- the script commits and pushes `main`, dispatches `.github/workflows/release-artifacts.yml`, and waits for the workflow result
+- the runner commits and pushes `main`, dispatches `.github/workflows/release-artifacts.yml`, and waits for the workflow result
 - the workflow builds every supported platform before assembling and verifying the release artifacts and attestations
 - the workflow's final step creates the tag, uploads all assets, and publishes the GitHub release atomically through `gh release create`
 
@@ -95,13 +95,7 @@ If checks, any platform build, artifact assembly, or attestation verification fa
 
 The underlying GitHub release step still uses GitHub CLI.
 
-Recommended sequence:
-
-```sh
-just cut-release --dry-run
-just cut-release
-```
-Shell note:
+Runner note:
 
 - the runner uses `gh workflow run` and `gh run watch` so local execution does not return success before the remote release workflow finishes
 
@@ -109,7 +103,7 @@ Why:
 
 - the release sequence is now repetitive enough that the safe path should be the obvious path
 - GitHub CLI still provides the final release surface
-- the repo does not need a dedicated Rust release crate yet
+- the Forge CLI is now the portable release runner; repo shell scripts are not needed for bumping or cutting releases
 
 ## Version Source Of Truth
 
@@ -132,16 +126,16 @@ forge release run --dry-run --json
 forge release run --apply --json
 ```
 
-`release.toml` keeps the release logic in checked-in repo policy while giving agents one stable command surface. The initial Forge contract points at the existing runner:
+`release.toml` keeps the release logic in checked-in repo policy while giving agents one stable command surface. The Forge repo uses a built-in workflow-dispatch runner:
 
 ```toml
 [release]
 name = "forge"
 version_source = "crates/forge/Cargo.toml"
-runner = ["just", "cut-release"]
+runner = ["builtin:forge-release"]
 dry_run_args = ["--dry-run"]
-current_version_command = ["just", "cut-release", "--print-current-version"]
-next_version_command = ["just", "cut-release", "--print-next-version"]
+current_version_command = ["builtin:forge-current-version"]
+next_version_command = ["builtin:forge-next-version"]
 publish = true
 
 [checks]
@@ -153,6 +147,53 @@ commands = [
 ```
 
 Agents should run `check` and `plan` before `run`. `run` defaults to dry-run unless `--apply` is present. `--apply` may commit, push, dispatch workflows, tag, and publish through the configured runner, so it requires an explicit user release request.
+
+For single-root-Cargo-crate repos that currently carry only a SemVer release script, `release.toml` can use Forge's generic Cargo release runner instead of checking in a script. The provider selects the final release CLI.
+
+```toml
+[release]
+name = "linkbudget"
+version_source = "Cargo.toml"
+runner = [
+  "builtin:cargo-release",
+  "--provider", "github",
+  "--version-source", "Cargo.toml",
+  "--version-target", "Cargo.toml",
+  "--lockfile", "Cargo.lock",
+  "--tag-prefix", "v",
+  "--check", "cargo build --locked --verbose",
+  "--check", "cargo test --locked --verbose",
+]
+dry_run_args = ["--dry-run"]
+current_version_command = [
+  "builtin:cargo-current-version",
+  "--version-source", "Cargo.toml",
+]
+publish = true
+
+[checks]
+commands = [
+  ["cargo", "build", "--locked", "--verbose"],
+  ["cargo", "test", "--locked", "--verbose"],
+]
+```
+
+For a Gitea or Forgejo repository using Tea, switch only the provider:
+
+```toml
+runner = [
+  "builtin:cargo-release",
+  "--provider", "gitea",
+  "--version-source", "Cargo.toml",
+  "--version-target", "Cargo.toml",
+  "--lockfile", "Cargo.lock",
+  "--tag-prefix", "v",
+  "--check", "cargo build --locked --verbose",
+  "--check", "cargo test --locked --verbose",
+]
+```
+
+That runner requires `--version <semver>` because it does not infer the next SemVer bump. It updates the configured Cargo manifest and lockfile, runs configured checks after the temporary version bump, restores files during dry-runs, commits and tags real releases, pushes the branch and tag, and then creates the provider release. GitHub uses `gh release create`; Gitea uses `tea releases create`. Add `--notes-required` to the runner array when real releases must provide `--notes-file`.
 
 The Forge-managed `release-runner` skill contains the agent procedure for using this contract.
 
@@ -316,12 +357,10 @@ gh release create <version> <assets...> \
 ## Suggested Flags
 
 - `--version <v>`
-- `--print-current-version`
-- `--print-next-version`
+- `current-version`
+- `next-version`
 - `--dry-run`
 - `--notes-file <path>`
-- `--no-check`
-- `--target <branch>`
 - `--not-latest`
 
 ## Out Of Scope For Now

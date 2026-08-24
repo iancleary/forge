@@ -110,8 +110,8 @@ Forge should distinguish between skills that maintain a workflow and skills or c
 Examples:
 
 - a managed workflow-maintenance skill such as `create-release-process` exists to define, audit, and repair the release process
-- a managed workflow-execution skill such as `cut-release` can execute the ordinary release by calling the checked-in runner
-- the checked-in repo command `just cut-release` remains the deterministic runner that the execution skill should call
+- a managed workflow-execution skill such as `release-runner` or `cut-release` can execute the ordinary release by calling the checked-in runner
+- the checked-in `release.toml` contract and `forge release` command remain the deterministic runner that the execution skill should call
 
 That distinction matters because Codex can otherwise misread a maintenance skill as the thing to run, or mis-handle an execution skill by reconstructing the shell flow instead of calling the deterministic repo task runner.
 
@@ -133,7 +133,7 @@ stateDiagram-v2
 For Forge releases, the intended mapping is:
 
 - "change the release flow" -> use the managed `create-release-process` skill, then apply the Forge-specific contract from `AGENTS.md` and `docs/release.md`
-- "cut the next release" -> use the managed `cut-release` skill, which should run `just cut-release` (often after `just cut-release --dry-run`)
+- "cut the next release" -> use the managed `release-runner` or `cut-release` skill, which should run `forge release run --apply --json` after `forge release run --dry-run --json`
 
 ## Trigger Contract For Forge Skills
 

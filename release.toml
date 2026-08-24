@@ -1,10 +1,10 @@
 [release]
 name = "forge"
 version_source = "crates/forge/Cargo.toml"
-runner = ["just", "cut-release"]
+runner = ["builtin:forge-release"]
 dry_run_args = ["--dry-run"]
-current_version_command = ["just", "cut-release", "--print-current-version"]
-next_version_command = ["just", "cut-release", "--print-next-version"]
+current_version_command = ["builtin:forge-current-version"]
+next_version_command = ["builtin:forge-next-version"]
 publish = true
 
 [checks]

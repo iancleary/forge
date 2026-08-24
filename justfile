@@ -9,11 +9,8 @@ default:
 check:
   cargo check
 
-bump-version version:
-  "{{root}}/scripts/bump-version.sh" "{{version}}"
-
 cut-release *args:
-  "{{root}}/scripts/cut-release.sh" {{args}}
+  args='{{args}}'; case " $args " in *" --dry-run "*) cargo run -q -p forge -- release run $args ;; *) cargo run -q -p forge -- release run --apply $args ;; esac
 
 fmt:
   cargo fmt
