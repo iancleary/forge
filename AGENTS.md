@@ -83,14 +83,14 @@ Before committing:
 - use `documentation-and-adrs` when a change affects durable docs, workflow policy, command contracts, or architecture decisions
 - use `librarian` when the user points you at a remote git repository as reference, unless you are developing Forge itself and need the active Forge checkout
 - use the Forge-managed `create-release-process` skill when you are establishing, auditing, or changing the Forge release workflow itself
-- use the Forge-managed `cut-release` skill for an ordinary request to publish a Forge release; that skill should execute the checked-in runner via `just cut-release` / `scripts/cut-release.sh` rather than reconstructing the flow by hand
-- use `just cut-release --print-current-version` when you need the current workspace release version without starting the release flow
-- use `just cut-release --print-next-version` when you need the inferred next release version without starting the release flow
-- prefer `just cut-release --dry-run` before the real release when validating the next version or the enforced sequence
-- the release script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
-- the release script pushes the version commit and dispatches the release-artifacts workflow; that workflow must pass checks, build every supported platform, stage and verify artifacts, and create the tag and GitHub release only in its final step
-- the deployed release-process skills provide portable defaults, while this repo's `AGENTS.md`, `docs/release.md`, `just cut-release`, and `scripts/cut-release.sh` tailor the Forge-specific CalVer, notes, validation, and publish behavior
-- if the release flow changes, update the script, [docs/release.md](docs/release.md), and the release-process skills together
+- use the Forge-managed `release-runner` or `cut-release` skill for an ordinary request to publish a Forge release; those skills should execute `forge release` through `release.toml` rather than reconstructing the flow by hand
+- use `forge release current-version` when you need the current workspace release version without starting the release flow
+- use `forge release next-version` when you need the inferred next release version without starting the release flow
+- prefer `forge release run --dry-run --json` before `forge release run --apply --json` when validating the next version or the enforced sequence
+- the Forge release runner owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
+- the Forge release runner pushes the version commit and dispatches the release-artifacts workflow; that workflow must pass checks, build every supported platform, stage and verify artifacts, and create the tag and GitHub release only in its final step
+- the deployed release-process skills provide portable defaults, while this repo's `AGENTS.md`, `docs/release.md`, `release.toml`, and the built-in `forge release` runner tailor the Forge-specific CalVer, notes, validation, and publish behavior
+- if the release flow changes, update `release.toml`, [docs/release.md](docs/release.md), and the release-process skills together
 
 ## Adding A New CLI
 
@@ -117,16 +117,18 @@ For adapted third-party skills, also add `THIRD_PARTY_NOTICES.md` with the upstr
 - keep crate versions aligned across the workspace
 - omitted `--version` can be inferred safely from fetched git tags for the current Phoenix calendar day
 - current release flow is:
-  - `just cut-release`
+  - `forge release run --apply --json`
 - read-only version queries are:
-  - `just cut-release --print-current-version`
-  - `just cut-release --print-next-version`
+  - `forge release current-version`
+  - `forge release next-version`
 - normal validation path is:
-  - `just cut-release --dry-run`
-  - `just cut-release`
+  - `forge release check --json`
+  - `forge release plan --json`
+  - `forge release run --dry-run --json`
+  - `forge release run --apply --json`
 - release ordering is checks, all-platform builds, artifact assembly and verification, then tag and GitHub release creation
-- use the repo-local release script instead of reconstructing release commands by hand
-- use the `create-release-process` skill to maintain the release process; use the `cut-release` skill to execute the release through `just cut-release`
+- use `release.toml` through `forge release` instead of reconstructing release commands by hand
+- use the `create-release-process` skill to maintain the release process; use the `release-runner` or `cut-release` skill to execute the release through `forge release`
 
 ## Scope Discipline
 

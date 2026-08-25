@@ -44,9 +44,9 @@ The local repo contract overrides generic expectations in this skill.
 
 Prefer the repo's documented entrypoint:
 
+- `forge release run --apply --json`
+- `forge release run --dry-run --json`
 - `just cut-release`
-- `just cut-release --dry-run`
-- `scripts/cut-release.sh`
 - `make release`
 - package-manager release scripts
 
@@ -68,7 +68,7 @@ Run every `gh auth ...` command outside the sandbox. The sandbox can hide or mis
 
 For release work, check GitHub CLI auth with an outside-sandbox `gh auth status` before treating auth as missing or broken. Run other release commands outside the sandbox only when they need Git metadata writes, network access, public mutation, or keyring-backed credentials in the current environment.
 
-Repo-local release runners are allowed to vary, especially outside Forge. Do not assume another repo's release runner matches Forge's `scripts/cut-release.sh`. Before executing a runner, inspect the entrypoint and directly delegated helper scripts for `gh auth`. If the runner calls `gh auth`, may call it through an uninspected helper, or is too opaque to verify, run the whole runner outside the sandbox to avoid a hidden sandboxed auth failure.
+Repo-local release runners are allowed to vary, especially outside Forge. Before executing a runner, inspect the entrypoint and directly delegated helper scripts for `gh auth`. If the runner calls `gh auth`, may call it through an uninspected helper, or is too opaque to verify, run the whole runner outside the sandbox to avoid a hidden sandboxed auth failure.
 
 ## Forge Repo Contract
 
@@ -77,11 +77,11 @@ When this skill is used inside Forge itself:
 - read `docs/release.md` if you need the full contract
 - inspect git state and confirm the repo is on the intended branch
 - run `gh auth ...` checks outside the sandbox before treating GitHub CLI auth failures as blockers
-- prefer `just cut-release` as the entrypoint
-- prefer `just cut-release --dry-run` before the real release when validating the next version or sequence
-- use `just cut-release --print-current-version` for a read-only current-version query
-- use `just cut-release --print-next-version` for a read-only next-version query
-- the script owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
+- prefer `forge release run --apply --json` as the entrypoint
+- prefer `forge release run --dry-run --json` before the real release when validating the next version or sequence
+- use `forge release current-version` for a read-only current-version query
+- use `forge release next-version` for a read-only next-version query
+- the built-in Forge release runner owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
 - omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
 - a clean `main` already carrying the unpublished version is resumable through the same runner after a failed workflow
 - the runner pushes the version commit, dispatches the release-artifacts workflow, and waits for its result

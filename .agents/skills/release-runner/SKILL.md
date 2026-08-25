@@ -7,7 +7,7 @@ description: "Use repo-local release.toml plus `forge release` to check, plan, d
 
 Use this skill when a repository has `release.toml` and the user asks to check, plan, dry-run, cut, publish, or run a normal release.
 
-The repo-local `release.toml` is the contract. It names the release runner and the read-only checks. Do not infer a separate release flow from memory or from generic Cargo habits.
+The repo-local `release.toml` is the contract. It names the release runner and the read-only checks. The runner may be an ordinary command or a Forge built-in such as `builtin:cargo-release`. Do not infer a separate release flow from memory or from generic Cargo habits.
 
 ## Required Sequence
 
@@ -54,4 +54,3 @@ Report:
 - runner command
 - whether dry-run or apply was executed
 - failure details from the Forge JSON error when a command fails
-

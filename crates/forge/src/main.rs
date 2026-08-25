@@ -39,6 +39,13 @@ const RELEASE_MANIFEST_NAME: &str = "forge-release-manifest.json";
 const RELEASE_CHECKSUMS_NAME: &str = "forge-release-sha256sums.txt";
 const RELEASE_ARTIFACT_VERIFICATION_WORKFLOW: &str = ".github/workflows/release-artifacts.yml";
 const RELEASE_ATTESTATION_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
+const FORGE_RELEASE_BUILTIN: &str = "builtin:forge-release";
+const FORGE_RELEASE_CURRENT_VERSION_BUILTIN: &str = "builtin:forge-current-version";
+const FORGE_RELEASE_NEXT_VERSION_BUILTIN: &str = "builtin:forge-next-version";
+const CARGO_RELEASE_BUILTIN: &str = "builtin:cargo-release";
+const CARGO_CURRENT_VERSION_BUILTIN: &str = "builtin:cargo-current-version";
+const FORGE_RELEASE_DEFAULT_BRANCH: &str = "main";
+const FORGE_RELEASE_WORKFLOW: &str = "release-artifacts.yml";
 const BYTEFIELD_DEFAULT_PACKAGE_SPEC: &str = "bytefield-svg@1.11.0";
 const BYTEFIELD_EXECUTABLE: &str = "bytefield-svg";
 
@@ -302,6 +309,12 @@ enum ReleaseCommand {
     Plan(ReleaseArgs),
     #[command(about = "Run the configured release runner; defaults to dry-run")]
     Run(ReleaseRunArgs),
+    #[command(about = "Run Forge's built-in release runner")]
+    Cut(ForgeReleaseCutArgs),
+    #[command(about = "Print the current Forge workspace release version")]
+    CurrentVersion(ReleaseRepoArgs),
+    #[command(about = "Print the next Phoenix-date Forge release version")]
+    NextVersion(ReleaseRepoArgs),
 }
 
 #[derive(Args, Debug)]
@@ -622,6 +635,44 @@ struct ReleaseRunArgs {
         help = "Run the configured release runner without dry-run arguments"
     )]
     apply: bool,
+    #[arg(long, help = "Release version passed through to compatible runners")]
+    version: Option<String>,
+    #[arg(
+        long,
+        help = "Curated release notes file passed through to compatible runners"
+    )]
+    notes_file: Option<PathBuf>,
+    #[arg(long, help = "Pass --not-latest through to compatible runners")]
+    not_latest: bool,
+}
+
+#[derive(Args, Debug)]
+struct ReleaseRepoArgs {
+    #[arg(
+        long,
+        help = "Override the repository root; defaults to the current directory"
+    )]
+    repo_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct ForgeReleaseCutArgs {
+    #[arg(
+        long,
+        help = "Override the repository root; defaults to the current directory"
+    )]
+    repo_path: Option<PathBuf>,
+    #[arg(long, help = "Release version; defaults to next Phoenix-date CalVer")]
+    version: Option<String>,
+    #[arg(long, help = "Curated release notes file passed to the workflow")]
+    notes_file: Option<PathBuf>,
+    #[arg(long, help = "Do not mark the GitHub release as latest")]
+    not_latest: bool,
+    #[arg(
+        long,
+        help = "Print the planned mutating commands without running them"
+    )]
+    dry_run: bool,
 }
 
 #[allow(dead_code)]
@@ -1100,6 +1151,38 @@ struct ReleaseCheckResult {
     stderr: String,
 }
 
+#[derive(Debug)]
+struct ReleaseCommandOutput {
+    success: bool,
+    code: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct CargoReleaseOptions {
+    version_source: PathBuf,
+    version_targets: Vec<PathBuf>,
+    lockfiles: Vec<PathBuf>,
+    tag_prefix: String,
+    checks: Vec<Vec<String>>,
+    notes_required: bool,
+    provider: CargoReleaseProvider,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum CargoReleaseProvider {
+    #[default]
+    Github,
+    Gitea,
+}
+
+#[derive(Debug)]
+struct CargoPackageVersion {
+    name: String,
+    version: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct ReleaseConfig {
     release: ReleaseSection,
@@ -1410,6 +1493,27 @@ fn run(cli: Cli) -> Result<()> {
         Command::Release(ReleaseCommand::Run(args)) => {
             let data = release_run(args)?;
             emit_output(output, data, format_release_human)?;
+        }
+        Command::Release(ReleaseCommand::Cut(args)) => {
+            let repo_path = resolve_release_repo_path(args.repo_path.clone())?;
+            let result = forge_release_cut(&repo_path, args)?;
+            print!("{}", String::from_utf8_lossy(&result.stdout));
+            eprint!("{}", String::from_utf8_lossy(&result.stderr));
+            if !result.success {
+                bail!(
+                    "forge release cut failed: {}",
+                    release_output_snippet(&result.stderr)
+                );
+            }
+        }
+        Command::Release(ReleaseCommand::CurrentVersion(args)) => {
+            let repo_path = resolve_release_repo_path(args.repo_path)?;
+            println!("{}", forge_current_release_version(&repo_path)?);
+        }
+        Command::Release(ReleaseCommand::NextVersion(args)) => {
+            let repo_path = resolve_release_repo_path(args.repo_path)?;
+            forge_release_fetch_main_and_tags(&repo_path)?;
+            println!("{}", forge_next_release_version(&repo_path)?);
         }
     }
 
@@ -3802,6 +3906,24 @@ fn output_failure_detail(output: &std::process::Output) -> Option<String> {
         (Some(detail), None) => Some(format!("{detail} (terminated by signal)")),
         (None, Some(code)) => Some(format!("exit code {code}")),
         (None, None) => Some("terminated by signal".to_string()),
+    }
+}
+
+fn release_output_failure_detail(output: &ReleaseCommandOutput) -> Option<String> {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let base = if !stderr.is_empty() {
+        Some(stderr)
+    } else if !stdout.is_empty() {
+        Some(stdout)
+    } else {
+        None
+    };
+    match (base, output.code) {
+        (Some(detail), Some(code)) => Some(format!("{detail} (exit code {code})")),
+        (Some(detail), None) => Some(detail),
+        (None, Some(code)) => Some(format!("exit code {code}")),
+        (None, None) => None,
     }
 }
 
@@ -6564,13 +6686,18 @@ fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
 
     let context = load_release_context(args.repo_path, args.config)?;
     let mode = if args.apply { "apply" } else { "dry_run" };
-    let runner = release_runner_for_mode(&context.config, args.apply)?;
+    let runner = release_runner_for_mode(
+        &context.config,
+        args.apply,
+        args.version.as_deref(),
+        args.notes_file.as_deref(),
+        args.not_latest,
+    )?;
     let output = run_release_command_capture(&context.repo_path, &runner)?;
-    let ok = output.status.success();
-    let status = output.status.code();
-    if !ok {
+    let status = output.code;
+    if !output.success {
         let detail =
-            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+            release_output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
         bail!("forge release run failed: {detail}");
     }
 
@@ -6671,9 +6798,9 @@ fn run_optional_release_command(
         return Ok(None);
     };
     let output = run_release_command_capture(repo_path, command)?;
-    if !output.status.success() {
+    if !output.success {
         let detail =
-            output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
+            release_output_failure_detail(&output).unwrap_or_else(|| "unknown failure".to_string());
         bail!("release command failed: {}: {detail}", command.join(" "));
     }
     let stdout =
@@ -6691,8 +6818,8 @@ fn run_release_checks(
             let output = run_release_command_capture(repo_path, command)?;
             Ok(ReleaseCheckResult {
                 command: command.clone(),
-                ok: output.status.success(),
-                exit_status: output.status.code(),
+                ok: output.success,
+                exit_status: output.code,
                 stdout: release_output_snippet(&output.stdout),
                 stderr: release_output_snippet(&output.stderr),
             })
@@ -6700,13 +6827,30 @@ fn run_release_checks(
         .collect()
 }
 
-fn release_runner_for_mode(config: &ReleaseConfig, apply: bool) -> Result<Vec<String>> {
+fn release_runner_for_mode(
+    config: &ReleaseConfig,
+    apply: bool,
+    version: Option<&str>,
+    notes_file: Option<&Path>,
+    not_latest: bool,
+) -> Result<Vec<String>> {
     let mut command = config.release.runner.clone();
     if !apply {
         if config.release.dry_run_args.is_empty() {
             bail!("release config requires release.dry_run_args for dry-run mode");
         }
         command.extend(config.release.dry_run_args.iter().cloned());
+    }
+    if let Some(version) = version {
+        command.push("--version".to_string());
+        command.push(version.to_string());
+    }
+    if let Some(notes_file) = notes_file {
+        command.push("--notes-file".to_string());
+        command.push(notes_file.display().to_string());
+    }
+    if not_latest {
+        command.push("--not-latest".to_string());
     }
     validate_release_command("release.runner", &command)?;
     Ok(command)
@@ -6715,13 +6859,1067 @@ fn release_runner_for_mode(config: &ReleaseConfig, apply: bool) -> Result<Vec<St
 fn run_release_command_capture(
     repo_path: &Path,
     command: &[String],
-) -> Result<std::process::Output> {
+) -> Result<ReleaseCommandOutput> {
     validate_release_command("command", command)?;
+    if command[0].starts_with("builtin:") {
+        return run_release_builtin_command(repo_path, command);
+    }
     ProcessCommand::new(&command[0])
         .args(&command[1..])
         .current_dir(repo_path)
         .output()
+        .map(|output| ReleaseCommandOutput {
+            success: output.status.success(),
+            code: output.status.code(),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
         .with_context(|| format!("failed to run {}", command.join(" ")))
+}
+
+fn run_release_builtin_command(
+    repo_path: &Path,
+    command: &[String],
+) -> Result<ReleaseCommandOutput> {
+    match command[0].as_str() {
+        FORGE_RELEASE_BUILTIN => forge_release_cut_from_builtin_args(repo_path, &command[1..]),
+        CARGO_RELEASE_BUILTIN => cargo_release_from_builtin_args(repo_path, &command[1..]),
+        CARGO_CURRENT_VERSION_BUILTIN => {
+            let options = parse_cargo_release_options(&command[1..])?;
+            Ok(ReleaseCommandOutput::success(format!(
+                "{}\n",
+                read_cargo_package_version(repo_path, &options.version_source)?.version
+            )))
+        }
+        FORGE_RELEASE_CURRENT_VERSION_BUILTIN => {
+            if command.len() != 1 {
+                bail!("{FORGE_RELEASE_CURRENT_VERSION_BUILTIN} does not accept arguments");
+            }
+            Ok(ReleaseCommandOutput::success(format!(
+                "{}\n",
+                forge_current_release_version(repo_path)?
+            )))
+        }
+        FORGE_RELEASE_NEXT_VERSION_BUILTIN => {
+            if command.len() != 1 {
+                bail!("{FORGE_RELEASE_NEXT_VERSION_BUILTIN} does not accept arguments");
+            }
+            forge_release_fetch_main_and_tags(repo_path)?;
+            Ok(ReleaseCommandOutput::success(format!(
+                "{}\n",
+                forge_next_release_version(repo_path)?
+            )))
+        }
+        other => bail!("unknown release builtin command: {other}"),
+    }
+}
+
+impl ReleaseCommandOutput {
+    fn success(stdout: String) -> Self {
+        Self {
+            success: true,
+            code: Some(0),
+            stdout: stdout.into_bytes(),
+            stderr: Vec::new(),
+        }
+    }
+
+    fn failure(stderr: String) -> Self {
+        Self {
+            success: false,
+            code: Some(1),
+            stdout: Vec::new(),
+            stderr: stderr.into_bytes(),
+        }
+    }
+}
+
+fn forge_release_cut_from_builtin_args(
+    repo_path: &Path,
+    args: &[String],
+) -> Result<ReleaseCommandOutput> {
+    let mut version = None;
+    let mut notes_file = None;
+    let mut not_latest = false;
+    let mut dry_run = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--version" => {
+                let Some(value) = args.get(index + 1) else {
+                    bail!("{FORGE_RELEASE_BUILTIN} --version requires a value");
+                };
+                version = Some(value.clone());
+                index += 2;
+            }
+            "--notes-file" => {
+                let Some(value) = args.get(index + 1) else {
+                    bail!("{FORGE_RELEASE_BUILTIN} --notes-file requires a value");
+                };
+                notes_file = Some(PathBuf::from(value));
+                index += 2;
+            }
+            "--not-latest" => {
+                not_latest = true;
+                index += 1;
+            }
+            "--dry-run" => {
+                dry_run = true;
+                index += 1;
+            }
+            other => bail!("unknown {FORGE_RELEASE_BUILTIN} argument: {other}"),
+        }
+    }
+    forge_release_cut(
+        repo_path,
+        ForgeReleaseCutArgs {
+            repo_path: None,
+            version,
+            notes_file,
+            not_latest,
+            dry_run,
+        },
+    )
+}
+
+fn forge_release_cut(repo_path: &Path, args: ForgeReleaseCutArgs) -> Result<ReleaseCommandOutput> {
+    match forge_release_cut_inner(repo_path, &args) {
+        Ok(stdout) => Ok(ReleaseCommandOutput::success(stdout)),
+        Err(err) => Ok(ReleaseCommandOutput::failure(format!("{err}\n"))),
+    }
+}
+
+fn forge_release_cut_inner(repo_path: &Path, args: &ForgeReleaseCutArgs) -> Result<String> {
+    let mut out = String::new();
+    ensure_forge_release_repo_root(repo_path)?;
+
+    if !git_status_short(repo_path)?.is_empty() {
+        bail!("working tree must be clean");
+    }
+
+    let branch = git_stdout(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if branch != FORGE_RELEASE_DEFAULT_BRANCH {
+        bail!(
+            "releases must be cut from {}, got {branch}",
+            FORGE_RELEASE_DEFAULT_BRANCH
+        );
+    }
+
+    forge_release_fetch_main_and_tags_with_log(repo_path, &mut out)?;
+    ensure_origin_main(repo_path)?;
+    ensure_local_main_includes_origin(repo_path)?;
+
+    let version = match &args.version {
+        Some(version) => version.clone(),
+        None => forge_next_release_version(repo_path)?,
+    };
+    validate_forge_release_version(&version)?;
+    writeln!(out, "resolved release version: {version}").ok();
+
+    let current_version = forge_current_release_version(repo_path)?;
+    let resume_release = version == current_version;
+    if resume_release {
+        writeln!(out, "resuming unpublished release version: {version}").ok();
+    }
+
+    if local_git_tag_exists(repo_path, &version)? {
+        bail!("local tag {version} already exists");
+    }
+    if gh_release_exists(repo_path, &version)? {
+        bail!("GitHub release {version} already exists");
+    }
+
+    if let Some(notes_file) = &args.notes_file {
+        let path = resolve_release_notes_path(repo_path, notes_file);
+        if !path.is_file() {
+            bail!("notes file not found: {}", notes_file.display());
+        }
+    }
+
+    let release_sha = if resume_release {
+        run_forge_release_step(repo_path, &mut out, args.dry_run, "just", &["ci"])?;
+        git_stdout(repo_path, &["rev-parse", "HEAD"])?
+    } else {
+        if args.dry_run {
+            log_release_step(
+                &mut out,
+                "forge",
+                &["release", "bump-version", "--version", &version],
+            );
+        } else {
+            forge_bump_workspace_version(repo_path, &version)?;
+            writeln!(out, "updated crate versions to {version}").ok();
+        }
+        run_forge_release_step(repo_path, &mut out, args.dry_run, "just", &["ci"])?;
+        if !args.dry_run {
+            validate_forge_release_diff(repo_path)?;
+        }
+        git_add_forge_release_files(repo_path, &mut out, args.dry_run)?;
+        run_forge_release_step(
+            repo_path,
+            &mut out,
+            args.dry_run,
+            "git",
+            &["commit", "-m", &format!("chore: bump version to {version}")],
+        )?;
+        if args.dry_run {
+            "<release-commit-sha>".to_string()
+        } else {
+            git_stdout(repo_path, &["rev-parse", "HEAD"])?
+        }
+    };
+
+    run_forge_release_step(
+        repo_path,
+        &mut out,
+        args.dry_run,
+        "git",
+        &["push", "origin", FORGE_RELEASE_DEFAULT_BRANCH],
+    )?;
+
+    let latest = if args.not_latest { "false" } else { "true" };
+    let mut workflow_args = vec![
+        "workflow".to_string(),
+        "run".to_string(),
+        FORGE_RELEASE_WORKFLOW.to_string(),
+        "--ref".to_string(),
+        FORGE_RELEASE_DEFAULT_BRANCH.to_string(),
+        "-f".to_string(),
+        format!("version={version}"),
+        "-f".to_string(),
+        format!("target_sha={release_sha}"),
+        "-f".to_string(),
+        format!("latest={latest}"),
+    ];
+    if let Some(notes_file) = &args.notes_file {
+        workflow_args.push("-F".to_string());
+        workflow_args.push(format!("notes=@{}", notes_file.display()));
+    }
+    run_forge_release_step_owned(repo_path, &mut out, args.dry_run, "gh", &workflow_args)?;
+
+    if !args.dry_run {
+        let run_id = find_forge_release_run(repo_path, &version, &release_sha)?;
+        writeln!(out, "release workflow run: {run_id}").ok();
+        run_forge_release_step(
+            repo_path,
+            &mut out,
+            false,
+            "gh",
+            &["run", "watch", &run_id, "--compact", "--exit-status"],
+        )?;
+    }
+
+    writeln!(out, "release ready: {version}").ok();
+    Ok(out)
+}
+
+fn ensure_forge_release_repo_root(repo_path: &Path) -> Result<()> {
+    if repo_path.join("Cargo.toml").exists()
+        && repo_path
+            .join("crates")
+            .join("forge")
+            .join("Cargo.toml")
+            .exists()
+        && repo_path
+            .join(".github")
+            .join("workflows")
+            .join(FORGE_RELEASE_WORKFLOW)
+            .exists()
+    {
+        return Ok(());
+    }
+    bail!(
+        "repo_path is not a Forge release repo root: {}",
+        repo_path.display()
+    )
+}
+
+fn forge_release_fetch_main_and_tags(repo_path: &Path) -> Result<()> {
+    let mut ignored = String::new();
+    forge_release_fetch_main_and_tags_with_log(repo_path, &mut ignored)
+}
+
+fn forge_release_fetch_main_and_tags_with_log(repo_path: &Path, out: &mut String) -> Result<()> {
+    run_forge_release_step(
+        repo_path,
+        out,
+        false,
+        "git",
+        &["fetch", "origin", FORGE_RELEASE_DEFAULT_BRANCH, "--tags"],
+    )
+}
+
+fn ensure_origin_main(repo_path: &Path) -> Result<()> {
+    let output = run_command(
+        repo_path,
+        "git",
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("origin/{FORGE_RELEASE_DEFAULT_BRANCH}"),
+        ],
+    )?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        bail!("missing origin/{FORGE_RELEASE_DEFAULT_BRANCH} tracking ref")
+    }
+}
+
+fn ensure_local_main_includes_origin(repo_path: &Path) -> Result<()> {
+    let output = run_command(
+        repo_path,
+        "git",
+        &[
+            "merge-base",
+            "--is-ancestor",
+            &format!("origin/{FORGE_RELEASE_DEFAULT_BRANCH}"),
+            "HEAD",
+        ],
+    )?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        bail!(
+            "local {FORGE_RELEASE_DEFAULT_BRANCH} must include origin/{FORGE_RELEASE_DEFAULT_BRANCH} before releasing"
+        )
+    }
+}
+
+fn forge_current_release_version(repo_path: &Path) -> Result<String> {
+    let manifest_path = repo_path.join("crates").join("forge").join("Cargo.toml");
+    let body = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+    let value: toml::Value = toml::from_str(&body)
+        .with_context(|| format!("failed to parse {}", manifest_path.display()))?;
+    value
+        .get("package")
+        .and_then(|package| package.get("version"))
+        .and_then(toml::Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            anyhow!(
+                "{} does not declare package.version",
+                manifest_path.display()
+            )
+        })
+}
+
+fn forge_next_release_version(repo_path: &Path) -> Result<String> {
+    let today = phoenix_calver_date()?;
+    let pattern = format!("{today}.0.*");
+    let output = run_command(
+        repo_path,
+        "git",
+        &["tag", "--list", &pattern, "--sort=-version:refname"],
+    )?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("git tag lookup failed: {detail}");
+    }
+    let stdout = String::from_utf8(output.stdout).context("git tag output was not UTF-8")?;
+    let Some(latest_today_tag) = stdout.lines().find(|line| !line.trim().is_empty()) else {
+        return Ok(format!("{today}.0.0"));
+    };
+    let latest_n = latest_today_tag
+        .rsplit('.')
+        .next()
+        .ok_or_else(|| anyhow!("invalid release tag: {latest_today_tag}"))?
+        .parse::<u32>()
+        .with_context(|| format!("invalid release tag: {latest_today_tag}"))?;
+    Ok(format!("{today}.0.{}", latest_n + 1))
+}
+
+fn phoenix_calver_date() -> Result<String> {
+    let unix_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before Unix epoch")?
+        .as_secs() as i64;
+    let phoenix_seconds = unix_seconds - 7 * 60 * 60;
+    let days = phoenix_seconds.div_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    Ok(format!("{year:04}{month:02}{day:02}"))
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i32, u32, u32) {
+    let z = days_since_unix_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year as i32, month as u32, day as u32)
+}
+
+fn validate_forge_release_version(version: &str) -> Result<()> {
+    let parts = version.split('.').collect::<Vec<_>>();
+    if parts.len() == 3
+        && parts[0].len() == 8
+        && parts[0].chars().all(|ch| ch.is_ascii_digit())
+        && parts[1] == "0"
+        && !parts[2].is_empty()
+        && parts[2].chars().all(|ch| ch.is_ascii_digit())
+    {
+        return Ok(());
+    }
+    bail!("version must match YYYYMMDD.0.N")
+}
+
+fn git_status_short(repo_path: &Path) -> Result<String> {
+    git_stdout(repo_path, &["status", "--short"])
+}
+
+fn local_git_tag_exists(repo_path: &Path, version: &str) -> Result<bool> {
+    let output = run_command(
+        repo_path,
+        "git",
+        &[
+            "rev-parse",
+            "-q",
+            "--verify",
+            &format!("refs/tags/{version}"),
+        ],
+    )?;
+    Ok(output.status.success())
+}
+
+fn gh_release_exists(repo_path: &Path, version: &str) -> Result<bool> {
+    let output = run_command(repo_path, "gh", &["release", "view", version])?;
+    Ok(output.status.success())
+}
+
+fn resolve_release_notes_path(repo_path: &Path, notes_file: &Path) -> PathBuf {
+    if notes_file.is_absolute() {
+        notes_file.to_path_buf()
+    } else {
+        repo_path.join(notes_file)
+    }
+}
+
+fn forge_bump_workspace_version(repo_path: &Path, version: &str) -> Result<()> {
+    validate_forge_release_version(version)?;
+    let crates_dir = repo_path.join("crates");
+    let mut manifests = fs::read_dir(&crates_dir)
+        .with_context(|| format!("failed to read {}", crates_dir.display()))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path().join("Cargo.toml")))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    manifests.sort();
+    if manifests.is_empty() {
+        bail!("warning: no Cargo.toml files updated");
+    }
+    for manifest in manifests {
+        rewrite_package_version(&manifest, version)?;
+    }
+    Ok(())
+}
+
+fn git_add_forge_release_files(repo_path: &Path, out: &mut String, dry_run: bool) -> Result<()> {
+    log_release_step(out, "git", &["add", "Cargo.lock", "crates/*/Cargo.toml"]);
+    if dry_run {
+        return Ok(());
+    }
+    let mut args = vec!["add".to_string(), "Cargo.lock".to_string()];
+    for path in expected_forge_release_diff(repo_path)?
+        .into_iter()
+        .filter(|path| path != "Cargo.lock")
+    {
+        args.push(path);
+    }
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command(repo_path, "git", &arg_refs)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("git add release files failed: {detail}");
+    }
+    Ok(())
+}
+
+fn rewrite_package_version(manifest_path: &Path, version: &str) -> Result<()> {
+    let body = fs::read_to_string(manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+    let mut in_package = false;
+    let mut version_set = false;
+    let mut changed = false;
+    let mut lines = Vec::new();
+    for line in body.lines() {
+        if line.trim() == "[package]" {
+            in_package = true;
+            version_set = false;
+            lines.push(line.to_string());
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') && line.trim() != "[package]" {
+            in_package = false;
+        }
+        if in_package && !version_set && line.trim_start().starts_with("version") {
+            lines.push(format!("version = \"{version}\""));
+            version_set = true;
+            changed = true;
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+    if body.ends_with('\n') {
+        lines.push(String::new());
+    }
+    if !changed {
+        bail!(
+            "{} does not declare package.version",
+            manifest_path.display()
+        );
+    }
+    fs::write(manifest_path, lines.join("\n"))
+        .with_context(|| format!("failed to write {}", manifest_path.display()))
+}
+
+fn expected_forge_release_diff(repo_path: &Path) -> Result<Vec<String>> {
+    let mut expected = vec!["Cargo.lock".to_string()];
+    let crates_dir = repo_path.join("crates");
+    for entry in fs::read_dir(&crates_dir)
+        .with_context(|| format!("failed to read {}", crates_dir.display()))?
+    {
+        let path = entry?.path().join("Cargo.toml");
+        if path.is_file() {
+            let relative = path
+                .strip_prefix(repo_path)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            expected.push(relative);
+        }
+    }
+    expected.sort();
+    Ok(expected)
+}
+
+fn validate_forge_release_diff(repo_path: &Path) -> Result<()> {
+    let actual_output = git_stdout(repo_path, &["diff", "--name-only", "--relative"])?;
+    let actual = actual_output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    let expected = expected_forge_release_diff(repo_path)?;
+    if actual != expected {
+        bail!(
+            "release changes must be limited to Cargo.lock and crate manifests\nexpected release diff:\n{}\nactual release diff:\n{}",
+            expected.join("\n"),
+            actual.join("\n")
+        );
+    }
+    Ok(())
+}
+
+fn log_release_step(out: &mut String, program: &str, args: &[&str]) {
+    writeln!(out, "+ {} {}", program, args.join(" ")).ok();
+}
+
+fn run_forge_release_step(
+    repo_path: &Path,
+    out: &mut String,
+    dry_run: bool,
+    program: &str,
+    args: &[&str],
+) -> Result<()> {
+    log_release_step(out, program, args);
+    if dry_run {
+        return Ok(());
+    }
+    let output = run_command(repo_path, program, args)?;
+    if !output.status.success() {
+        let detail = output_failure_detail(&output).unwrap_or_else(|| "unknown error".to_string());
+        bail!("{program} {} failed: {detail}", args.join(" "));
+    }
+    out.push_str(&String::from_utf8_lossy(&output.stdout));
+    Ok(())
+}
+
+fn run_forge_release_step_owned(
+    repo_path: &Path,
+    out: &mut String,
+    dry_run: bool,
+    program: &str,
+    args: &[String],
+) -> Result<()> {
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_forge_release_step(repo_path, out, dry_run, program, &arg_refs)
+}
+
+fn find_forge_release_run(repo_path: &Path, version: &str, release_sha: &str) -> Result<String> {
+    let display_title = format!("Release {version} from {release_sha}");
+    let jq = format!("[.[] | select(.displayTitle == \"{display_title}\")][0].databaseId // empty");
+    for _ in 0..30 {
+        let output = run_command(
+            repo_path,
+            "gh",
+            &[
+                "run",
+                "list",
+                "--workflow",
+                FORGE_RELEASE_WORKFLOW,
+                "--event",
+                "workflow_dispatch",
+                "--limit",
+                "20",
+                "--json",
+                "databaseId,displayTitle",
+                "--jq",
+                &jq,
+            ],
+        )?;
+        if output.status.success() {
+            let stdout =
+                String::from_utf8(output.stdout).context("gh run list output was not UTF-8")?;
+            let run_id = stdout.trim();
+            if !run_id.is_empty() {
+                return Ok(run_id.to_string());
+            }
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    bail!("timed out waiting for {FORGE_RELEASE_WORKFLOW} run for {release_sha}")
+}
+
+fn cargo_release_from_builtin_args(
+    repo_path: &Path,
+    args: &[String],
+) -> Result<ReleaseCommandOutput> {
+    match cargo_release_inner(repo_path, args) {
+        Ok(stdout) => Ok(ReleaseCommandOutput::success(stdout)),
+        Err(err) => Ok(ReleaseCommandOutput::failure(format!("{err}\n"))),
+    }
+}
+
+fn parse_cargo_release_options(args: &[String]) -> Result<CargoReleaseOptions> {
+    let mut options = CargoReleaseOptions {
+        version_source: PathBuf::from("Cargo.toml"),
+        tag_prefix: "v".to_string(),
+        ..CargoReleaseOptions::default()
+    };
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--version-source" => {
+                options.version_source = PathBuf::from(required_builtin_arg(args, index)?);
+                index += 2;
+            }
+            "--version-target" => {
+                options
+                    .version_targets
+                    .push(PathBuf::from(required_builtin_arg(args, index)?));
+                index += 2;
+            }
+            "--lockfile" => {
+                options
+                    .lockfiles
+                    .push(PathBuf::from(required_builtin_arg(args, index)?));
+                index += 2;
+            }
+            "--tag-prefix" => {
+                options.tag_prefix = required_builtin_arg(args, index)?;
+                index += 2;
+            }
+            "--provider" => {
+                options.provider =
+                    parse_cargo_release_provider(&required_builtin_arg(args, index)?)?;
+                index += 2;
+            }
+            "--check" => {
+                let command = required_builtin_arg(args, index)?
+                    .split_whitespace()
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>();
+                validate_release_command("--check", &command)?;
+                options.checks.push(command);
+                index += 2;
+            }
+            "--notes-required" => {
+                options.notes_required = true;
+                index += 1;
+            }
+            "--version" | "--notes-file" | "--not-latest" | "--dry-run" => break,
+            other => bail!("unknown {CARGO_RELEASE_BUILTIN} option: {other}"),
+        }
+    }
+    if options.version_targets.is_empty() {
+        options.version_targets.push(options.version_source.clone());
+    }
+    Ok(options)
+}
+
+fn required_builtin_arg(args: &[String], index: usize) -> Result<String> {
+    args.get(index + 1)
+        .filter(|value| !value.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| anyhow!("{} requires a value", args[index]))
+}
+
+fn parse_cargo_release_provider(value: &str) -> Result<CargoReleaseProvider> {
+    match value {
+        "github" => Ok(CargoReleaseProvider::Github),
+        "gitea" => Ok(CargoReleaseProvider::Gitea),
+        other => bail!("unsupported cargo release provider: {other}"),
+    }
+}
+
+impl CargoReleaseProvider {
+    fn display_name(self) -> &'static str {
+        match self {
+            CargoReleaseProvider::Github => "GitHub",
+            CargoReleaseProvider::Gitea => "Gitea",
+        }
+    }
+}
+
+fn cargo_release_inner(repo_path: &Path, args: &[String]) -> Result<String> {
+    let mut options = parse_cargo_release_options(args)?;
+    let mut version = None;
+    let mut notes_file = None;
+    let mut not_latest = false;
+    let mut dry_run = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--version-source" | "--version-target" | "--lockfile" | "--tag-prefix"
+            | "--provider" | "--check" => index += 2,
+            "--notes-required" => {
+                index += 1;
+            }
+            "--version" => {
+                version = Some(required_builtin_arg(args, index)?);
+                index += 2;
+            }
+            "--notes-file" => {
+                notes_file = Some(PathBuf::from(required_builtin_arg(args, index)?));
+                index += 2;
+            }
+            "--not-latest" => {
+                not_latest = true;
+                index += 1;
+            }
+            "--dry-run" => {
+                dry_run = true;
+                index += 1;
+            }
+            other => bail!("unknown {CARGO_RELEASE_BUILTIN} argument: {other}"),
+        }
+    }
+
+    let version = version.ok_or_else(|| {
+        anyhow!("--version <semver> is required; this runner does not infer SemVer bumps")
+    })?;
+    validate_semver_release_version(&version)?;
+    let package = read_cargo_package_version(repo_path, &options.version_source)?;
+    if package.version == version {
+        bail!("target version matches current version ({version})");
+    }
+    let tag = format!("{}{}", options.tag_prefix, version);
+    let mut out = String::new();
+
+    if options.notes_required && !dry_run && notes_file.is_none() {
+        bail!("--notes-file is required for a real release");
+    }
+    if let Some(notes_file) = &notes_file {
+        let path = resolve_release_notes_path(repo_path, notes_file);
+        if !path.is_file() {
+            bail!("notes file not found: {}", notes_file.display());
+        }
+    }
+    if !git_status_short(repo_path)?.is_empty() {
+        bail!("working tree must be clean before cutting a release");
+    }
+    if !dry_run {
+        let branch = git_stdout(repo_path, &["branch", "--show-current"])?;
+        if branch != FORGE_RELEASE_DEFAULT_BRANCH {
+            bail!("real releases must run from main; current branch is {branch}");
+        }
+        run_cargo_release_auth_check(repo_path, &mut out, options.provider)?;
+    }
+    if local_git_tag_exists(repo_path, &tag)? {
+        bail!("local tag already exists: {tag}");
+    }
+    if remote_git_tag_exists(repo_path, &tag)? {
+        bail!("remote tag already exists: {tag}");
+    }
+
+    let backups = if dry_run {
+        Some(backup_release_files(repo_path, &options)?)
+    } else {
+        None
+    };
+    let result = (|| -> Result<String> {
+        for target in &options.version_targets {
+            rewrite_package_version(&repo_path.join(target), &version)?;
+        }
+        for lockfile in &options.lockfiles {
+            rewrite_cargo_lock_package_version(&repo_path.join(lockfile), &package.name, &version)?;
+        }
+        for command in &options.checks {
+            run_release_vector_step(repo_path, &mut out, command)?;
+        }
+        if dry_run {
+            writeln!(out, "Dry run succeeded for {} {tag}.", package.name).ok();
+            writeln!(
+                out,
+                "Would commit configured version files, tag {tag}, push main and {tag}, then create the {} release.",
+                options.provider.display_name()
+            )
+            .ok();
+            return Ok(out);
+        }
+        let mut add_args = vec!["add".to_string()];
+        for target in &options.version_targets {
+            add_args.push(target.display().to_string());
+        }
+        for lockfile in &options.lockfiles {
+            add_args.push(lockfile.display().to_string());
+        }
+        run_forge_release_step_owned(repo_path, &mut out, false, "git", &add_args)?;
+        run_forge_release_step(
+            repo_path,
+            &mut out,
+            false,
+            "git",
+            &["commit", "-m", &format!("chore: release {tag}")],
+        )?;
+        run_forge_release_step(
+            repo_path,
+            &mut out,
+            false,
+            "git",
+            &["tag", "-a", &tag, "-m", &format!("Release {tag}")],
+        )?;
+        run_forge_release_step(
+            repo_path,
+            &mut out,
+            false,
+            "git",
+            &["push", "origin", "HEAD"],
+        )?;
+        run_forge_release_step(repo_path, &mut out, false, "git", &["push", "origin", &tag])?;
+        run_cargo_release_publish(
+            repo_path,
+            &mut out,
+            options.provider,
+            &tag,
+            notes_file.as_deref(),
+            not_latest,
+        )?;
+        writeln!(out, "release ready: {tag}").ok();
+        Ok(out)
+    })();
+    if let Some(backups) = backups {
+        restore_release_files(backups)?;
+    }
+    options.version_targets.clear();
+    result
+}
+
+fn run_cargo_release_auth_check(
+    repo_path: &Path,
+    out: &mut String,
+    provider: CargoReleaseProvider,
+) -> Result<()> {
+    match provider {
+        CargoReleaseProvider::Github => {
+            run_forge_release_step(repo_path, out, false, "gh", &["auth", "status"])
+        }
+        CargoReleaseProvider::Gitea => {
+            run_forge_release_step(repo_path, out, false, "tea", &["login", "list"])
+        }
+    }
+}
+
+fn run_cargo_release_publish(
+    repo_path: &Path,
+    out: &mut String,
+    provider: CargoReleaseProvider,
+    tag: &str,
+    notes_file: Option<&Path>,
+    not_latest: bool,
+) -> Result<()> {
+    match provider {
+        CargoReleaseProvider::Github => {
+            let mut args = vec![
+                "release".to_string(),
+                "create".to_string(),
+                tag.to_string(),
+                "--verify-tag".to_string(),
+            ];
+            if let Some(notes_file) = notes_file {
+                args.push("--notes-file".to_string());
+                args.push(notes_file.display().to_string());
+            } else {
+                args.push("--generate-notes".to_string());
+            }
+            if not_latest {
+                args.push("--latest=false".to_string());
+            }
+            run_forge_release_step_owned(repo_path, out, false, "gh", &args)
+        }
+        CargoReleaseProvider::Gitea => {
+            if not_latest {
+                bail!("--not-latest is not supported by the Gitea tea release provider");
+            }
+            let mut args = vec![
+                "releases".to_string(),
+                "create".to_string(),
+                "--tag".to_string(),
+                tag.to_string(),
+                "--title".to_string(),
+                tag.to_string(),
+            ];
+            if let Some(notes_file) = notes_file {
+                args.push("--note-file".to_string());
+                args.push(notes_file.display().to_string());
+            } else {
+                args.push("--note".to_string());
+                args.push(format!("Release {tag}"));
+            }
+            run_forge_release_step_owned(repo_path, out, false, "tea", &args)
+        }
+    }
+}
+
+fn read_cargo_package_version(repo_path: &Path, manifest: &Path) -> Result<CargoPackageVersion> {
+    let path = repo_path.join(manifest);
+    let body =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: toml::Value =
+        toml::from_str(&body).with_context(|| format!("failed to parse {}", path.display()))?;
+    let package = value
+        .get("package")
+        .ok_or_else(|| anyhow!("{} does not declare [package]", path.display()))?;
+    let name = package
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| anyhow!("{} does not declare package.name", path.display()))?;
+    let version = package
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| anyhow!("{} does not declare package.version", path.display()))?;
+    Ok(CargoPackageVersion {
+        name: name.to_string(),
+        version: version.to_string(),
+    })
+}
+
+fn validate_semver_release_version(version: &str) -> Result<()> {
+    let Some((core, suffix)) = version.split_once('-').or_else(|| version.split_once('+')) else {
+        return validate_semver_core(version);
+    };
+    validate_semver_core(core)?;
+    if suffix.is_empty()
+        || !suffix
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+        bail!("--version must be a SemVer value like 1.2.3");
+    }
+    Ok(())
+}
+
+fn validate_semver_core(core: &str) -> Result<()> {
+    let parts = core.split('.').collect::<Vec<_>>();
+    if parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return Ok(());
+    }
+    bail!("--version must be a SemVer value like 1.2.3")
+}
+
+fn remote_git_tag_exists(repo_path: &Path, tag: &str) -> Result<bool> {
+    let output = run_command(
+        repo_path,
+        "git",
+        &["ls-remote", "--exit-code", "--tags", "origin", tag],
+    )?;
+    Ok(output.status.success())
+}
+
+fn rewrite_cargo_lock_package_version(
+    lockfile_path: &Path,
+    package_name: &str,
+    version: &str,
+) -> Result<()> {
+    let body = fs::read_to_string(lockfile_path)
+        .with_context(|| format!("failed to read {}", lockfile_path.display()))?;
+    let mut changed = false;
+    let mut output = String::new();
+    for (index, block) in body.split("[[package]]").enumerate() {
+        if index == 0 {
+            output.push_str(block);
+            continue;
+        }
+        output.push_str("[[package]]");
+        if block
+            .lines()
+            .any(|line| line.trim() == format!("name = \"{package_name}\""))
+        {
+            let mut block_changed = false;
+            for line in block.lines() {
+                if line.trim_start().starts_with("version = ") && !block_changed {
+                    output.push_str(&format!("version = \"{version}\"\n"));
+                    block_changed = true;
+                    changed = true;
+                } else {
+                    output.push_str(line);
+                    output.push('\n');
+                }
+            }
+        } else {
+            output.push_str(block);
+        }
+    }
+    if !changed {
+        bail!(
+            "package {package_name} not found in {}",
+            lockfile_path.display()
+        );
+    }
+    fs::write(lockfile_path, output)
+        .with_context(|| format!("failed to write {}", lockfile_path.display()))
+}
+
+fn backup_release_files(
+    repo_path: &Path,
+    options: &CargoReleaseOptions,
+) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+    let mut paths = options.version_targets.clone();
+    paths.extend(options.lockfiles.iter().cloned());
+    paths.sort();
+    paths.dedup();
+    paths
+        .into_iter()
+        .map(|path| {
+            let full_path = repo_path.join(&path);
+            let body = fs::read(&full_path)
+                .with_context(|| format!("failed to read {}", full_path.display()))?;
+            Ok((full_path, body))
+        })
+        .collect()
+}
+
+fn restore_release_files(backups: Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
+    for (path, body) in backups {
+        fs::write(&path, body).with_context(|| format!("failed to restore {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn run_release_vector_step(repo_path: &Path, out: &mut String, command: &[String]) -> Result<()> {
+    validate_release_command("release check", command)?;
+    let program = &command[0];
+    let args = command[1..].iter().map(String::as_str).collect::<Vec<_>>();
+    run_forge_release_step(repo_path, out, false, program, &args)
 }
 
 fn release_output_snippet(bytes: &[u8]) -> String {
@@ -6747,7 +7945,7 @@ fn release_result(
     exit_status: Option<i32>,
 ) -> ReleaseResult {
     let runner = if command == "run" && mode == "dry_run" {
-        release_runner_for_mode(&context.config, false)
+        release_runner_for_mode(&context.config, false, None, None, false)
             .unwrap_or_else(|_| context.config.release.runner.clone())
     } else {
         context.config.release.runner.clone()
@@ -8642,6 +9840,49 @@ EOF
             latest_release_version_from_lines(&lines),
             Some("20260412.0.0".to_string())
         );
+    }
+
+    #[test]
+    fn rewrite_cargo_lock_package_version_updates_target_block_once() {
+        let root = temp_path("cargo-lock-version");
+        fs::create_dir_all(&root).expect("create temp root");
+        let lockfile = root.join("Cargo.lock");
+        fs::write(
+            &lockfile,
+            r#"# This file is automatically @generated by Cargo.
+version = 4
+
+[[package]]
+name = "other"
+version = "9.9.9"
+
+[[package]]
+name = "sample"
+version = "0.1.0"
+"#,
+        )
+        .expect("write lockfile");
+
+        rewrite_cargo_lock_package_version(&lockfile, "sample", "0.2.0").expect("rewrite lockfile");
+        let updated = fs::read_to_string(&lockfile).expect("read lockfile");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(updated.contains("name = \"other\"\nversion = \"9.9.9\""));
+        assert!(updated.contains("name = \"sample\"\nversion = \"0.2.0\""));
+        assert!(!updated.contains("[[package]][[package]]"));
+    }
+
+    #[test]
+    fn parse_cargo_release_provider_accepts_supported_hosts() {
+        assert_eq!(
+            parse_cargo_release_provider("github").expect("github provider"),
+            CargoReleaseProvider::Github
+        );
+        assert_eq!(
+            parse_cargo_release_provider("gitea").expect("gitea provider"),
+            CargoReleaseProvider::Gitea
+        );
+        assert!(parse_cargo_release_provider("gitlab").is_err());
     }
 
     #[test]

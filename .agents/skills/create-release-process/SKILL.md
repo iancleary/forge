@@ -63,7 +63,7 @@ Make the repo-local release process explicit about:
 
 Prefer the repo's existing task runner.
 
-If a `justfile` exists, prefer a `just cut-release` recipe backed by a checked-in script. Otherwise use the closest local convention, such as `scripts/cut-release.sh`, `make release`, or a package script.
+Prefer the repo's existing release command contract. When a repository has `release.toml`, prefer `forge release` as the stable agent-facing surface. Otherwise use the closest local convention, such as `just cut-release`, `make release`, a package script, or a checked-in script.
 
 When creating or updating the workflow:
 
@@ -71,7 +71,7 @@ When creating or updating the workflow:
 - make `--dry-run` available for previewing the mutating sequence
 - have the runner execute the repo's explicit local checkout checks before publication when no checked-in CI/release workflow owns that validation
 - if checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflows exist, make the runner invoke, monitor, or clearly defer to those workflows according to the repo's documented release gate
-- add read-only version query flags when useful, such as `--print-current-version` and `--print-next-version`
+- add read-only version query commands when useful, such as `forge release current-version` and `forge release next-version`
 - route ordinary release requests through a `cut-release` execution skill when the repo wants agent routing
 - update local agent instructions so future sessions know which skill and runner to use
 - update release docs when the repo has a release document
@@ -83,16 +83,16 @@ Keep the runner narrow and auditable. Do not hide broad automation behind prompt
 When this skill is used inside Forge itself:
 
 - read `docs/release.md` before changing the release flow
-- prefer `just cut-release` as the default entrypoint
-- use `just cut-release --print-current-version` for a read-only current-version query
-- use `just cut-release --print-next-version` for a read-only next-version query
-- use `just cut-release --dry-run` before the real release when validating the next version or sequence
-- the script owns `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
+- prefer `forge release run --apply --json` as the default entrypoint
+- use `forge release current-version` for a read-only current-version query
+- use `forge release next-version` for a read-only next-version query
+- use `forge release run --dry-run --json` before the real release when validating the next version or sequence
+- the built-in Forge release runner owns `Cargo.lock` and all workspace crate manifests under `crates/*/Cargo.toml`
 - omitted `--version` resolves the next Phoenix-date CalVer from fetched git tags for the current Phoenix day
 - the runner pushes the version commit, dispatches `.github/workflows/release-artifacts.yml`, and waits for it to finish
 - the same runner resumes a clean, already-versioned but unpublished `main` after a failed workflow
 - the workflow runs contributor checks, builds every supported platform, assembles and verifies artifacts and attestations, then uses `gh release create` as its final step so the tag and published release do not exist for a failed build
-- if the Forge release flow changes, update `scripts/cut-release.sh`, `docs/release.md`, `AGENTS.md`, this skill, and the `cut-release` skill together
+- if the Forge release flow changes, update `release.toml`, `docs/release.md`, `AGENTS.md`, this skill, the `release-runner` skill, and the `cut-release` skill together
 
 ## Output
 
