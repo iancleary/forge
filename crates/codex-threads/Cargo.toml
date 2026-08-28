@@ -1,6 +1,6 @@
 [package]
 name = "codex-threads"
-version = "20260828.0.0"
+version = "20260828.0.1"
 edition = "2024"
 description = "Search and inspect local Codex thread archives"
 license = "MIT"
