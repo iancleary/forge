@@ -54,7 +54,7 @@ Forge directly supports:
 
 - portable user-scoped agent skills
 - Codex user policy and targeted configuration fragments
-- AI harnesses such as autoreview, autoresearch, and restartable loops
+- AI harnesses such as restartable loops
 - local Codex session search through `codex-threads`
 - narrow agent-facing Linear and Slack CLIs
 - skill-backed artifact tools such as Mermaid and bytefield rendering

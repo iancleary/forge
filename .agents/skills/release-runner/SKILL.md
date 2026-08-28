@@ -9,6 +9,15 @@ Use this skill when a repository has `release.toml` and the user asks to check, 
 
 The repo-local `release.toml` is the contract. It names the release runner and the read-only checks. The runner may be an ordinary command or a Forge built-in such as `builtin:cargo-release`. Do not infer a separate release flow from memory or from generic Cargo habits.
 
+For ordinary SemVer releases, pass the intended bump through `forge release run`:
+
+```sh
+forge release run --dry-run --bump patch --json
+forge release run --apply --bump minor --json
+```
+
+Use `--version <v>` only when the user or repo contract requires an exact version, prerelease, build metadata, CalVer, date tag, or other repo-specific version. Do not pass both `--bump` and `--version`.
+
 ## Required Sequence
 
 1. Read `release.toml`.

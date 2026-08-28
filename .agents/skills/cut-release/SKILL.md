@@ -32,7 +32,7 @@ Before running anything mutating:
 - read repo-local instructions such as `AGENTS.md`, `CLAUDE.md`, `README.md`, and `docs/release.md`
 - inspect the task runner and release script named by those instructions
 - identify the versioning scheme, such as SemVer, CalVer, or repo-specific date tags
-- identify whether the repo can infer the next version or requires `--version`
+- identify whether the repo accepts a release intent such as `--bump patch|minor|major`, can infer the next version, or requires `--version`
 - identify how release notes are supplied, such as `--notes-file`, generated notes, or a template
 - identify whether checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflow files define the release gate
 - identify the local checkout checks the runner expects when no checked-in workflow owns validation
@@ -53,6 +53,8 @@ Prefer the repo's documented entrypoint:
 Use dry-run first when the repo supports it and either the user asked for verification or version inference, notes generation, file mutation, or publishing behavior has meaningful risk.
 
 Use read-only version query commands when available instead of parsing manifests by hand.
+
+For ordinary SemVer releases through `forge release`, pass the user's intended bump to the runner, such as `forge release run --dry-run --bump patch --json`, instead of calculating and passing the next version yourself. Use `--version <v>` only when the user or repo contract requires an exact version. Do not pass both.
 
 Prefer the repo's local checkout checks when the release contract does not point to checked-in GitHub Actions, Gitea Actions, GitLab CI, or another committed release workflow. When committed workflows exist and are part of the release contract, use the runner's workflow-dispatch/watch path or follow the repo's documented handoff instead of substituting an ad hoc local-only check.
 

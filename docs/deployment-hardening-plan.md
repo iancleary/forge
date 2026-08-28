@@ -329,7 +329,7 @@ git diff --check
 
 Run the new POSIX harness directly. Run the PowerShell harness on native Windows. Exercise artifact construction for both archive formats.
 
-Run the repo `autoreview` skill after tests pass. Do not bypass its TruffleHog prerequisite. Report the missing prerequisite if review cannot start.
+Run structured review and secret scanning after tests pass. Do not bypass the secret scanner prerequisite. Report the missing prerequisite if review cannot start.
 
 ## Delegation constraints
 
