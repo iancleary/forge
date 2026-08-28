@@ -42,6 +42,7 @@ fn run_forge_with_env(
         .args(args)
         .env("FORGE_CONFIG_DIR", config_dir)
         .env("HOME", home_dir)
+        .env("CARGO_HOME", home_dir.join(".cargo"))
         .current_dir(repo_root());
     for (key, value) in extra_envs {
         command.env(key, value);
@@ -170,30 +171,67 @@ fn cli_errors_have_stable_codes_for_common_mistakes() {
 }
 
 #[test]
-fn cli_self_update_reports_all_unmanaged_collisions_actionably() {
-    let root = temp_path("self-update-collisions");
+fn cli_self_update_backs_up_unmanaged_skill_dirs() {
+    let root = temp_path("self-update-skill-backups");
     let config_dir = root.join("config");
     let home_dir = root.join("home");
     let unmanaged_root = home_dir.join(".agents").join("skills");
+    let cargo_bin_root = home_dir.join(".cargo").join("bin");
     fs::create_dir_all(&config_dir).expect("create config dir");
     fs::create_dir_all(&unmanaged_root).expect("create unmanaged root");
+    fs::create_dir_all(&cargo_bin_root).expect("create cargo bin root");
+    fs::write(
+        cargo_bin_root.join(format!("slack-query{}", env::consts::EXE_SUFFIX)),
+        "current",
+    )
+    .expect("write current slack-query binary");
 
     let skill_dir = unmanaged_root.join("forge-tools");
     fs::create_dir_all(&skill_dir).expect("create unmanaged skill dir");
     fs::write(skill_dir.join("SKILL.md"), "unmanaged").expect("write unmanaged skill file");
 
     let update = run_forge(&["--json", "self", "update"], &config_dir, &home_dir);
-    assert!(!update.status.success());
-    let stderr = String::from_utf8(update.stderr).expect("stderr utf8");
-    let err_json: Value = serde_json::from_str(stderr.trim()).expect("error json");
-    assert_eq!(err_json["ok"], false);
-    assert_eq!(
-        err_json["error"]["code"], "unmanaged_collision",
-        "{err_json}"
+    assert!(
+        update.status.success(),
+        "{}",
+        String::from_utf8_lossy(&update.stderr)
     );
-    let msg = err_json["error"]["message"].as_str().unwrap_or("");
-    assert!(msg.contains("forge-tools"));
-    assert!(msg.contains("forge skills install --all --force-unmanaged"));
+    let stdout = String::from_utf8(update.stdout).expect("stdout utf8");
+    let update_json: Value = serde_json::from_str(&stdout).expect("update json");
+    assert_eq!(update_json["ok"], true);
+    assert_eq!(
+        update_json["data"]["nonmanaged_skill_dirs_backed_up"], 1,
+        "{update_json}"
+    );
+    let changed_paths = update_json["data"]["changed_paths"]
+        .as_array()
+        .expect("changed paths array");
+    assert!(changed_paths.iter().any(|entry| {
+        entry["action"] == "backed_up"
+            && entry["path"]
+                .as_str()
+                .is_some_and(|path| path.contains("forge-tools"))
+    }));
+    assert!(skill_dir.join("SKILL.md").exists());
+    assert_ne!(
+        fs::read_to_string(skill_dir.join("SKILL.md")).expect("read installed skill"),
+        "unmanaged"
+    );
+    let backup_batches = fs::read_dir(config_dir.join("skill-backups"))
+        .expect("read backup root")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read backup entries");
+    assert_eq!(backup_batches.len(), 1);
+    assert_eq!(
+        fs::read_to_string(
+            backup_batches[0]
+                .path()
+                .join("forge-tools")
+                .join("SKILL.md")
+        )
+        .expect("read backed up skill"),
+        "unmanaged"
+    );
 
     let _ = fs::remove_dir_all(root);
 }
