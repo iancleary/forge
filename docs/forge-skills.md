@@ -36,7 +36,6 @@ Current Forge-managed skills:
 - `test-strategy`
 - `code-simplification`
 - `documentation-and-adrs`
-- `effective-loop-writer`
 - `bytefield-diagrams`
 - `codegraph`
 - `git-forge-body-file`

@@ -10,7 +10,7 @@ Forge should own portable Codex behavior such as:
 
 - user-scoped skills that should be available everywhere
 - router skills that help Codex choose the right narrower skill
-- shared operating workflow skills such as `design-algorithm` and `effective-loop-writer`
+- shared operating workflow skills such as `design-algorithm`
 - high-signal policy and workflow guidance that should survive across machines and repos
 - documented install and update flows for those assets
 
@@ -94,7 +94,7 @@ Current pattern:
 - crate-specific and domain skills such as `linear-cli`, `mermaid-diagrams`, `typst-documents`, `codegraph`, `slack-query-cli`, and `slack-agent-cli` handle domain execution
 - shared operating skills such as `design-algorithm` handle shaping and reduction work that crosses domains
 - engineering workflow skills such as `source-driven-development`, `debugging-and-error-recovery`, `api-and-interface-design`, `security-and-hardening`, `test-strategy`, `code-simplification`, and `documentation-and-adrs` provide compact close-to-code procedures without importing a full upstream lifecycle pack
-- loop-design skills such as `effective-loop-writer` turn unattended agent-loop ideas into file-backed loop artifacts
+- workflow-design skills turn repeatable agent-loop ideas into file-backed artifacts when that surface is managed outside Forge
 
 Router skills should:
 
