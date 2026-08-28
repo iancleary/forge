@@ -26,7 +26,6 @@ Pick the narrowest CLI skill that matches the job:
 - `test-strategy`: choose focused verification for features, bug fixes, refactors, and regressions without forcing ceremony.
 - `code-simplification`: simplify working code while preserving behavior and keeping proof intact.
 - `documentation-and-adrs`: update durable docs, workflow policy, command contracts, and ADR-style decisions.
-- `effective-loop-writer`: interview the human and scaffold a restartable file-backed loop under `loops/`.
 - `create-release-process`: create, audit, or update a repo-local release workflow that future releases can execute deterministically.
 - `cut-release`: execute an existing repo-local release workflow by running the checked-in release runner.
 - `chrome-devtools-mcp`: Codex MCP setup and live Chrome debugging with console/network/DOM/trace inspection.
@@ -43,7 +42,6 @@ Default operating rules:
 - Use `security-and-hardening` when a concrete trust boundary is in scope.
 - Use `code-simplification` only after behavior is known and proof is available or cheap.
 - Use `documentation-and-adrs` when the change updates durable workflow, command, or architecture knowledge.
-- Use `effective-loop-writer` when the user wants to design or scaffold an unattended loop, generator-evaluator workflow, overnight agent procedure, or reusable loop artifact.
 - Use `create-release-process` for release workflow maintenance and `cut-release` for ordinary release execution after the workflow exists.
 - Use `webwright` when the user asks Codex to complete or craft a reusable live web workflow with screenshot evidence; use `chrome-devtools-mcp` instead when the job is debugging an app through console, network, DOM, screenshot, or trace inspection.
 - Prefer the crate-specific skill once the target CLI is clear.
