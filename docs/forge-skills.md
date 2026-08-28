@@ -75,12 +75,17 @@ Forge distinguishes between:
 
 Forge-managed installs may be overwritten by `forge skills install` or `forge self update`.
 
-Unmanaged collisions must fail unless the user explicitly opts into taking ownership.
+During release reconciliation, Forge backs up skill directories in managed
+target roots that are not current Forge-managed installs. Backups are moved
+under the Forge config directory at `skill-backups/<timestamp>/`.
+
+Unmanaged collisions outside release reconciliation must fail unless the user explicitly opts into taking ownership.
 
 This is the key rule:
 
 - overwriting Forge-managed installed skills is normal deployment behavior
-- overwriting unmanaged skill directories is not
+- release reconciliation removes non-current skill directories from active use by moving them to a backup directory
+- ad hoc skill install commands do not sweep unrelated skill directories
 
 ## Commands
 
@@ -200,6 +205,20 @@ Behavior:
 - overwrites the target if the target is Forge-managed
 - updates the install manifest to record `source_kind = "release"`
 - fails clearly if the target is unmanaged unless `--force-unmanaged` is set on install first
+
+### Release Cleanup
+
+`forge self update` reconciles the user skill root against the current release
+skill contract. Any skill directory or symlink under that root that is not a
+current Forge-managed install is moved to:
+
+```text
+<forge-config-dir>/skill-backups/<unix-timestamp>/<skill-name>
+```
+
+This includes formerly managed skills removed from Forge releases and
+unmanaged skill folders that would otherwise keep being loaded by agents.
+Forge records the backup moves in update output as `backed_up` changed paths.
 
 ## Target Model
 

@@ -804,6 +804,7 @@ struct UpdateResult {
     legacy_binaries_removed: usize,
     obsolete_root_files_removed: usize,
     legacy_skill_installs_migrated: usize,
+    nonmanaged_skill_dirs_backed_up: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -845,6 +846,9 @@ struct LocalContractReconcileSummary {
     legacy_binaries_removed: usize,
     obsolete_root_files_removed: usize,
     legacy_skill_installs_migrated: usize,
+    nonmanaged_skill_dirs_backed_up: usize,
+    #[serde(skip)]
+    nonmanaged_skill_backups: Vec<UpdateChangedPath>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1734,6 +1738,8 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let branch = None;
     let mut skills_reconciled = 0;
     let mut codex_reconciled = 0;
+    let mut nonmanaged_skill_dirs_backed_up = 0usize;
+    let mut changed_paths = Vec::new();
     let progress = UpdateProgress::new(output);
 
     let mut state = load_state_or_default()?;
@@ -1743,6 +1749,21 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     // Detect collisions already known to the running Forge release before any
     // network work. This keeps local ownership errors actionable offline.
     let current_release_skill_defs = load_release_skills();
+    let current_release_skill_names = current_release_skill_defs
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<BTreeSet<_>>();
+    let preflight_skill_backups = backup_nonmanaged_skill_dirs(
+        &config_dir_path()?,
+        &user_skills_dir()?,
+        &mut state,
+        &current_release_skill_names,
+    )?;
+    if !preflight_skill_backups.is_empty() {
+        nonmanaged_skill_dirs_backed_up += preflight_skill_backups.len();
+        changed_paths.extend(preflight_skill_backups);
+        save_state(&state_file_path()?, &state)?;
+    }
     let current_status = skills_status_with_defs(
         &config,
         &state,
@@ -1823,7 +1844,6 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
     let mut artifact_sha256_expected = None;
     let mut artifact_sha256_downloaded = None;
     let mut installed_binaries = Vec::new();
-    let mut changed_paths = Vec::new();
     let (after_version, local_contract, mut reconcile_changed) =
         if before_version.as_deref() != Some(target_version.as_str()) {
             progress.step(format!(
@@ -1870,7 +1890,8 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
                 || local_contract.config_dirs_migrated > 0
                 || local_contract.legacy_binaries_removed > 0
                 || local_contract.obsolete_root_files_removed > 0
-                || local_contract.legacy_skill_installs_migrated > 0;
+                || local_contract.legacy_skill_installs_migrated > 0
+                || local_contract.nonmanaged_skill_dirs_backed_up > 0;
             (after_version, local_contract, reconcile_changed)
         } else {
             progress.step(format!(
@@ -1888,9 +1909,12 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
             let reconcile_changed = local_contract.config_dirs_migrated > 0
                 || local_contract.legacy_binaries_removed > 0
                 || local_contract.obsolete_root_files_removed > 0
-                || local_contract.legacy_skill_installs_migrated > 0;
+                || local_contract.legacy_skill_installs_migrated > 0
+                || local_contract.nonmanaged_skill_dirs_backed_up > 0;
             (before_version.clone(), local_contract, reconcile_changed)
         };
+    nonmanaged_skill_dirs_backed_up += local_contract.nonmanaged_skill_dirs_backed_up;
+    changed_paths.extend(local_contract.nonmanaged_skill_backups.clone());
 
     if skills_reconciled == 0 && codex_reconciled == 0 && !reconcile_changed {
         let targets = mainline_targets_for_reconcile(&config, &state, None)?;
@@ -1978,6 +2002,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<UpdateResult> {
         legacy_binaries_removed: local_contract.legacy_binaries_removed,
         obsolete_root_files_removed: local_contract.obsolete_root_files_removed,
         legacy_skill_installs_migrated: local_contract.legacy_skill_installs_migrated,
+        nonmanaged_skill_dirs_backed_up,
     })
 }
 
@@ -3446,6 +3471,10 @@ fn format_update_human(result: &UpdateResult) -> String {
     rows.push((
         "legacy skill installs migrated",
         result.legacy_skill_installs_migrated.to_string(),
+    ));
+    rows.push((
+        "nonmanaged skill dirs backed up",
+        result.nonmanaged_skill_dirs_backed_up.to_string(),
     ));
 
     let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
@@ -5637,8 +5666,132 @@ fn reconcile_release_local_contract_at_paths(
 
     summary.legacy_skill_installs_migrated =
         migrate_managed_skill_installs(skills_root, state, skill_contract)?;
+    let current_skill_names = skill_contract
+        .skills
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<BTreeSet<_>>();
+    summary.nonmanaged_skill_backups =
+        backup_nonmanaged_skill_dirs(config_root, skills_root, state, &current_skill_names)?;
+    summary.nonmanaged_skill_dirs_backed_up = summary.nonmanaged_skill_backups.len();
 
     Ok(summary)
+}
+
+fn backup_nonmanaged_skill_dirs(
+    config_root: &Path,
+    skills_root: &Path,
+    state: &mut ForgeState,
+    current_skill_names: &BTreeSet<String>,
+) -> Result<Vec<UpdateChangedPath>> {
+    if !skills_root.exists() {
+        state
+            .managed_skill_installs
+            .retain(|install| current_skill_names.contains(&install.skill_name));
+        return Ok(Vec::new());
+    }
+    if is_symlink_path(skills_root)? {
+        bail!(
+            "refusing to clean managed skills root through symlink: {}",
+            skills_root.display()
+        );
+    }
+
+    let managed_paths = state
+        .managed_skill_installs
+        .iter()
+        .map(|install| install.target_path.clone())
+        .collect::<BTreeSet<_>>();
+    let mut candidates = BTreeSet::new();
+    for entry in fs::read_dir(skills_root)
+        .with_context(|| format!("failed to read {}", skills_root.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed to read {}", skills_root.display()))?;
+        let path = entry.path();
+        let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else {
+            candidates.insert(path);
+            continue;
+        };
+        let managed = managed_paths.contains(&path.display().to_string());
+        if managed && current_skill_names.contains(&name) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&path)
+            .with_context(|| format!("failed to read metadata for {}", path.display()))?;
+        let file_type = metadata.file_type();
+        if file_type.is_dir() || file_type.is_symlink() {
+            candidates.insert(path);
+        }
+    }
+
+    for install in &state.managed_skill_installs {
+        if current_skill_names.contains(&install.skill_name) {
+            continue;
+        }
+        let target_path = PathBuf::from(&install.target_path);
+        if target_path
+            .parent()
+            .is_some_and(|parent| parent == skills_root)
+        {
+            candidates.insert(target_path);
+        }
+    }
+
+    if candidates.is_empty() {
+        state
+            .managed_skill_installs
+            .retain(|install| current_skill_names.contains(&install.skill_name));
+        return Ok(Vec::new());
+    }
+
+    let backup_root = config_root
+        .join("skill-backups")
+        .join(now_unix()?.to_string());
+    fs::create_dir_all(&backup_root)
+        .with_context(|| format!("failed to create {}", backup_root.display()))?;
+
+    let mut changed_paths = Vec::new();
+    let mut backed_up_paths = BTreeSet::new();
+    for path in candidates {
+        if !path.exists() {
+            continue;
+        }
+        if path.parent() != Some(skills_root) {
+            bail!(
+                "refusing to back up skill outside managed skills root: {}",
+                path.display()
+            );
+        }
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| anyhow!("skill path has no file name: {}", path.display()))?;
+        let backup_path = backup_root.join(file_name);
+        if backup_path.exists() {
+            bail!(
+                "refusing to overwrite existing skill backup: {}",
+                backup_path.display()
+            );
+        }
+        fs::rename(&path, &backup_path).with_context(|| {
+            format!(
+                "failed to back up nonmanaged skill {} -> {}",
+                path.display(),
+                backup_path.display()
+            )
+        })?;
+        backed_up_paths.insert(path.display().to_string());
+        changed_paths.push(UpdateChangedPath {
+            action: "backed_up".to_string(),
+            path: format!("{} -> {}", path.display(), backup_path.display()),
+        });
+    }
+
+    state.managed_skill_installs.retain(|install| {
+        current_skill_names.contains(&install.skill_name)
+            && !backed_up_paths.contains(&install.target_path)
+    });
+
+    Ok(changed_paths)
 }
 
 fn remove_legacy_binaries_for_tool(
@@ -9734,6 +9887,100 @@ EOF
     }
 
     #[test]
+    fn reconcile_release_local_contract_backs_up_nonmanaged_skill_dirs() {
+        let root = temp_path("release-skill-cleanup");
+        let config_root = root.join("config");
+        let cargo_bin_root = root.join("cargo-bin");
+        let skills_root = root.join("skills");
+        fs::create_dir_all(&config_root).expect("create config root");
+        fs::create_dir_all(&cargo_bin_root).expect("create cargo bin root");
+        fs::create_dir_all(&skills_root).expect("create skills root");
+        fs::write(
+            cargo_bin_root.join(format!("slack-query{}", env::consts::EXE_SUFFIX)),
+            "current",
+        )
+        .expect("write current binary");
+
+        let current_skill = load_release_skills()
+            .into_iter()
+            .find(|skill| skill.name == "forge-tools")
+            .expect("forge-tools release skill");
+        let current_root = skills_root.join("forge-tools");
+        write_skill_definition(&current_root, &current_skill).expect("write current skill");
+
+        let removed_root = skills_root.join("removed-skill");
+        fs::create_dir_all(&removed_root).expect("create removed skill");
+        fs::write(removed_root.join("SKILL.md"), "removed\n").expect("write removed skill");
+
+        let unmanaged_root = skills_root.join("scratch-skill");
+        fs::create_dir_all(&unmanaged_root).expect("create unmanaged skill");
+        fs::write(unmanaged_root.join("SKILL.md"), "scratch\n").expect("write unmanaged skill");
+
+        let mut state = ForgeState {
+            managed_skill_installs: vec![
+                ManagedSkillInstall {
+                    skill_name: "forge-tools".to_string(),
+                    managed_by: "forge".to_string(),
+                    source_kind: SkillSourceKind::Release,
+                    source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                    source_ref: "test".to_string(),
+                    source_hash: hash_skill_files(&current_skill.files),
+                    source_repo_path: None,
+                    target_kind: SkillTargetKind::User,
+                    target_role: SkillTargetRole::Mainline,
+                    target_root: skills_root.display().to_string(),
+                    target_path: current_root.display().to_string(),
+                    installed_at_unix: 0,
+                },
+                ManagedSkillInstall {
+                    skill_name: "removed-skill".to_string(),
+                    managed_by: "forge".to_string(),
+                    source_kind: SkillSourceKind::Release,
+                    source_repo_slug: FORGE_REPO_SLUG.to_string(),
+                    source_ref: "test".to_string(),
+                    source_hash: "old".to_string(),
+                    source_repo_path: None,
+                    target_kind: SkillTargetKind::User,
+                    target_role: SkillTargetRole::Mainline,
+                    target_root: skills_root.display().to_string(),
+                    target_path: removed_root.display().to_string(),
+                    installed_at_unix: 0,
+                },
+            ],
+            ..ForgeState::default()
+        };
+
+        let summary = reconcile_release_local_contract_at_paths(
+            &release_tools_contract().expect("release tools contract"),
+            &config_root,
+            &cargo_bin_root,
+            &skills_root,
+            &mut state,
+            &release_skills_contract().expect("release skills contract"),
+        )
+        .expect("reconcile release local contract");
+
+        assert_eq!(summary.nonmanaged_skill_dirs_backed_up, 2);
+        assert_eq!(summary.nonmanaged_skill_backups.len(), 2);
+        assert!(current_root.exists());
+        assert!(!removed_root.exists());
+        assert!(!unmanaged_root.exists());
+        assert_eq!(state.managed_skill_installs.len(), 1);
+        assert_eq!(state.managed_skill_installs[0].skill_name, "forge-tools");
+
+        let backup_batches = fs::read_dir(config_root.join("skill-backups"))
+            .expect("read backup root")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read backup entries");
+        assert_eq!(backup_batches.len(), 1);
+        let backup_root = backup_batches[0].path();
+        assert!(backup_root.join("removed-skill").join("SKILL.md").exists());
+        assert!(backup_root.join("scratch-skill").join("SKILL.md").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn migrate_managed_skill_installs_renames_legacy_skill_dirs_and_state() {
         let root = temp_path("release-skill-migration");
         let skills_root = root.join("skills");
@@ -10119,6 +10366,7 @@ version = "0.1.0"
             legacy_binaries_removed: 0,
             obsolete_root_files_removed: 0,
             legacy_skill_installs_migrated: 0,
+            nonmanaged_skill_dirs_backed_up: 0,
         };
 
         let rendered = format_update_human(&result);
