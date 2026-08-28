@@ -639,6 +639,12 @@ struct ReleaseRunArgs {
     version: Option<String>,
     #[arg(
         long,
+        value_enum,
+        help = "SemVer bump intent passed through to compatible runners"
+    )]
+    bump: Option<ReleaseBumpArg>,
+    #[arg(
+        long,
         help = "Curated release notes file passed through to compatible runners"
     )]
     notes_file: Option<PathBuf>,
@@ -673,6 +679,23 @@ struct ForgeReleaseCutArgs {
         help = "Print the planned mutating commands without running them"
     )]
     dry_run: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ReleaseBumpArg {
+    Major,
+    Minor,
+    Patch,
+}
+
+impl ReleaseBumpArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Major => "major",
+            Self::Minor => "minor",
+            Self::Patch => "patch",
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -2132,9 +2155,6 @@ fn skills_validate(args: SkillsValidateArgs) -> Result<SkillsValidateResult> {
                 "slack-agent-cli",
                 "codex-threads-cli",
                 "forge-cli",
-                "autoreview",
-                "autoresearch-create",
-                "autoresearch-finalize",
                 "create-release-process",
                 "cut-release",
                 "typst-documents",
@@ -6400,19 +6420,6 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         ),
         embedded_skill!("typst-documents"),
         embedded_skill!("learning-systems"),
-        embedded_skill!("autoresearch-create"),
-        embedded_skill!("autoresearch-finalize", files = ["finalize.sh"]),
-        embedded_skill!(
-            "autoreview",
-            files = [
-                ("scripts/autoreview", executable = true),
-                ("scripts/test-review-harness", executable = true),
-                ("scripts/test-review-harness.ps1", executable = false),
-                ("scripts/test-review-harness.py", executable = true),
-                ("scripts/autoreview_test.py", executable = false),
-                ("THIRD_PARTY_NOTICES.md", executable = false),
-            ]
-        ),
         embedded_skill!("create-release-process"),
         embedded_skill!("cut-release"),
         embedded_skill!("release-runner"),
@@ -6683,6 +6690,9 @@ fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
     if args.apply && args.dry_run {
         bail!("forge release run accepts either --dry-run or --apply, not both");
     }
+    if args.version.is_some() && args.bump.is_some() {
+        bail!("forge release run accepts either --version or --bump, not both");
+    }
 
     let context = load_release_context(args.repo_path, args.config)?;
     let mode = if args.apply { "apply" } else { "dry_run" };
@@ -6690,6 +6700,7 @@ fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
         &context.config,
         args.apply,
         args.version.as_deref(),
+        args.bump,
         args.notes_file.as_deref(),
         args.not_latest,
     )?;
@@ -6701,7 +6712,7 @@ fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
         bail!("forge release run failed: {detail}");
     }
 
-    Ok(release_result(
+    let mut result = release_result(
         "run",
         mode,
         &context,
@@ -6711,7 +6722,9 @@ fn release_run(args: ReleaseRunArgs) -> Result<ReleaseResult> {
         true,
         true,
         status,
-    ))
+    );
+    result.runner = runner;
+    Ok(result)
 }
 
 struct ReleaseContext {
@@ -6831,6 +6844,7 @@ fn release_runner_for_mode(
     config: &ReleaseConfig,
     apply: bool,
     version: Option<&str>,
+    bump: Option<ReleaseBumpArg>,
     notes_file: Option<&Path>,
     not_latest: bool,
 ) -> Result<Vec<String>> {
@@ -6844,6 +6858,10 @@ fn release_runner_for_mode(
     if let Some(version) = version {
         command.push("--version".to_string());
         command.push(version.to_string());
+    }
+    if let Some(bump) = bump {
+        command.push("--bump".to_string());
+        command.push(bump.as_str().to_string());
     }
     if let Some(notes_file) = notes_file {
         command.push("--notes-file".to_string());
@@ -7542,7 +7560,7 @@ fn parse_cargo_release_options(args: &[String]) -> Result<CargoReleaseOptions> {
                 options.notes_required = true;
                 index += 1;
             }
-            "--version" | "--notes-file" | "--not-latest" | "--dry-run" => break,
+            "--version" | "--bump" | "--notes-file" | "--not-latest" | "--dry-run" => break,
             other => bail!("unknown {CARGO_RELEASE_BUILTIN} option: {other}"),
         }
     }
@@ -7567,6 +7585,15 @@ fn parse_cargo_release_provider(value: &str) -> Result<CargoReleaseProvider> {
     }
 }
 
+fn parse_release_bump(value: &str) -> Result<ReleaseBumpArg> {
+    match value {
+        "major" => Ok(ReleaseBumpArg::Major),
+        "minor" => Ok(ReleaseBumpArg::Minor),
+        "patch" => Ok(ReleaseBumpArg::Patch),
+        other => bail!("unsupported SemVer bump: {other}; expected major, minor, or patch"),
+    }
+}
+
 impl CargoReleaseProvider {
     fn display_name(self) -> &'static str {
         match self {
@@ -7579,6 +7606,7 @@ impl CargoReleaseProvider {
 fn cargo_release_inner(repo_path: &Path, args: &[String]) -> Result<String> {
     let mut options = parse_cargo_release_options(args)?;
     let mut version = None;
+    let mut bump = None;
     let mut notes_file = None;
     let mut not_latest = false;
     let mut dry_run = false;
@@ -7592,6 +7620,10 @@ fn cargo_release_inner(repo_path: &Path, args: &[String]) -> Result<String> {
             }
             "--version" => {
                 version = Some(required_builtin_arg(args, index)?);
+                index += 2;
+            }
+            "--bump" => {
+                bump = Some(parse_release_bump(&required_builtin_arg(args, index)?)?);
                 index += 2;
             }
             "--notes-file" => {
@@ -7610,11 +7642,14 @@ fn cargo_release_inner(repo_path: &Path, args: &[String]) -> Result<String> {
         }
     }
 
-    let version = version.ok_or_else(|| {
-        anyhow!("--version <semver> is required; this runner does not infer SemVer bumps")
-    })?;
-    validate_semver_release_version(&version)?;
     let package = read_cargo_package_version(repo_path, &options.version_source)?;
+    let version = match (version, bump) {
+        (Some(_), Some(_)) => bail!("--version and --bump are mutually exclusive"),
+        (Some(version), None) => version,
+        (None, Some(bump)) => bumped_semver_release_version(&package.version, bump)?,
+        (None, None) => bail!("--version <semver> or --bump <major|minor|patch> is required"),
+    };
+    validate_semver_release_version(&version)?;
     if package.version == version {
         bail!("target version matches current version ({version})");
     }
@@ -7836,6 +7871,31 @@ fn validate_semver_core(core: &str) -> Result<()> {
     bail!("--version must be a SemVer value like 1.2.3")
 }
 
+fn bumped_semver_release_version(current_version: &str, bump: ReleaseBumpArg) -> Result<String> {
+    if current_version.contains('-') || current_version.contains('+') {
+        bail!(
+            "--bump requires a current package.version like 1.2.3; pass --version for prerelease or build metadata versions"
+        );
+    }
+    validate_semver_core(current_version)?;
+    let parts = current_version.split('.').collect::<Vec<_>>();
+    let major = parts[0]
+        .parse::<u64>()
+        .with_context(|| format!("invalid current SemVer version: {current_version}"))?;
+    let minor = parts[1]
+        .parse::<u64>()
+        .with_context(|| format!("invalid current SemVer version: {current_version}"))?;
+    let patch = parts[2]
+        .parse::<u64>()
+        .with_context(|| format!("invalid current SemVer version: {current_version}"))?;
+    let (major, minor, patch) = match bump {
+        ReleaseBumpArg::Major => (major + 1, 0, 0),
+        ReleaseBumpArg::Minor => (major, minor + 1, 0),
+        ReleaseBumpArg::Patch => (major, minor, patch + 1),
+    };
+    Ok(format!("{major}.{minor}.{patch}"))
+}
+
 fn remote_git_tag_exists(repo_path: &Path, tag: &str) -> Result<bool> {
     let output = run_command(
         repo_path,
@@ -7945,7 +8005,7 @@ fn release_result(
     exit_status: Option<i32>,
 ) -> ReleaseResult {
     let runner = if command == "run" && mode == "dry_run" {
-        release_runner_for_mode(&context.config, false, None, None, false)
+        release_runner_for_mode(&context.config, false, None, None, None, false)
             .unwrap_or_else(|_| context.config.release.runner.clone())
     } else {
         context.config.release.runner.clone()
@@ -8879,7 +8939,7 @@ mod tests {
     fn install_preserves_embedded_executable_skill_files() {
         use std::os::unix::fs::PermissionsExt;
 
-        let install_root = temp_path("autoreview-install");
+        let install_root = temp_path("librarian-install");
         fs::create_dir_all(&install_root).expect("create install root");
         let config = ForgeConfig::default();
         let mut state = ForgeState::default();
@@ -8888,7 +8948,7 @@ mod tests {
             &config,
             &mut state,
             InstallRequest {
-                skill_names: vec!["autoreview".to_string()],
+                skill_names: vec!["librarian".to_string()],
                 all: false,
                 source_kind: Some(SkillSourceKind::Release),
                 repo_path: None,
@@ -8901,31 +8961,16 @@ mod tests {
                 restrict_to_targets: None,
             },
         )
-        .expect("install autoreview");
+        .expect("install librarian");
 
-        let autoreview_mode = fs::metadata(
-            install_root
-                .join("autoreview")
-                .join("scripts")
-                .join("autoreview"),
-        )
-        .expect("autoreview metadata")
-        .permissions()
-        .mode()
-            & 0o777;
-        let harness_mode = fs::metadata(
-            install_root
-                .join("autoreview")
-                .join("scripts")
-                .join("test-review-harness"),
-        )
-        .expect("harness metadata")
-        .permissions()
-        .mode()
+        let checkout_mode = fs::metadata(install_root.join("librarian").join("checkout.sh"))
+            .expect("checkout metadata")
+            .permissions()
+            .mode()
             & 0o777;
         let notice_mode = fs::metadata(
             install_root
-                .join("autoreview")
+                .join("librarian")
                 .join("THIRD_PARTY_NOTICES.md"),
         )
         .expect("notice metadata")
@@ -8933,8 +8978,7 @@ mod tests {
         .mode()
             & 0o777;
 
-        assert_eq!(autoreview_mode, 0o755);
-        assert_eq!(harness_mode, 0o755);
+        assert_eq!(checkout_mode, 0o755);
         assert_eq!(notice_mode, 0o644);
 
         let _ = fs::remove_dir_all(install_root);
@@ -9524,24 +9568,6 @@ EOF
             contract
                 .skills
                 .iter()
-                .any(|skill| skill.name == "autoresearch-create")
-        );
-        assert!(
-            contract
-                .skills
-                .iter()
-                .any(|skill| skill.name == "autoresearch-finalize")
-        );
-        assert!(
-            contract
-                .skills
-                .iter()
-                .any(|skill| skill.name == "autoreview")
-        );
-        assert!(
-            contract
-                .skills
-                .iter()
                 .any(|skill| skill.name == "create-release-process")
         );
         assert!(
@@ -9781,45 +9807,24 @@ EOF
     }
 
     #[test]
-    fn release_skill_contract_tracks_autoreview_upstream() {
-        let contract = release_skills_contract().expect("release skills contract");
-        let skill = contract
-            .skills
-            .iter()
-            .find(|skill| skill.name == "autoreview")
-            .expect("autoreview release skill");
-
-        assert_eq!(
-            skill.upstream_url.as_deref(),
-            Some(
-                "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview"
-            )
-        );
-        assert_eq!(
-            skill.upstream_hash.as_deref(),
-            Some("be0750c0949d270193ffe3048d8ee4465f9886c9")
-        );
-    }
-
-    #[test]
     fn parse_github_tree_url_requires_pinned_commit() {
         let parsed = parse_github_tree_url(
-            "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview",
+            "https://github.com/mitsuhiko/agent-stuff/tree/13bc8f87970bec8830aab0f1c0487d35aa7c0917/skills/librarian",
         )
         .expect("parse pinned tree URL");
 
         assert_eq!(
             parsed,
             GithubTreeUrl {
-                owner: "openclaw".to_string(),
-                repo: "agent-skills".to_string(),
-                git_ref: "66cf3dfbf560e7a93b6525b0cd2c26d012099ad6".to_string(),
-                path: "skills/autoreview".to_string(),
+                owner: "mitsuhiko".to_string(),
+                repo: "agent-stuff".to_string(),
+                git_ref: "13bc8f87970bec8830aab0f1c0487d35aa7c0917".to_string(),
+                path: "skills/librarian".to_string(),
             }
         );
         assert!(
             parse_github_tree_url(
-                "https://github.com/openclaw/agent-skills/tree/main/skills/autoreview"
+                "https://github.com/mitsuhiko/agent-stuff/tree/main/skills/librarian"
             )
             .is_err()
         );
@@ -10138,6 +10143,29 @@ version = "0.1.0"
         );
         assert_eq!(value["changed_paths"][0]["action"], "installed");
         assert_eq!(value["changed_paths"][0]["path"], "/tmp/codex/AGENTS.md");
+    }
+
+    #[test]
+    fn bumped_semver_release_version_applies_major_minor_and_patch() {
+        assert_eq!(
+            bumped_semver_release_version("1.2.3", ReleaseBumpArg::Patch).unwrap(),
+            "1.2.4"
+        );
+        assert_eq!(
+            bumped_semver_release_version("1.2.3", ReleaseBumpArg::Minor).unwrap(),
+            "1.3.0"
+        );
+        assert_eq!(
+            bumped_semver_release_version("1.2.3", ReleaseBumpArg::Major).unwrap(),
+            "2.0.0"
+        );
+    }
+
+    #[test]
+    fn bumped_semver_release_version_rejects_prerelease_current_version() {
+        let error = bumped_semver_release_version("1.2.3-beta.1", ReleaseBumpArg::Patch)
+            .expect_err("prerelease versions require explicit version");
+        assert!(error.to_string().contains("pass --version"));
     }
 
     #[test]

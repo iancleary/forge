@@ -90,7 +90,7 @@ For skills with helper scripts, also install to a temporary `path:` target from 
 
 Current imported or adapted sources:
 
-- `steipete/agent-scripts`: operational helper and review patterns, especially `autoreview`
+- `steipete/agent-scripts`: operational helper and review patterns
 - `addyosmani/agent-skills`: engineering workflow patterns, adapted into compact Forge-managed skills
 - `microsoft/Webwright`: Webwright browser-task skill and reference workflow, adapted into a Forge-managed skill snapshot
 

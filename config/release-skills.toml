@@ -58,18 +58,6 @@ name = "typst-documents"
 name = "learning-systems"
 
 [[skills]]
-name = "autoresearch-create"
-legacy_names = ["pi-autoresearch"]
-
-[[skills]]
-name = "autoresearch-finalize"
-
-[[skills]]
-name = "autoreview"
-upstream_url = "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview"
-upstream_hash = "be0750c0949d270193ffe3048d8ee4465f9886c9"
-
-[[skills]]
 name = "create-release-process"
 
 [[skills]]

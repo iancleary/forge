@@ -348,6 +348,123 @@ publish = false
 }
 
 #[test]
+fn cli_release_run_passes_bump_to_runner() {
+    let root = temp_path("release-run-bump");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let repo_dir = root.join("repo");
+    let runner = root.join("runner.sh");
+    let log = root.join("runner.log");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+    fs::create_dir_all(&repo_dir).expect("create repo dir");
+    fs::write(
+        &runner,
+        format!(
+            "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$@\" > {}\n",
+            log.display()
+        ),
+    )
+    .expect("write runner");
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(&runner)
+            .expect("runner metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&runner, perms).expect("chmod runner");
+    }
+    fs::write(
+        repo_dir.join("release.toml"),
+        format!(
+            r#"[release]
+name = "demo"
+runner = ["{}"]
+dry_run_args = ["--dry-run"]
+publish = false
+"#,
+            runner.display()
+        ),
+    )
+    .expect("write release.toml");
+
+    let repo_arg = repo_dir.display().to_string();
+    let output = run_forge(
+        &[
+            "--json",
+            "release",
+            "run",
+            "--repo-path",
+            &repo_arg,
+            "--bump",
+            "patch",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let runner_args = fs::read_to_string(log).expect("read runner log");
+    assert_eq!(runner_args, "--dry-run\n--bump\npatch\n");
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let json: Value = serde_json::from_str(&stdout).expect("release run json");
+    assert_eq!(json["data"]["runner"][1], "--dry-run");
+    assert_eq!(json["data"]["runner"][2], "--bump");
+    assert_eq!(json["data"]["runner"][3], "patch");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cli_release_run_rejects_version_and_bump() {
+    let root = temp_path("release-run-version-and-bump");
+    let config_dir = root.join("config");
+    let home_dir = root.join("home");
+    let repo_dir = root.join("repo");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    fs::create_dir_all(&home_dir).expect("create home dir");
+    fs::create_dir_all(&repo_dir).expect("create repo dir");
+    fs::write(
+        repo_dir.join("release.toml"),
+        r#"[release]
+name = "demo"
+runner = ["rustc"]
+dry_run_args = ["--version"]
+publish = false
+"#,
+    )
+    .expect("write release.toml");
+
+    let repo_arg = repo_dir.display().to_string();
+    let output = run_forge(
+        &[
+            "--json",
+            "release",
+            "run",
+            "--repo-path",
+            &repo_arg,
+            "--version",
+            "1.2.4",
+            "--bump",
+            "patch",
+        ],
+        &config_dir,
+        &home_dir,
+    );
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        error["error"]["message"],
+        "forge release run accepts either --version or --bump, not both"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cli_version_is_available_in_json() {
     let root = temp_path("version-json");
     let config_dir = root.join("config");

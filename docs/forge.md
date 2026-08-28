@@ -112,8 +112,8 @@ Provides the pinned bytefield renderer used by the managed bytefield skill. This
 ```sh
 forge release check
 forge release plan
-forge release run --dry-run
-forge release run --apply
+forge release run --dry-run [--bump patch|minor|major]
+forge release run --apply [--bump patch|minor|major]
 ```
 
 Runs the repo-local release contract from `release.toml`. The runner may be an ordinary checked-in command or a Forge built-in configured entirely by the TOML file.
@@ -122,7 +122,8 @@ Runs the repo-local release contract from `release.toml`. The runner may be an o
 - `plan` runs optional current and next version query commands.
 - `run --dry-run` invokes `[release].runner` plus `[release].dry_run_args`.
 - `run --apply` invokes `[release].runner` without dry-run arguments and may publish.
-- `run --version`, `run --notes-file`, and `run --not-latest` pass release options through to compatible runners.
+- `run --bump`, `run --version`, `run --notes-file`, and `run --not-latest` pass release options through to compatible runners.
+- `run --bump` is mutually exclusive with `run --version`.
 
 Agents must use `--json`. They should run `check` and `plan` before `run`, and must not use `--apply` unless the user explicitly asked to publish or apply a release.
 

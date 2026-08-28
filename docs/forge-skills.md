@@ -44,9 +44,6 @@ Current Forge-managed skills:
 - `mermaid-diagrams`
 - `typst-documents`
 - `learning-systems`
-- `autoresearch-create`
-- `autoresearch-finalize`
-- `autoreview`
 - `create-release-process`
 - `cut-release`
 - `thinking-in-the-limit`
@@ -144,9 +141,9 @@ Upstream checks are opt-in because they fetch the network. Release skills can de
 
 ```json
 {
-  "url": "https://github.com/openclaw/agent-skills/tree/66cf3dfbf560e7a93b6525b0cd2c26d012099ad6/skills/autoreview",
-  "expected_hash": "be0750c0949d270193ffe3048d8ee4465f9886c9",
-  "actual_hash": "be0750c0949d270193ffe3048d8ee4465f9886c9",
+  "url": "https://github.com/mitsuhiko/agent-stuff/tree/13bc8f87970bec8830aab0f1c0487d35aa7c0917/skills/librarian",
+  "expected_hash": "d9c9e4f484d7aed8b71f0e9dda7b0abddbdf6b13",
+  "actual_hash": "d9c9e4f484d7aed8b71f0e9dda7b0abddbdf6b13",
   "status": "up_to_date"
 }
 ```

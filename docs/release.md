@@ -22,6 +22,7 @@ Optional flags:
 
 ```sh
 forge release run --apply --version 20260415.0.1 --json
+forge release run --apply --bump patch --json
 forge release run --apply --notes-file notes.md --json
 forge release run --dry-run --json
 forge release current-version
@@ -193,7 +194,7 @@ runner = [
 ]
 ```
 
-That runner requires `--version <semver>` because it does not infer the next SemVer bump. It updates the configured Cargo manifest and lockfile, runs configured checks after the temporary version bump, restores files during dry-runs, commits and tags real releases, pushes the branch and tag, and then creates the provider release. GitHub uses `gh release create`; Gitea uses `tea releases create`. Add `--notes-required` to the runner array when real releases must provide `--notes-file`.
+That runner accepts either `--bump patch|minor|major` or `--version <semver>`, with the two flags mutually exclusive. Agents should use `--bump` when the release intent is ordinary SemVer movement and reserve `--version` for an exact requested version, prerelease, build metadata, or repo-specific policy. The runner updates the configured Cargo manifest and lockfile, runs configured checks after the temporary version bump, restores files during dry-runs, commits and tags real releases, pushes the branch and tag, and then creates the provider release. GitHub uses `gh release create`; Gitea uses `tea releases create`. Add `--notes-required` to the runner array when real releases must provide `--notes-file`.
 
 The Forge-managed `release-runner` skill contains the agent procedure for using this contract.
 
@@ -356,6 +357,7 @@ gh release create <version> <assets...> \
 
 ## Suggested Flags
 
+- `--bump patch|minor|major`
 - `--version <v>`
 - `current-version`
 - `next-version`

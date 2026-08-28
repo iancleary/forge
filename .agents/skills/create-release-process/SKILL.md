@@ -49,7 +49,7 @@ The deployed skill supplies the pattern. The target repo supplies the contract.
 Make the repo-local release process explicit about:
 
 - versioning scheme and whether the next version can be inferred
-- required version argument shape when inference is unsafe
+- supported release intent arguments, such as `--bump patch|minor|major` for ordinary SemVer movement or `--version <v>` for exact versions when inference is unsafe
 - release notes format and source, such as `--notes-file`, generated notes, or a checked-in template
 - files the runner may mutate, including manifests and lockfiles
 - validation commands that must pass before publishing
@@ -69,6 +69,8 @@ When creating or updating the workflow:
 
 - create or update a checked-in release runner
 - make `--dry-run` available for previewing the mutating sequence
+- prefer `forge release run --dry-run --bump patch|minor|major --json` and `forge release run --apply --bump patch|minor|major --json` when a SemVer repo can safely derive the exact next version from the current manifest
+- keep `--bump` mutually exclusive with `--version`; use `--version <v>` for exact requested versions, prereleases, build metadata, CalVer, date tags, or repo-specific policy
 - have the runner execute the repo's explicit local checkout checks before publication when no checked-in CI/release workflow owns that validation
 - if checked-in GitHub Actions, Gitea Actions, GitLab CI, or equivalent workflows exist, make the runner invoke, monitor, or clearly defer to those workflows according to the repo's documented release gate
 - add read-only version query commands when useful, such as `forge release current-version` and `forge release next-version`
