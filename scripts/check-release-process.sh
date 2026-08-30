@@ -5,6 +5,7 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="$ROOT/.github/workflows/release-artifacts.yml"
 TARGETS="$ROOT/config/release-targets.toml"
+EXAMPLES="$ROOT/examples/release"
 LOG="$(mktemp)"
 STUBS="$(mktemp -d)"
 TEST_ROOT="$(mktemp -d)"
@@ -54,6 +55,21 @@ grep -Eq 'forge-release-manifest.json' "$ROOT/scripts/build-forge-release-manife
 grep -Eq -- '--source-digest "\$RELEASE_SHA"' "$WORKFLOW" || fail "workflow attestations must be pinned to the release commit"
 grep -Eq 'forge-release-sha256sums.txt' "$ROOT/scripts/install-forge-release.sh" || fail "installer must download the published checksum manifest"
 grep -Eq 'checksum mismatch' "$ROOT/scripts/install-forge-release.sh" || fail "installer must reject checksum mismatches"
+[ -x "$EXAMPLES/scripts/calver-day-serial.sh" ] || fail "CalVer day-serial example script must be executable"
+for example in \
+  cargo-calver-day-serial.release.toml \
+  cargo-semver-exact.release.toml \
+  cargo-semver-gitea.release.toml \
+  cargo-semver-github.release.toml; do
+  [ -f "$EXAMPLES/$example" ] || fail "missing release example: $example"
+  grep -Fq '"builtin:cargo-release"' "$EXAMPLES/$example" || fail "$example must use the generic Cargo release runner"
+  grep -Fq '"--version-source", "Cargo.toml"' "$EXAMPLES/$example" || fail "$example must declare a Cargo version source"
+  grep -Fq '"--lockfile", "Cargo.lock"' "$EXAMPLES/$example" || fail "$example must keep Cargo.lock in the release diff"
+done
+grep -Fq '"--tag-prefix", ""' "$EXAMPLES/cargo-calver-day-serial.release.toml" || fail "CalVer day-serial example must default to unprefixed tags"
+grep -Fq '"--provider", "github"' "$EXAMPLES/cargo-semver-github.release.toml" || fail "GitHub SemVer example must use the GitHub provider"
+grep -Fq '"--provider", "gitea"' "$EXAMPLES/cargo-semver-gitea.release.toml" || fail "Gitea SemVer example must use the Gitea provider"
+grep -Fq '"--notes-required"' "$EXAMPLES/cargo-semver-exact.release.toml" || fail "exact-version example must demonstrate required notes"
 assert_before 'Validate release inputs' 'Run contributor checks'
 assert_before 'Run contributor checks' 'Build Release Artifact'
 assert_before 'Build Release Artifact' 'Upload Build Outputs'

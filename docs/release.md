@@ -198,6 +198,19 @@ That runner accepts either `--bump patch|minor|major` or `--version <semver>`, w
 
 The Forge-managed `release-runner` skill contains the agent procedure for using this contract.
 
+## Ready-To-Copy Release Examples
+
+Forge keeps copyable release examples under `examples/release/`.
+
+- `cargo-calver-day-serial.release.toml` plus `scripts/calver-day-serial.sh` covers semver-compatible CalVer versions such as `YYYYMMDD.0.0`, `YYYYMMDD.0.1`, and the next day's `YYYYMMDD.0.0`. The final numeric component starts at `0` each date.
+- `cargo-semver-github.release.toml` covers ordinary GitHub SemVer releases with `--bump patch|minor|major`.
+- `cargo-semver-exact.release.toml` covers explicit SemVer, prerelease, or build-metadata releases that should pass `--version <v>` and require curated notes.
+- `cargo-semver-gitea.release.toml` covers the same Cargo release flow through Gitea or Forgejo with `tea`.
+
+These files are examples, not a second release system. Copy the closest file to
+the target repo as `release.toml`, edit the repo name, provider, checks, tag
+prefix, and notes policy, then run the normal `forge release` commands.
+
 ## User Install And Update Story
 
 The user-facing bootstrap path is a binary deployment path. It resolves one published GitHub release tag, downloads that tag's platform archive and `forge-release-sha256sums.txt`, and verifies the archive before extraction. It does not require GitHub CLI or a Rust toolchain.
