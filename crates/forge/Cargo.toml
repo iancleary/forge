@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "20260829.0.0"
+version = "20260829.0.1"
 edition = "2024"
 description = "First-party AI workflow tools, skills, and harness support"
 license = "MIT"
