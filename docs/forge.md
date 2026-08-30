@@ -127,6 +127,9 @@ Runs the repo-local release contract from `release.toml`. The runner may be an o
 
 Agents must use `--json`. They should run `check` and `plan` before `run`, and must not use `--apply` unless the user explicitly asked to publish or apply a release.
 
+Copyable release starting points live under `examples/release/`, including
+Cargo SemVer, exact-version, Gitea, and `YYYYMMDD.0.N` CalVer examples.
+
 ## Removed commands
 
 The following commands were removed because their owner is the machine configuration layer:
