@@ -1,6 +1,6 @@
 [package]
 name = "linear"
-version = "20260828.0.2"
+version = "20260829.0.0"
 edition = "2024"
 description = "Linear CLI helpers for Forge-managed workflows"
 license = "MIT"
