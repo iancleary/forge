@@ -9,7 +9,7 @@ the package name, provider, checks, tag prefix, notes policy, and version files.
 ## CalVer With Day Serial
 
 Use `cargo-calver-day-serial.release.toml` with
-`scripts/calver-day-serial.sh` for semver-compatible CalVer tags such as:
+`scripts/calver_day_serial.py` for semver-compatible CalVer tags such as:
 
 ```sh
 20260830.0.0
@@ -17,12 +17,12 @@ Use `cargo-calver-day-serial.release.toml` with
 20260831.0.0
 ```
 
-The final component starts at `0` each date. The script reads existing tags for
-the current date, chooses the next serial, then calls:
+The final component starts at `0` each date. The script fetches tags, reads
+existing tags for the current date, chooses the next serial, then calls:
 
 ```sh
-forge release run --dry-run --version <YYYYMMDD.0.N>
-forge release run --apply --version <YYYYMMDD.0.N>
+python scripts/calver_day_serial.py --dry-run
+python scripts/calver_day_serial.py --apply
 ```
 
 Useful environment overrides:

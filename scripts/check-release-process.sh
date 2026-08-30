@@ -55,7 +55,7 @@ grep -Eq 'forge-release-manifest.json' "$ROOT/scripts/build-forge-release-manife
 grep -Eq -- '--source-digest "\$RELEASE_SHA"' "$WORKFLOW" || fail "workflow attestations must be pinned to the release commit"
 grep -Eq 'forge-release-sha256sums.txt' "$ROOT/scripts/install-forge-release.sh" || fail "installer must download the published checksum manifest"
 grep -Eq 'checksum mismatch' "$ROOT/scripts/install-forge-release.sh" || fail "installer must reject checksum mismatches"
-[ -x "$EXAMPLES/scripts/calver-day-serial.sh" ] || fail "CalVer day-serial example script must be executable"
+[ -x "$EXAMPLES/scripts/calver_day_serial.py" ] || fail "CalVer day-serial example script must be executable"
 for example in \
   cargo-calver-day-serial.release.toml \
   cargo-semver-exact.release.toml \
@@ -70,6 +70,25 @@ grep -Fq '"--tag-prefix", ""' "$EXAMPLES/cargo-calver-day-serial.release.toml" |
 grep -Fq '"--provider", "github"' "$EXAMPLES/cargo-semver-github.release.toml" || fail "GitHub SemVer example must use the GitHub provider"
 grep -Fq '"--provider", "gitea"' "$EXAMPLES/cargo-semver-gitea.release.toml" || fail "Gitea SemVer example must use the Gitea provider"
 grep -Fq '"--notes-required"' "$EXAMPLES/cargo-semver-exact.release.toml" || fail "exact-version example must demonstrate required notes"
+SKILL_EXAMPLES="$ROOT/.agents/skills/create-release-process/templates/release"
+[ -x "$SKILL_EXAMPLES/scripts/calver_day_serial.py" ] || fail "skill CalVer day-serial script must be executable"
+for example in \
+  README.md \
+  cargo-calver-day-serial.release.toml \
+  cargo-semver-exact.release.toml \
+  cargo-semver-gitea.release.toml \
+  cargo-semver-github.release.toml; do
+  [ -f "$SKILL_EXAMPLES/$example" ] || fail "missing skill release template: $example"
+done
+for example in \
+  cargo-calver-day-serial.release.toml \
+  cargo-semver-exact.release.toml \
+  cargo-semver-gitea.release.toml \
+  cargo-semver-github.release.toml; do
+  cmp -s "$EXAMPLES/$example" "$SKILL_EXAMPLES/$example" || fail "release example drifted from skill template: $example"
+done
+cmp -s "$EXAMPLES/scripts/calver_day_serial.py" "$SKILL_EXAMPLES/scripts/calver_day_serial.py" ||
+  fail "release example script drifted from skill template"
 assert_before 'Validate release inputs' 'Run contributor checks'
 assert_before 'Run contributor checks' 'Build Release Artifact'
 assert_before 'Build Release Artifact' 'Upload Build Outputs'
