@@ -200,9 +200,12 @@ The Forge-managed `release-runner` skill contains the agent procedure for using 
 
 ## Ready-To-Copy Release Examples
 
-Forge keeps copyable release examples under `examples/release/`.
+Forge keeps copyable release examples under `examples/release/`. The
+`create-release-process` skill also ships the same starting points under
+`templates/release/` so agents can copy them directly from the installed skill
+when working in another repo.
 
-- `cargo-calver-day-serial.release.toml` plus `scripts/calver-day-serial.sh` covers semver-compatible CalVer versions such as `YYYYMMDD.0.0`, `YYYYMMDD.0.1`, and the next day's `YYYYMMDD.0.0`. The final numeric component starts at `0` each date.
+- `cargo-calver-day-serial.release.toml` plus `scripts/calver_day_serial.py` covers semver-compatible CalVer versions such as `YYYYMMDD.0.0`, `YYYYMMDD.0.1`, and the next day's `YYYYMMDD.0.0`. The final numeric component starts at `0` each date.
 - `cargo-semver-github.release.toml` covers ordinary GitHub SemVer releases with `--bump patch|minor|major`.
 - `cargo-semver-exact.release.toml` covers explicit SemVer, prerelease, or build-metadata releases that should pass `--version <v>` and require curated notes.
 - `cargo-semver-gitea.release.toml` covers the same Cargo release flow through Gitea or Forgejo with `tea`.

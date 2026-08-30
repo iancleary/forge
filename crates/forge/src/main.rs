@@ -6571,7 +6571,32 @@ fn release_skills() -> &'static [EmbeddedSkill] {
         ),
         embedded_skill!("typst-documents"),
         embedded_skill!("learning-systems"),
-        embedded_skill!("create-release-process"),
+        embedded_skill!(
+            "create-release-process",
+            files = [
+                ("templates/release/README.md", executable = false),
+                (
+                    "templates/release/cargo-calver-day-serial.release.toml",
+                    executable = false
+                ),
+                (
+                    "templates/release/cargo-semver-exact.release.toml",
+                    executable = false
+                ),
+                (
+                    "templates/release/cargo-semver-gitea.release.toml",
+                    executable = false
+                ),
+                (
+                    "templates/release/cargo-semver-github.release.toml",
+                    executable = false
+                ),
+                (
+                    "templates/release/scripts/calver_day_serial.py",
+                    executable = true
+                ),
+            ]
+        ),
         embedded_skill!("cut-release"),
         embedded_skill!("release-runner"),
         embedded_skill!("thinking-in-the-limit"),

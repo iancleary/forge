@@ -65,6 +65,17 @@ Prefer the repo's existing task runner.
 
 Prefer the repo's existing release command contract. When a repository has `release.toml`, prefer `forge release` as the stable agent-facing surface. Otherwise use the closest local convention, such as `just cut-release`, `make release`, a package script, or a checked-in script.
 
+When the Forge CLI is already installed and the target repo can use
+`forge release`, start from the copyable templates bundled with this skill:
+
+- `templates/release/cargo-semver-github.release.toml` for ordinary GitHub Cargo SemVer releases
+- `templates/release/cargo-semver-exact.release.toml` for exact versions, prereleases, build metadata, or required curated notes
+- `templates/release/cargo-semver-gitea.release.toml` for Gitea or Forgejo releases through `tea`
+- `templates/release/cargo-calver-day-serial.release.toml` plus `templates/release/scripts/calver_day_serial.py` for `YYYYMMDD.0.N` CalVer where the final numeric component starts at `0` each date
+
+Copy the closest template into the target repo and edit it. Do not rebuild the
+same `release.toml` shape from scratch when one of these templates is close.
+
 When creating or updating the workflow:
 
 - create or update a checked-in release runner
