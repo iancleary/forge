@@ -15,6 +15,8 @@ Do not treat `docs/` as the implementation area.
 
 Nix and Home Manager own packages, toolchains, general dotfiles, application preferences, and host state. Forge owns portable AI workflow behavior. Read [docs/scope.md](docs/scope.md) before adding a new top-level management surface.
 
+Read [docs/agent-operating-loop.md](docs/agent-operating-loop.md) when a change affects more than one command, skill, or managed Codex surface. Optimize the whole loop: observe, orient, choose, act, verify, and accrete.
+
 ## Writing Guidance
 
 Follow Zinsser's four principles of quality writing: simplicity, brevity, clarity, and humanity.
@@ -35,6 +37,8 @@ The rule is simple. Use short sentences. Use the active voice. Give each word on
 - keep one binary crate per CLI under `crates/`
 - prefer explicit, typed command contracts over thin wrappers around prompts or shell scripts
 - keep output JSON-first and stable for agent consumption
+- make read paths cheap, mutation paths explicit, and verification paths obvious
+- prefer surfaces that improve context, routing, execution, or accretion without adding hidden state
 - use singular top-level resource nouns where possible:
   - `team`
   - `issue`
@@ -71,6 +75,7 @@ Before committing:
 - run `cargo check`
 - if the CLI talks to a real external API, verify at least the core read path live when practical
 - prefer doing heavy lifting inside the CLI rather than leaving filtering or normalization to the LLM
+- for docs-only system design changes, run `git diff --check` and inspect the rendered diff for stale or duplicated guidance
 
 ## Repo Skills
 
@@ -147,3 +152,5 @@ Use the repo algorithm in `docs/algorithm.md` when deciding what to build:
 - automate last
 
 For Forge, this means avoiding automation of noisy or speculative workflows. Prefer deleting shell shaping, duplicated policy, or unnecessary command surface before adding new primitives.
+
+If repeated friction survives that deletion pass, fold it into the smallest durable surface: a skill rule, command contract, test, doc section, or release example. Do not preserve raw session noise just because it might be useful later.

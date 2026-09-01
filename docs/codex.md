@@ -4,6 +4,8 @@ This document defines how `forge` acts as the first-party source of truth for Ia
 
 The goal is not to absorb every local dotfile. The goal is to make the portable, durable parts of Codex behavior deterministic and reviewable in one repo.
 
+The larger design goal is the agent operating loop in [agent-operating-loop.md](agent-operating-loop.md). Forge-managed Codex assets should help Codex observe the situation, choose the right skill or command, act safely, verify results, and preserve durable lessons without copying machine-local noise.
+
 ## What Forge Owns
 
 Forge should own portable Codex behavior such as:
@@ -102,6 +104,8 @@ Router skills should:
 - explain the boundary between neighboring skills
 - stay short
 - avoid duplicating the full body of the skills they route to
+- identify when the agent should stop routing and use a concrete command
+- identify when repeated friction should become a new managed skill, doc, test, or CLI contract
 
 ## Workflow Maintenance vs. Workflow Execution
 
@@ -211,6 +215,8 @@ forge skills install --all --source release
 ```
 
 This keeps machine setup deterministic without turning startup into hidden mutation.
+
+This is the context plane of the Forge system. It exists so the agent can orient before applying changes. Any future broad status command should compose these reads rather than hide mutation behind a startup or bootstrap path.
 
 Do not add a broad `forge machine bootstrap` command until repeated use proves a stable dry-run contract. The first useful automation boundary is a status/dry-run view that reports Forge version drift, managed skill drift, Codex asset drift, permission drift, and missing tools without applying changes.
 
@@ -545,7 +551,8 @@ Source model:
 2. Keep `principles.md` as an authoring input only, not as a separate runtime file.
 3. Keep the portable config template narrow unless a clearly stable merge contract emerges.
 4. Evaluate `agents/openai.yaml` for the Forge-managed skills where invocation policy or dependencies would improve determinism.
-5. Revisit broader deployment behavior only after the explicit v1 workflow has proven stable.
+5. Add only status, routing, or verification surface that clearly improves the agent operating loop.
+6. Revisit broader deployment behavior only after the explicit v1 workflow has proven stable.
 
 ## Acceptance Test For Putting Something In Forge
 

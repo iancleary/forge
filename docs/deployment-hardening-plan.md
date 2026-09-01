@@ -6,6 +6,8 @@ Implement a checksum-first binary deployment model for Forge without requiring d
 
 This document is an implementation handoff. The product and security decisions below are fixed. An implementation agent must not redesign the trust model or expand the platform matrix.
 
+Read this plan through the system lens in [agent-operating-loop.md](agent-operating-loop.md). The deployment work should improve context, execution, verification, and accretion together: status before mutation, explicit install/update actions, deterministic verification, and fixtures that preserve the lesson.
+
 ## Current branch state
 
 Branch: `refactor/ai-workbench-scope`
@@ -334,6 +336,7 @@ Run structured review and secret scanning after tests pass. Do not bypass the se
 ## Delegation constraints
 
 - Read `AGENTS.md`, [scope.md](scope.md), [release.md](release.md), and this plan first.
+- Read [agent-operating-loop.md](agent-operating-loop.md) before changing command contracts or adding automation.
 - Inspect the dirty branch before editing and preserve unrelated scope-contraction work.
 - Do not push, publish, enable immutable releases, or change repository settings.
 - Do not add toolchain installation, Minisign, or another platform.

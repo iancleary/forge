@@ -8,6 +8,8 @@ Provide a fast, low-noise way to search and read old Codex sessions without hand
 
 The source data lives in `~/.codex/sessions` and `~/.codex/session_index.jsonl`. This CLI builds a compact local index and exposes agent-friendly commands on top of it.
 
+In the Forge system, this is a context and accretion primitive. It lets agents recover prior work cheaply, but it should return shaped evidence rather than raw transcript volume.
+
 Output contract:
 
 - human-readable text by default
@@ -191,3 +193,4 @@ Exclude from the main search index:
 - file-backed full-text index
 - extraction of tool-call summaries
 - skill-pattern mining commands
+- repeated-friction reports that identify shell shaping, routing failures, or missing verification paths that may deserve Forge product surface

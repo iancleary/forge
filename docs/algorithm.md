@@ -6,6 +6,8 @@ The point is not hero worship. The point is sequencing.
 
 This document is the human-readable source of truth. The installable Forge skill that carries the same workflow to downstream users is `design-algorithm`.
 
+For Forge, apply the algorithm to the whole agent operating loop in [agent-operating-loop.md](agent-operating-loop.md). A change is not automatically good because it makes one command faster. It should improve observe, orient, choose, act, verify, or accrete without making the surrounding loop harder to understand.
+
 Do these steps in order:
 
 1. Question every requirement.
@@ -24,6 +26,7 @@ Before adding a command, flag, crate, doc section, or skill rule:
 - identify the single owner of the requirement
 - ask whether the requirement is inherited from habit rather than current need
 - prefer direct user and agent jobs over abstract completeness
+- identify which operating-loop step and plane the change improves
 
 For Forge, that usually means asking:
 
@@ -50,6 +53,8 @@ Use holistic thinking here:
 - can the whole interaction be changed so the part disappears?
 
 If a proposed addition cannot survive a deletion pass, it is probably not load-bearing.
+
+Also ask what existing prompt text, shell shaping, duplicated policy, or noisy output can disappear if the addition lands. If nothing gets simpler, the new surface is suspect.
 
 ## 3. Simplify And Optimize
 
@@ -80,6 +85,7 @@ Examples:
 - improve help text so the next agent run finds the right command immediately
 - add tests around the compact output shape agents rely on
 - tighten docs so the spec and implementation stay aligned
+- add an explicit verification path so the next agent does not invent one
 
 Cycle-time improvements should reduce user and agent backtracking, not just execution time.
 
@@ -92,6 +98,7 @@ Good automation in Forge:
 - a CLI primitive that removes a repeated manual shaping step
 - a doctor check that codifies repeated environment debugging
 - a skill rule that routes agents to the right binary first
+- an accretion rule that turns repeated friction into a managed skill, doc, test, or CLI contract
 
 Bad automation in Forge:
 
