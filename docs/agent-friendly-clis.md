@@ -2,6 +2,8 @@
 
 This file turns the OpenAI "agent-friendly CLI" idea into a working spec for this repo.
 
+Read this with [agent-operating-loop.md](agent-operating-loop.md). A Forge CLI is agent-friendly only if it improves the whole loop: cheap context, clear routing, explicit action, easy verification, and a path for repeated friction to become durable product surface.
+
 Source material:
 
 - OpenAI use case: `https://developers.openai.com/codex/use-cases/agent-friendly-clis`
@@ -48,6 +50,8 @@ An agent-friendly CLI should have:
 - Errors written to stderr
 - Support for large result sets via paging or limits
 - Safe defaults for write actions
+- A documented verification path for important mutations
+- Output that names the likely next command when that can be done without policy overreach
 
 Examples:
 
@@ -138,6 +142,8 @@ Preferred error shape:
   }
 }
 ```
+
+Read commands should include only the fields needed for a likely next decision. Mutation commands should make the post-action state and verification path obvious. For example, a create command should return the created ID, final status, preview or applied mode, and any follow-up command that can read the result.
 
 ### Error behavior
 
@@ -309,6 +315,7 @@ Safety rules:
 - Reads are always allowed
 - Creates default to draft or preview mode
 - Publish/delete/overwrite require explicit commands or flags
+- Mutation outputs include enough state to verify what happened
 
 JSON output:
 - ok

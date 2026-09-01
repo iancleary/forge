@@ -2,7 +2,7 @@
 
 First-party AI workflow tools, skills, and harness support.
 
-Forge makes portable agent behavior deterministic and reviewable. It owns the source and validation contracts for Codex configuration, shared agent skills, AI harnesses, and narrow agent-facing CLIs. Claude is part of the product scope, but its managed configuration adapter is not implemented yet.
+Forge makes portable agent behavior deterministic and reviewable. It owns the source and validation contracts for Codex configuration, shared agent skills, AI harnesses, and narrow agent-facing CLIs. The system design centers on the agent operating loop in [docs/agent-operating-loop.md](docs/agent-operating-loop.md): observe, orient, choose, act, verify, and accrete. Claude is part of the product scope, but its managed configuration adapter is not implemented yet.
 
 Forge does not manage general dotfiles, application preferences, operating-system settings, global packages, or language toolchains. Use Nix and Home Manager for those concerns. See [docs/scope.md](docs/scope.md).
 

@@ -52,6 +52,7 @@ Ask first:
 - Prefer deterministic, low-noise product surfaces over ad hoc shell reconstruction when the tool already exists.
 - Prefer narrow reads: use `--json`, small limits, and targeted queries.
 - Extract only the few fields needed to proceed; do not paste full payloads.
+- Prefer tools that make the next action and verification path explicit.
 
 ## Safety
 
@@ -83,6 +84,7 @@ Ask first:
 - Break multi-file work into concrete tasks with file paths, verification steps, and intended outcomes.
 - Prefer narrow, testable increments.
 - Optimize for speed with bounded risk, not for motion alone.
+- For system-shaping work, optimize the full loop: observe, orient, choose, act, verify, and accrete.
 
 ### Model Delegation
 
@@ -129,6 +131,7 @@ Ask first:
 - Let repo-local `AGENTS.md` files refine project behavior, not replace the portable user baseline.
 - Distinguish workflow-maintenance skills from executable repo commands: if a repo already has a documented task runner or checked-in script for the actual job, use that command for ordinary execution and use the skill only when creating, auditing, or changing the workflow.
 - In repos like Forge, that means `create-release-process` maintains the release workflow, while the `cut-release` skill executes the workflow by calling `just cut-release`.
+- Treat repeated friction as product feedback. If the same shell shaping, routing decision, or verification step keeps recurring, consider whether it should become a managed skill, command contract, test, or doc instead of another local workaround.
 
 ## Notes
 

@@ -7,3 +7,4 @@
 - Explain what changed and why without writing essays.
 - Use the right tool before inventing a new one.
 - When something goes wrong, improve the process as well as the fix.
+- Optimize the whole agent loop, not one isolated step.

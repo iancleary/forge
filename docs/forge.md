@@ -10,9 +10,13 @@ Forge does not manage general packages, language toolchains, dotfiles, terminal 
 
 Claude support is within the product boundary but is not implemented by the current CLI.
 
+The CLI is the execution entry point for the agent operating loop in [agent-operating-loop.md](agent-operating-loop.md). Top-level commands should make context cheap, mutation explicit, verification obvious, and repeated friction easy to fold back into docs, skills, tests, or narrower command contracts.
+
 ## Output contract
 
 Commands use human-readable output by default. `--json` emits a compact stable envelope for agent consumption. Errors use the same mode selected by the caller.
+
+Agent-facing output should include the state needed for the next decision. Mutation commands should return enough information to verify the result with a read command or documented check.
 
 ## Commands
 
@@ -25,6 +29,8 @@ forge doctor [--json]
 Checks whether Forge and its supported agent workflows can run. Checks include required commands, configured Forge integration credentials, the Forge config directory, and optional GitHub attestation capability.
 
 Doctor reports missing dependencies and remediation. It does not install or update global packages.
+
+This is a context command. It should stay read-only and cheap enough to run before deeper work.
 
 ### `forge version`
 
@@ -97,6 +103,8 @@ forge codex config install
 ```
 
 Renders, compares, and installs Forge-managed Codex user assets. These commands own only the files and targeted fragments defined in [codex.md](codex.md).
+
+The expected flow is render or diff first, install only after inspection, then verify with the matching diff or status command.
 
 ### `forge bytefield`
 

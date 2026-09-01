@@ -6,6 +6,8 @@ Forge is the first-party source and toolchain for portable AI workflow behavior.
 
 Nix and Home Manager own machine state. Forge owns AI workflow behavior.
 
+Forge should be designed as one agent operating loop, not as a bag of unrelated utilities. The shared loop is documented in [agent-operating-loop.md](agent-operating-loop.md): observe, orient, choose, act, verify, and accrete.
+
 ## Context
 
 Forge began as a collection of agent-friendly Rust CLIs. It later added global tool updates and targeted application preference management. Those features created overlapping desired-state systems and made the product boundary unclear.
@@ -33,6 +35,13 @@ Forge owns:
 - non-Nix release artifacts and a checksum-verified binary installer
 
 An integration belongs in Forge only when it provides a stable reusable primitive that materially improves an AI coding or knowledge-work loop.
+
+That primitive should fit one clear plane:
+
+- context: cheap reads that make current state accurate
+- routing: skills, help, and docs that point to the right next abstraction
+- execution: explicit commands that act with safe preview and verification paths
+- accretion: durable skills, docs, tests, and examples that reduce future agent work
 
 ## Machine-layer ownership
 

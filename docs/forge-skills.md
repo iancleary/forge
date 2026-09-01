@@ -23,6 +23,8 @@ If Forge is also the first-party source of truth for Codex configuration, then t
 
 That skill lifecycle is separate from `forge codex render|diff|install`, which manages the narrow v1 set of user-scoped Codex files under `~/.codex/`.
 
+In the system model from [agent-operating-loop.md](agent-operating-loop.md), skills are primarily routing and accretion surfaces. They tell agents which lower-level contract to use, and they preserve repeated workflow learning after it becomes stable.
+
 ## Managed Skills
 
 Current Forge-managed skills:
@@ -140,6 +142,8 @@ Checks:
 - with `--check-upstream`, configured pinned GitHub tree URLs still resolve to their expected Git tree hash
 
 The intent is to keep the user-scope skill surface deterministic. Codex App skill routing uses the frontmatter `name`, while Codex CLI routing uses the skill folder name, so Forge-managed skills keep those identifiers identical. Descriptions and router references are part of the maintained contract, not free-form text.
+
+A managed skill is incomplete if it only says how to do work. It should also say when to use it, when not to use it, what command or artifact owns execution, and what output or verification proves success.
 
 Upstream checks are opt-in because they fetch the network. Release skills can declare `upstream_url` and `upstream_hash` together in `config/release-skills.toml`; the URL must be a GitHub tree URL pinned to a concrete commit hash. JSON output includes an `upstream` object for checked skills with configured provenance:
 
