@@ -106,6 +106,20 @@ Renders, compares, and installs Forge-managed Codex user assets. These commands 
 
 The expected flow is render or diff first, install only after inspection, then verify with the matching diff or status command.
 
+### Planned: `forge policy`
+
+```sh
+forge policy validate [--policy <path>] [--profile <name>] [--json]
+forge policy status [--policy <path>] [--profile <name>] [--json]
+forge policy diff [--policy <path>] [--profile <name>] [--json]
+forge policy install [--policy <path>] [--profile <name>] [--json]
+forge policy update --lock [--policy <path>] [--profile <name>] [--json]
+```
+
+Manages machine and profile-specific policy for installable agent capability sources: tools repos, skills repos, product skill packs, and product CLIs with bundled skills. The detailed planned contract is in [policy.md](policy.md).
+
+This command is not implemented yet. Until it is, install sources directly through their own `install.md` contracts.
+
 ### `forge bytefield`
 
 ```sh

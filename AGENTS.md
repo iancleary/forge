@@ -17,6 +17,8 @@ Nix and Home Manager own packages, toolchains, general dotfiles, application pre
 
 Read [docs/agent-operating-loop.md](docs/agent-operating-loop.md) when a change affects more than one command, skill, or managed Codex surface. Optimize the whole loop: observe, orient, choose, act, verify, and accrete.
 
+Machine/profile policy for installing external skill and tool sources belongs in Forge. Read [docs/policy.md](docs/policy.md) before adding policy commands, policy config, third-party source reconciliation, or machine-profile install behavior.
+
 ## Writing Guidance
 
 Follow Zinsser's four principles of quality writing: simplicity, brevity, clarity, and humanity.
@@ -92,6 +94,7 @@ Before committing:
 - use `forge release current-version` when you need the current workspace release version without starting the release flow
 - use `forge release next-version` when you need the inferred next release version without starting the release flow
 - prefer `forge release run --dry-run --json` before `forge release run --apply --json` when validating the next version or the enforced sequence
+- keep future `forge policy` commands read-first: `validate`, `status`, and `diff` must not mutate state; `install` and `update --lock` must be explicit
 - the Forge release runner owns workspace version bumps in `Cargo.lock` and all `crates/*/Cargo.toml` manifests
 - the Forge release runner pushes the version commit and dispatches the release-artifacts workflow; that workflow must pass checks, build every supported platform, stage and verify artifacts, and create the tag and GitHub release only in its final step
 - the deployed release-process skills provide portable defaults, while this repo's `AGENTS.md`, `docs/release.md`, `release.toml`, and the built-in `forge release` runner tailor the Forge-specific CalVer, notes, validation, and publish behavior

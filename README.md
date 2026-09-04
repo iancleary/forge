@@ -63,6 +63,8 @@ Forge directly supports:
 
 The companion `iancleary/skills` repository is the portable instruction distribution experiment. Use that repo to teach agents when to reach for Forge workflows; use this repo to install, update, verify, and release the underlying toolbelt.
 
+Machine/profile policy for external skill sources belongs in Forge. The planned policy manager is documented in [docs/policy.md](docs/policy.md); it will reconcile tools repos, skills repos, product skill packs, and product CLIs from one machine policy file.
+
 Claude configuration and shared cross-agent policy are intended first-party surfaces. Their command and file contracts must be designed before implementation.
 
 ## Common commands
