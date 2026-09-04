@@ -1,12 +1,14 @@
 # forge
 
-First-party AI workflow tools, skills, and harness support.
+First-party AI workflow tools, managed skills, and harness support.
 
-Forge makes portable agent behavior deterministic and reviewable. It owns the source and validation contracts for Codex configuration, shared agent skills, AI harnesses, and narrow agent-facing CLIs. The system design centers on the agent operating loop in [docs/agent-operating-loop.md](docs/agent-operating-loop.md): observe, orient, choose, act, verify, and accrete. Claude is part of the product scope, but its managed configuration adapter is not implemented yet.
+Forge is the tools repo for Ian Cleary's agent workflows. It makes portable agent behavior deterministic and reviewable by owning the source and validation contracts for Codex configuration, Forge-managed skills, AI harnesses, and narrow agent-facing CLIs. The system design centers on the agent operating loop in [docs/agent-operating-loop.md](docs/agent-operating-loop.md): observe, orient, choose, act, verify, and accrete. Claude is part of the product scope, but its managed configuration adapter is not implemented yet.
 
 Forge does not manage general dotfiles, application preferences, operating-system settings, global packages, or language toolchains. Use Nix and Home Manager for those concerns. See [docs/scope.md](docs/scope.md).
 
 ## Install
+
+For agent-driven setup, use [install.md](install.md). It defines the tools-repo installation contract: install Forge, verify the binaries, and report the available tool surface.
 
 Nix and Home Manager are the preferred ownership layer for macOS, WSL Arch Linux, and NixOS systems. The initial Nix packaging and Home Manager module are follow-up work. Until they exist, install a release with the portable installer:
 
@@ -58,6 +60,8 @@ Forge directly supports:
 - local Codex session search through `codex-threads`
 - narrow agent-facing Linear and Slack CLIs
 - skill-backed artifact tools such as Mermaid and bytefield rendering
+
+The companion `iancleary/skills` repository is the portable instruction distribution experiment. Use that repo to teach agents when to reach for Forge workflows; use this repo to install, update, verify, and release the underlying toolbelt.
 
 Claude configuration and shared cross-agent policy are intended first-party surfaces. Their command and file contracts must be designed before implementation.
 
