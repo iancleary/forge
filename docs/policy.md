@@ -285,3 +285,17 @@ Forge policy chooses which skill sources a machine should install.
 Individual skills still decide when an agent should use them through their `description` frontmatter and body instructions.
 
 Do not copy third-party skills into Forge or `iancleary/skills` just to install them on a machine. Add them to policy, pin them, and let the source repo remain canonical.
+
+## Relationship To Forge-Managed Skills
+
+Forge already has a release-coupled managed skill system under `forge skills`.
+
+That system remains useful for skills that must ship with Forge binaries or Forge-managed assets. It should not remain the permanent home for portable workflow skills that are not tied to Forge implementation.
+
+Migration rule:
+
+- keep Forge-coupled CLI and release skills inside `iancleary/forge`
+- move portable, non-Forge-CLI workflow skills to `iancleary/skills`
+- use `forge policy` to install `iancleary/skills` into `user`, `repo`, or both targets when a machine wants those skills
+
+Policy implementation must account for this migration. A future Forge release should not remove portable skills from the embedded release set until `forge policy status` can report the replacement source and `forge policy install` can install it explicitly.

@@ -56,6 +56,50 @@ Current Forge-managed skills:
 - `codex-threads-cli`
 - `forge-cli`
 
+This list is larger than the long-term desired Forge-owned surface. It includes early portable workflow skills that were bundled before `iancleary/skills` and `forge policy` existed.
+
+Long-term ownership:
+
+- Forge should keep skills that are tightly coupled to Forge binaries, Forge release behavior, or Forge-managed assets.
+- `iancleary/skills` should own portable workflow skills that do not need to be bundled with a Forge release.
+- `forge policy` should decide which external skill repos a machine or profile installs.
+
+Keep in Forge:
+
+- `forge-tools`
+- `forge-cli`
+- `linear-cli`
+- `slack-query-cli`
+- `slack-agent-cli`
+- `codex-threads-cli`
+- `mermaid-diagrams`
+- `bytefield-diagrams`
+- `create-release-process`
+- `cut-release`
+- `release-runner`
+
+Candidates to migrate to `iancleary/skills` after `forge policy` can install and pin external skill repos:
+
+- `design-algorithm`
+- `source-driven-development`
+- `debugging-and-error-recovery`
+- `api-and-interface-design`
+- `security-and-hardening`
+- `test-strategy`
+- `code-simplification`
+- `documentation-and-adrs`
+- `codegraph`
+- `librarian`
+- `git-forge-body-file`
+- `typst-documents`
+- `learning-systems`
+- `thinking-in-the-limit`
+- `chrome-devtools-mcp`
+- `webwright`
+- `schemdraw`
+
+Do not remove these candidates from Forge releases until a policy-managed install path exists and has a migration check. The migration should preserve installed users' capability surface instead of silently dropping skills during `forge self update`.
+
 Repo source of truth during development:
 
 ```text
