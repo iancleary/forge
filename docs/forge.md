@@ -109,11 +109,11 @@ The expected flow is render or diff first, install only after inspection, then v
 ### Planned: `forge policy`
 
 ```sh
-forge policy validate [--policy <path>] [--profile <name>] [--json]
-forge policy status [--policy <path>] [--profile <name>] [--json]
-forge policy diff [--policy <path>] [--profile <name>] [--json]
-forge policy install [--policy <path>] [--profile <name>] [--json]
-forge policy update --lock [--policy <path>] [--profile <name>] [--json]
+forge policy validate [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
+forge policy status [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
+forge policy diff [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
+forge policy install [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
+forge policy update --lock [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Manages machine and profile-specific policy for installable agent capability sources: tools repos, skills repos, product skill packs, and product CLIs with bundled skills. The detailed planned contract is in [policy.md](policy.md).

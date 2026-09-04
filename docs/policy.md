@@ -61,7 +61,7 @@ id = "forge"
 kind = "tools"
 repo = "iancleary/forge"
 install = "install.md"
-scope = "user"
+targets = ["user"]
 reason = "Forge toolbelt and managed local assets"
 
 [[sources]]
@@ -69,7 +69,7 @@ id = "ian-skills"
 kind = "skills"
 repo = "iancleary/skills"
 install = "install.md"
-scope = "user"
+targets = ["user", "repo"]
 reason = "Ian's portable agent workflow skills"
 
 [[sources]]
@@ -78,7 +78,7 @@ kind = "product-skills"
 repo = "American-Embedded/kistack"
 install = "install.md"
 profile = "electronics"
-scope = "user"
+targets = ["repo"]
 reason = "KiCad skills for electronics workstations"
 
 [lock."American-Embedded/kistack"]
@@ -99,6 +99,40 @@ Supported kinds:
 
 Unknown kinds must fail validation.
 
+## Targets
+
+Targets describe where a source should be installed.
+
+Supported targets:
+
+- `repo`: install into the current repository context, equivalent to a local skills install such as `npx skills add <owner/repo>` from the target repo
+- `user`: install into the user's global skill scope, equivalent to a global skills install such as `npx skills add <owner/repo> -g`
+
+Rules:
+
+- `targets` defaults to `["user"]` when omitted
+- a source may list multiple targets
+- `repo` requires a target repository context, either the current working directory or a future explicit `--target-repo <path>` flag
+- `user` changes the machine's user-global agent capability surface and must be explicit in status, diff, and install output
+- unknown targets must fail validation
+
+Examples:
+
+```toml
+[[sources]]
+id = "ian-skills"
+kind = "skills"
+repo = "iancleary/skills"
+targets = ["user", "repo"]
+
+[[sources]]
+id = "kistack"
+kind = "product-skills"
+repo = "American-Embedded/kistack"
+profile = "electronics"
+targets = ["repo"]
+```
+
 ## Profiles
 
 Profiles are filters over sources.
@@ -114,7 +148,7 @@ Examples:
 
 ```sh
 forge policy status --profile electronics --json
-forge policy install --profile electronics --json
+forge policy install --profile electronics --target-repo "$(pwd)" --json
 ```
 
 ## Commands
@@ -128,7 +162,7 @@ forge policy <command>
 ### `forge policy validate`
 
 ```sh
-forge policy validate [--policy <path>] [--profile <name>] [--json]
+forge policy validate [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Checks that:
@@ -139,6 +173,8 @@ Checks that:
 - source kinds are known
 - repositories use `owner/repo` form
 - install paths are relative
+- targets are known
+- `repo` targets have a target repository context
 - lock entries refer to declared repositories
 
 Validation does not fetch the network and does not install anything.
@@ -146,7 +182,7 @@ Validation does not fetch the network and does not install anything.
 ### `forge policy status`
 
 ```sh
-forge policy status [--policy <path>] [--profile <name>] [--json]
+forge policy status [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Reports desired sources, installed state, lock state, and drift.
@@ -156,7 +192,7 @@ This is the default inspect-first command. It must not mutate state.
 ### `forge policy diff`
 
 ```sh
-forge policy diff [--policy <path>] [--profile <name>] [--json]
+forge policy diff [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Shows what `install` or `update --lock` would change.
@@ -166,7 +202,7 @@ This command may fetch remote metadata when needed to compare a lock against ups
 ### `forge policy install`
 
 ```sh
-forge policy install [--policy <path>] [--profile <name>] [--json]
+forge policy install [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Installs missing sources and repairs out-of-date installed policy state.
@@ -182,7 +218,7 @@ Rules:
 ### `forge policy update --lock`
 
 ```sh
-forge policy update --lock [--policy <path>] [--profile <name>] [--json]
+forge policy update --lock [--policy <path>] [--profile <name>] [--target-repo <path>] [--json]
 ```
 
 Refreshes reviewed source pins in the lock section.
@@ -211,6 +247,7 @@ Example status shape:
       "kind": "product-skills",
       "repo": "American-Embedded/kistack",
       "profile": "electronics",
+      "targets": ["repo"],
       "desired": true,
       "installed": false,
       "locked_commit": "REVIEWED_COMMIT_SHA",
