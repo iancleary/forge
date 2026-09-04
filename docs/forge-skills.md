@@ -78,7 +78,7 @@ Keep in Forge:
 - `cut-release`
 - `release-runner`
 
-Candidates to migrate to `iancleary/skills` after `forge policy` can install and pin external skill repos:
+Portable skills staged in `iancleary/skills`:
 
 - `design-algorithm`
 - `source-driven-development`
@@ -98,7 +98,7 @@ Candidates to migrate to `iancleary/skills` after `forge policy` can install and
 - `webwright`
 - `schemdraw`
 
-Do not remove these candidates from Forge releases until a policy-managed install path exists and has a migration check. The migration should preserve installed users' capability surface instead of silently dropping skills during `forge self update`.
+These skills may still be bundled in Forge releases during the transition. Do not remove them from Forge releases until a policy-managed install path exists and has a migration check. The migration should preserve installed users' capability surface instead of silently dropping skills during `forge self update`.
 
 Repo source of truth during development:
 

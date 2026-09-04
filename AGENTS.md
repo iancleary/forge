@@ -19,7 +19,7 @@ Read [docs/agent-operating-loop.md](docs/agent-operating-loop.md) when a change 
 
 Machine/profile policy for installing external skill and tool sources belongs in Forge. Read [docs/policy.md](docs/policy.md) before adding policy commands, policy config, third-party source reconciliation, or machine-profile install behavior.
 
-Portable non-Forge-CLI skills should migrate toward `iancleary/skills` once `forge policy` can install and pin that repo. Do not remove a skill from Forge's release-managed payload until the policy-managed replacement path is implemented and documented in [docs/forge-skills.md](docs/forge-skills.md).
+Portable non-Forge-CLI skills are staged in `iancleary/skills`, but may remain in Forge's release-managed payload during the transition. Do not remove a skill from Forge's release-managed payload until the policy-managed replacement path is implemented and documented in [docs/forge-skills.md](docs/forge-skills.md).
 
 ## Writing Guidance
 

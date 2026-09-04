@@ -295,7 +295,7 @@ That system remains useful for skills that must ship with Forge binaries or Forg
 Migration rule:
 
 - keep Forge-coupled CLI and release skills inside `iancleary/forge`
-- move portable, non-Forge-CLI workflow skills to `iancleary/skills`
+- stage portable, non-Forge-CLI workflow skills in `iancleary/skills`
 - use `forge policy` to install `iancleary/skills` into `user`, `repo`, or both targets when a machine wants those skills
 
 Policy implementation must account for this migration. A future Forge release should not remove portable skills from the embedded release set until `forge policy status` can report the replacement source and `forge policy install` can install it explicitly.
